@@ -33,10 +33,11 @@ status must be re-audited when execution begins.
 
 ## Baseline execution status
 
-B0 passed on 2026-08-15. The current-status audit did not trigger
-`STALE_TARGET`; the final immutable run is
-`evidence/b0/b0-20260814T230315Z`. B1 is active. The terminal baseline verdict
-remains pending, and no novel 44-comparator experiment is authorized.
+B0 and B1 passed on 2026-08-15. The current-status audit did not trigger
+`STALE_TARGET`, and two independent verifiers accepted the public
+45-comparator witness across a 267-case agreement gate. B2 is active. The
+terminal baseline verdict remains pending, and no novel 44-comparator
+experiment is authorized.
 
 The frozen interface begins with `make setup`, `make verify`, and the serial
 `make baseline-b0` through `make baseline-b4` gates. `make evidence-check`

@@ -1,0 +1,99 @@
+{
+  "aggregate_sha256": "95f8820c730734007be5b476e94913ee63aea53a102896a37bf590b4b1f1ccd7",
+  "b0_pass_prerequisites": [
+    "evidence/b0/b0-20260814T230128Z",
+    "evidence/b0/b0-20260814T230315Z"
+  ],
+  "files": [
+    {
+      "path": "config/frozen/b1-verification.json",
+      "sha256": "31cc1e2e8ec6d147e6e3f25ad7781f29d5de1e34d7900fb1a159e8755b97a989"
+    },
+    {
+      "path": "docs/b1-verification.md",
+      "sha256": "27f74318217aa4643ce7fd9e2e736e2b327d2a2339eca1a6143ee6f264b85104"
+    },
+    {
+      "path": "docs/candidate-format.md",
+      "sha256": "4047c91a379fe88b7d96201d13690ab0b2e98751abd27ba4975d33f1e3664a4a"
+    },
+    {
+      "path": "src/verifier_a.py",
+      "sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e"
+    },
+    {
+      "path": "src/verifier_b.go",
+      "sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f"
+    },
+    {
+      "path": "tests/fixtures/b1/malformed/bad-checksum.sortnet",
+      "sha256": "d1df34f70cbf441d0594ac46c4f63fcb2992f180ca5cd506491091d0c4ddb674"
+    },
+    {
+      "path": "tests/fixtures/b1/malformed/count-mismatch.sortnet",
+      "sha256": "af03b77250299d1653c135094ac8b7d7025b994e7f1dab9540ef6efe54f37648"
+    },
+    {
+      "path": "tests/fixtures/b1/malformed/layer-conflict.sortnet",
+      "sha256": "020ca24e593a137710aa1c19e6056af37ae8ff6dd65a76fc855eef6781f9988b"
+    },
+    {
+      "path": "tests/fixtures/b1/malformed/mixed-layers.sortnet",
+      "sha256": "1ecf536b31d5229a3265b75cb3c663cce3b6730ee8968dd1147869d6485abeaa"
+    },
+    {
+      "path": "tests/fixtures/b1/malformed/out-of-range.sortnet",
+      "sha256": "817c2dbc0e4dc0ceab94beff49f3cdb31fb9ed57548db1a5adc8814686f02871"
+    },
+    {
+      "path": "tests/fixtures/b1/malformed/reversed-pair.sortnet",
+      "sha256": "7a25fe94959b7c26a70d61f79f3df90bea9a91d0536e92e93e6ae536b5b937e0"
+    },
+    {
+      "path": "tests/fixtures/b1/malformed/trailing-data.sortnet",
+      "sha256": "df419e55ebe844f745ab43f7b257c2eb1ee5075d97e88b17a8ec4d7b3c43761f"
+    },
+    {
+      "path": "tests/fixtures/b1/negative/n3-two-comparator.sortnet",
+      "sha256": "4c9b8f75a7baff45a8547e1c043e041ece1695aabea567522bf768eef955c8c3"
+    },
+    {
+      "path": "tests/test_b1_verifiers.py",
+      "sha256": "cd6671a3284c6ba9928a4e6b3a48f4d8235d744c46541e5ca99d96b8cd24542c"
+    },
+    {
+      "path": "tools/b1_gate.py",
+      "sha256": "026d5d51236ac6b98a32627c6ead44a3d10ce6e1221d083c20ff60cbbfbc3570"
+    },
+    {
+      "path": "witnesses/public/n13-45-dobbelaere.sortnet",
+      "sha256": "35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83"
+    },
+    {
+      "path": "witnesses/small/n1-empty.sortnet",
+      "sha256": "a917c59006cdf1b2095453d63ccad17e57732cf415844fbf6a9600ae09204d7f"
+    },
+    {
+      "path": "witnesses/small/n2-one.sortnet",
+      "sha256": "fab64e04b46a684cce60005604f2fed748d71bedc483ac6f0564584c3ef64aa7"
+    },
+    {
+      "path": "witnesses/small/n2-repeated.sortnet",
+      "sha256": "1db011109488f0521cfc381b0d206f706f9a0887c7fbec09e508ad9afa707682"
+    },
+    {
+      "path": "witnesses/small/n3-three.sortnet",
+      "sha256": "5f0cf98f3d36936d3693146c152d4a5d00d1688fce52b2f4e348bbc847d14dbb"
+    },
+    {
+      "path": "witnesses/small/n4-five.sortnet",
+      "sha256": "49e49af9cde40191cf0607a301c9300db8a6524d4ffd4d76eb865f45c067cc12"
+    }
+  ],
+  "limits": {
+    "peak_memory_bytes": 1073741824,
+    "per_verifier_timeout_seconds": 10,
+    "threads": 1,
+    "wall_seconds": 180
+  }
+}

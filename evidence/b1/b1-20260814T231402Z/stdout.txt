@@ -1,0 +1,3 @@
+B1 falsifiable gate: two independent verifiers must agree on every frozen case.
+PASS: both independent verifiers agreed on 267 cases; public 45-comparator witness accepted.
+PASS: exhaustive n=3 subset=40, accepts=6; random cases=200.

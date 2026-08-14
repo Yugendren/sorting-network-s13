@@ -1,0 +1,29 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/b1_gate.py"
+  ],
+  "config_sha256": "95f8820c730734007be5b476e94913ee63aea53a102896a37bf590b4b1f1ccd7",
+  "cpu_seconds": 10.864997,
+  "dirty_at_start": false,
+  "ended_at": "2026-08-14T23:14:14.144307+00:00",
+  "gate": "B1",
+  "host": {
+    "cpu": "Apple M4",
+    "disk_free_bytes_at_start": 50458980352,
+    "logical_cores": 10,
+    "machine": "arm64",
+    "memory_bytes": 17179869184,
+    "model": "Mac16,10",
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "physical_cores": 10
+  },
+  "peak_rss_bytes": 86065152,
+  "run_id": "b1-20260814T231402Z",
+  "schema_version": "s13-evidence-manifest/v1",
+  "source_commit": "48bd3e136545095b807f6d68f7f13b7a27af5524",
+  "started_at": "2026-08-14T23:14:02.750904+00:00",
+  "status": "PASS",
+  "threads": 1,
+  "wall_seconds": 11.401776
+}

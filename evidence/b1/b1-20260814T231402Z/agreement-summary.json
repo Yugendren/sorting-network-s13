@@ -1,0 +1,31 @@
+{
+  "case_count": 267,
+  "category_counts": {
+    "exhaustive-subset": 40,
+    "malformed": 9,
+    "mutation": 3,
+    "negative": 1,
+    "positive": 6,
+    "random-differential": 200,
+    "reflection": 4,
+    "reflection-base": 4
+  },
+  "exhaustive_accept_count": 6,
+  "exhaustive_candidate_count": 40,
+  "mutation_indices_independently_rejected": [
+    0,
+    22,
+    44
+  ],
+  "public_witness_artifact_sha256": "35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83",
+  "public_witness_candidate_checksum": "9358d2c5e17720df3b5b4d2c2e209b973c8531aa3174eab140bca369a4212403",
+  "public_witness_verifier_agreement": "ACCEPT",
+  "random_case_count": 200,
+  "random_seed": 13004520260815,
+  "status": "PASS",
+  "verdict_counts": {
+    "ACCEPT": 72,
+    "INVALID": 186,
+    "MALFORMED": 9
+  }
+}

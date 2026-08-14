@@ -1,0 +1,17 @@
+{
+  "command": [
+    "go",
+    "build",
+    "-trimpath",
+    "-ldflags=-buildid=",
+    "-o",
+    "/Users/yugendren/experiments/sorting_network_s13/.build/b1/verifier-b",
+    "src/verifier_b.go"
+  ],
+  "go_version": "go version go1.26.4 darwin/arm64",
+  "gomaxprocs": 1,
+  "python_version": "Python 3.14.4",
+  "verifier_a_source_sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e",
+  "verifier_b_binary_sha256": "212805ebb2f71bfdc3a470a0e873167c6494fea0cea9829a8db889298368e3a2",
+  "verifier_b_source_sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f"
+}

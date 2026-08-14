@@ -18,10 +18,11 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Current milestone: B1 -- establish independent construction truth.
+- Current milestone: B2 -- reproduce constructive baselines.
 - Repository state: branch `goal/s13-baseline`; supplied snapshot commit
   `fa0fc41e0bc2841a38aed55418602db6049c89b8`; final B0 gate source commit
-  `19bd4efadddf75182caa8012981917c0938aa2ed`.
+  `19bd4efadddf75182caa8012981917c0938aa2ed`; B1 gate source commit
+  `48bd3e136545095b807f6d68f7f13b7a27af5524`.
 - Research snapshot: live audit on 2026-08-15 found maintained bounds
   `44 <= S(13) <= 45`; no primary/current source in the audit settled S(13).
 - Known construction: public 45-comparator, 10-layer network.
@@ -34,6 +35,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   20 seeds, dependency lock, budgets, portability patch, and immutable evidence
   policy are frozen at aggregate SHA-256
   `9efccb2d1b3fcafef9385ddb562a5e202136bc31c64cfc64bdc3c9bdea60b67c`.
+- Construction truth: B1 PASS. Python direct enumeration and the independent Go
+  bit-parallel verifier agreed on 267 cases and both accepted the public
+  45-comparator witness with artifact SHA-256
+  `35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83`.
 - Terminal verdict: `PENDING`.
 
 ## Baseline acceptance gates
@@ -41,13 +46,13 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | Gate | State | Evidence |
 |---|---|---|
 | B0 source and protocol freeze | PASS | `evidence/b0/b0-20260814T230315Z` |
-| B1 independent construction truth | NOT RUN | -- |
+| B1 independent construction truth | PASS | `evidence/b1/b1-20260814T231402Z` |
 | B2 20-seed constructive baseline | NOT RUN | -- |
 | B3 exact/certificate baseline | NOT RUN | -- |
 | B4 aggregate report and verdict | NOT RUN | -- |
 
 ## Next smallest action
 
-1. Build Verifier A and Verifier B without shared parsing or execution logic.
-2. Establish the full B1 fixture, differential, metamorphic, mutation, and
-   deterministic-replay gate before starting B2.
+1. Build the pinned SENSO source with only the audited portability patch.
+2. Run the transparent baselines and all 20 frozen constructive seeds; verify
+   every returned candidate with both B1 implementations.
