@@ -1,0 +1,19 @@
+{
+  "certificate": {
+    "bytes_committed": false,
+    "compressed_md5": "2847374c6bab1260c9771d6fafe65f44",
+    "compressed_size_bytes": 1247864564,
+    "doi": "10.5281/zenodo.4108365",
+    "uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+    "uncompressed_size_bytes": 3068651498,
+    "url": "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content"
+  },
+  "sortnetopt": {
+    "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+    "repository": "https://github.com/jix/sortnetopt.git",
+    "stack_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc",
+    "strict_and_parallel_patch_sha256": "df374fe21c9aa07ee91da700dc2642581c999b61defdacc1ee201a87225435e0",
+    "tracked_file_count": 44,
+    "tracked_source_aggregate_sha256": "56b18efa19f3727f1945696f53bb597aec9b13ec210680578b1dc0b0b253a474"
+  }
+}

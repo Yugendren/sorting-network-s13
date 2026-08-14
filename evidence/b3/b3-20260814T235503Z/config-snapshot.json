@@ -1,0 +1,71 @@
+{
+  "aggregate_sha256": "525b86ff9aa772f928ed3b358b52d54777457608f7cf076ead58fa7686cdb1a6",
+  "budgets": {
+    "certificate_n11": {
+      "peak_memory_bytes": 12884901888,
+      "wall_seconds": 14400
+    },
+    "exact_n9": {
+      "peak_memory_bytes": 1073741824,
+      "wall_seconds": 600
+    },
+    "total_after_setup": {
+      "wall_seconds": 43200
+    }
+  },
+  "config": {
+    "certificate_doi": "10.5281/zenodo.4108365",
+    "certificate_uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+    "checker_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc",
+    "checker_snapshot": "lts-14.10",
+    "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+    "frozen_at": "2026-08-15",
+    "n11_command": "bash verify_proof_cert.sh CERTBIN",
+    "n11_regeneration_allowed": false,
+    "n9_command": "bash search_and_verify.sh 9 DATADIR",
+    "repository": "https://github.com/jix/sortnetopt.git",
+    "schema_version": "s13-exact-baseline/v1"
+  },
+  "files": [
+    {
+      "path": "config/frozen/b3-exact.json",
+      "sha256": "73dfb958c2155ee4f9241c80fc3299d68e4b0ea2ffa2660ea8c8e991d69e4263"
+    },
+    {
+      "path": "config/frozen/budgets.json",
+      "sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f"
+    },
+    {
+      "path": "config/frozen/sources.json",
+      "sha256": "0110d7a5872737bd2629c84e0b09b410ef6628f9fa9826351d45698dbd3a5a76"
+    },
+    {
+      "path": "docs/b3-execution.md",
+      "sha256": "9cc195f9d752ae91affb5b368df5600ceaf5d54f0d1429f2d4478a7680c0dbc7"
+    },
+    {
+      "path": "docs/b3-setup-audit.md",
+      "sha256": "ad108db2cefebb1916d41f6747269b49bf7848eb5767b7a16ba28a1b53a3a94b"
+    },
+    {
+      "path": "evidence/b2/b2-20260814T232833Z/manifest.json",
+      "sha256": "8d057c43edb1e408d4334783cbb0a615110011bfa2aac121319ca32924888d74"
+    },
+    {
+      "path": "tests/test_b3_exact.py",
+      "sha256": "a34c2e9b3a536f2f54fb8115c963418b62ab394468e7813fcf30eae463b83911"
+    },
+    {
+      "path": "tools/b3_gate.py",
+      "sha256": "e07a4f58fa8244d230698bbecaf708f0ef41473ec323a98087c763b00eb1f3be"
+    },
+    {
+      "path": "tools/fetch_harder_certificate.py",
+      "sha256": "cc2aa0dec0fae384fc6ddad1ae7bf9e0cd88b943878cdffaf098404259cae690"
+    },
+    {
+      "path": "tools/setup_sortnetopt.py",
+      "sha256": "e4084bc816449971a7a0769459c9a31ffebc521f2ca7a47b4a5536e75a2a7b84"
+    }
+  ]
+}

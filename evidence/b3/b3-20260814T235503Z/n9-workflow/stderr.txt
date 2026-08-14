@@ -1,0 +1,55 @@
+warning: unnecessary trailing semicolon
+   --> src/output_set/canon.rs:86:10
+    |
+ 86 |         };
+    |          ^
+...
+281 |         let reborrow = reborrow!(self);
+    |                        --------------- in this macro invocation
+    |
+    = note: `#[warn(redundant_semicolons)]` (part of `#[warn(unused)]`) on by default
+    = note: this warning originates in the macro `reborrow` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `sortnetopt` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.22s
+warning: unnecessary trailing semicolon
+   --> src/output_set/canon.rs:86:10
+    |
+ 86 |         };
+    |          ^
+...
+281 |         let reborrow = reborrow!(self);
+    |                        --------------- in this macro invocation
+    |
+    = note: `#[warn(redundant_semicolons)]` (part of `#[warn(unused)]`) on by default
+    = note: this warning originates in the macro `reborrow` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `sortnetopt` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.03s
+     Running `target/release/sortnetopt -m search 9 /Users/yugendren/experiments/sorting_network_s13/.build/b3-runs/b3-20260814T235503Z/n9-data/_search_9`
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+The application panicked (crashed).
+  called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+in src/logging.rs, line 45
+thread: main
+        0.72 real         0.05 user         0.07 sys
+            51380224  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                7098  page reclaims
+                 978  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   1  signals received
+                1204  voluntary context switches
+                 834  involuntary context switches
+            20578259  instructions retired
+            10254384  cycles elapsed
+             1311032  peak memory footprint
