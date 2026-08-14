@@ -1,0 +1,1 @@
+{"artifact_sha256":"f77b3975596d48180cb92cf073b1773cdcf57b155f550870286a19c347beebe4","candidate_checksum":"032fcbb864160fa8c5dd16317bcf5714bdea1d0386135b8c57e359663e8f9111","channels":13,"comparators":47,"counterexample":null,"duplicate_comparators":["2 3 x2","3 5 x2","4 6 x2","5 7 x2","6 7 x2","9 10 x2"],"implementation":"verifier-a-python-direct-v1","verdict":"ACCEPT"}

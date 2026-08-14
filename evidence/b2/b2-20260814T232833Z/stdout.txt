@@ -1,0 +1,3 @@
+B2 falsifiable gate: report all 20 seeds and reproduce a dual-verified 45-comparator SENSO baseline.
+PASS: all 20 SENSO seeds reported; 1 returned dual-verified networks of at most 45 comparators.
+PASS: random best=148, greedy best=47, SENSO best=45.

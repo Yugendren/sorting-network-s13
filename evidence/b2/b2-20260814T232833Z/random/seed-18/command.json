@@ -1,0 +1,32 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/yugendren/experiments/sorting_network_s13/src/random_baseline.py",
+    "--channels",
+    "13",
+    "--seed",
+    "18",
+    "--trials",
+    "100",
+    "--max-comparators",
+    "512"
+  ],
+  "wrapped_command": [
+    "/usr/bin/time",
+    "-l",
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/yugendren/experiments/sorting_network_s13/tools/run_with_limits.py",
+    "--cpu-seconds",
+    "30",
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/yugendren/experiments/sorting_network_s13/src/random_baseline.py",
+    "--channels",
+    "13",
+    "--seed",
+    "18",
+    "--trials",
+    "100",
+    "--max-comparators",
+    "512"
+  ]
+}

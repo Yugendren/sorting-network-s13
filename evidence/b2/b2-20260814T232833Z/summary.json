@@ -1,0 +1,86 @@
+{
+  "acceptance_size": 45,
+  "all_senso_seeds_reported": true,
+  "baselines": {
+    "greedy": {
+      "all_seeds_reported": true,
+      "best_size": 47,
+      "expected_seed_count": 20,
+      "peak_rss_bytes": 5144576,
+      "reported_seed_count": 20,
+      "size_distribution": {
+        "47": 5,
+        "48": 15
+      },
+      "status_counts": {
+        "PASS": 20
+      },
+      "total_cpu_seconds": 0.6,
+      "total_evaluations": 400,
+      "total_wall_seconds": 5.30538,
+      "verified_candidate_count": 20
+    },
+    "random": {
+      "all_seeds_reported": true,
+      "best_size": 148,
+      "expected_seed_count": 20,
+      "peak_rss_bytes": 20643840,
+      "reported_seed_count": 20,
+      "size_distribution": {
+        "148": 1,
+        "166": 1,
+        "167": 1,
+        "177": 1,
+        "182": 1,
+        "194": 1,
+        "195": 1,
+        "200": 1,
+        "202": 3,
+        "206": 1,
+        "208": 1,
+        "210": 1,
+        "213": 1,
+        "215": 1,
+        "216": 1,
+        "218": 1,
+        "222": 1,
+        "231": 1
+      },
+      "status_counts": {
+        "PASS": 20
+      },
+      "total_cpu_seconds": 2.72,
+      "total_evaluations": 720163,
+      "total_wall_seconds": 5.308245,
+      "verified_candidate_count": 20
+    },
+    "senso": {
+      "all_seeds_reported": true,
+      "best_size": 45,
+      "expected_seed_count": 20,
+      "peak_rss_bytes": 17154048,
+      "reported_seed_count": 20,
+      "size_distribution": {
+        "45": 1,
+        "46": 16,
+        "47": 3
+      },
+      "status_counts": {
+        "PASS": 20
+      },
+      "total_cpu_seconds": 380.14,
+      "total_evaluations": 1004000,
+      "total_wall_seconds": 384.875065,
+      "verified_candidate_count": 20
+    }
+  },
+  "senso_acceptance_count": 1,
+  "status": "PASS",
+  "truth_labels": {
+    "accepted_candidates": "LOCALLY_REPRODUCED",
+    "frozen_seeds": "ASSUMED",
+    "local_runs": "MEASURED",
+    "paper_parameters": "PUBLISHED",
+    "variant_2_probability_mapping": "ASSUMED"
+  }
+}

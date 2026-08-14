@@ -33,11 +33,11 @@ status must be re-audited when execution begins.
 
 ## Baseline execution status
 
-B0 and B1 passed on 2026-08-15. The current-status audit did not trigger
-`STALE_TARGET`, and two independent verifiers accepted the public
-45-comparator witness across a 267-case agreement gate. B2 is active. The
-terminal baseline verdict remains pending, and no novel 44-comparator
-experiment is authorized.
+B0, B1, and B2 passed on 2026-08-15. The current-status audit did not trigger
+`STALE_TARGET`; two independent verifiers accepted the public witness; and
+seed 18 of the frozen 20-seed SENSO batch locally reproduced a verified
+45-comparator network. B3 is active. The terminal baseline verdict remains
+pending, and no novel 44-comparator experiment is authorized.
 
 The frozen interface begins with `make setup`, `make verify`, and the serial
 `make baseline-b0` through `make baseline-b4` gates. `make evidence-check`

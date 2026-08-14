@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<Beagle version="3.1.0">
+  <Logger>
+    <Log>Open BEAGLE, version 3.1.0</Log>
+    <Log>Setting console log level 2</Log>
+    <Log>Setting file log level 3</Log>
+    <Log>Logging to file 'beagle.log'</Log>
+    <Log>Reading file '/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf' for evolver configuration</Log>
+    <Log>Reading file '/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf' for system configuration</Log>
+    <Log>WARNING: unknown parameter 'ec.elite.keepsize'; not registered!</Log>
+    <Log>WARNING: unknown parameter 'ec.sel.tournsize'; not registered!</Log>
+    <Log>Reading file '/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf' for system configuration</Log>
+    <Log>WARNING: unknown parameter 'ec.elite.keepsize'; not registered!</Log>
+    <Log>WARNING: unknown parameter 'ec.sel.tournsize'; not registered!</Log>
+    <Log>Randomizer seed used: 4</Log>
+    <Log>Starting an evolution</Log>
+    <Log>Current date and time: 07:28:41 15 Aug 2026</Log>
+    <Log>Evolving generation 0</Log>
+    <Log>Applying bootstrap operators to the 1st deme</Log>
+    <Log>
+      <Stats type="Stats" id="deme0" generation="0" popsize="20">
+        <Item key="processed">20</Item>
+        <Item key="total-processed">20</Item>
+        <Measure id="fitness">
+          <Avg>-49.25</Avg>
+          <Std>0.786397515657</Std>
+          <Max>-48</Max>
+          <Min>-51</Min>
+        </Measure>
+      </Stats>
+    </Log>
+    <Log>
+      <Stats type="Stats" id="vivarium" generation="0" popsize="20">
+        <Item key="processed">20</Item>
+        <Item key="total-processed">20</Item>
+        <Measure id="fitness">
+          <Avg>-49.25</Avg>
+          <Std>0.786397515657</Std>
+          <Max>-48</Max>
+          <Min>-51</Min>
+        </Measure>
+      </Stats>
+    </Log>
+    <Log>Maximum number of generations (0) termination criterion reached</Log>
+    <Log>Termination criterion reached</Log>
+    <Log>Writing milestone file 'milestone_g0.obm.gz'</Log>
+    <Log>Flushing history into milestone</Log>
+    <Log>Logging hall-of-fame of the 1st deme</Log>
+    <Log>
+      <HallOfFame type="HallOfFame" size="1">
+        <Member generation="0" deme="0">
+          <Individual type="SN-Individual">
+            <Fitness type="FitnessSimple" valid="yes">
+              -48
+            </Fitness>
+            <Genotype type="SN-Network" numInputs="13" numAllLines="6">
+              <Comparators size="96">1;3;9;11;2;6;4;7;5;8;0;12;6;10;1;4;8;11;3;7;5;9;0;6;10;12;0;2;7;11;1;5;0;1;11;12;4;9;3;8;6;10;2;6;6;10;7;9;3;5;2;4;8;10;1;3;9;11;1;2;10;11;5;6;7;9;6;9;3;5;9;10;2;3;4;7;5;8;7;8;4;5;8;9;3;4;5;7;6;7;7;8;4;5;5;6</Comparators>
+              <HeuristicMethods size="2" filterStart="0">0;21</HeuristicMethods>
+            </Genotype>
+          </Individual>
+        </Member>
+      </HallOfFame>
+    </Log>
+    <Log>Logging hall-of-fame of the vivarium</Log>
+    <Log>
+      <HallOfFame type="HallOfFame" size="1">
+        <Member generation="0" deme="0">
+          <Individual type="SN-Individual">
+            <Fitness type="FitnessSimple" valid="yes">
+              -48
+            </Fitness>
+            <Genotype type="SN-Network" numInputs="13" numAllLines="6">
+              <Comparators size="96">1;3;9;11;2;6;4;7;5;8;0;12;6;10;1;4;8;11;3;7;5;9;0;6;10;12;0;2;7;11;1;5;0;1;11;12;4;9;3;8;6;10;2;6;6;10;7;9;3;5;2;4;8;10;1;3;9;11;1;2;10;11;5;6;7;9;6;9;3;5;9;10;2;3;4;7;5;8;7;8;4;5;8;9;3;4;5;7;6;7;7;8;4;5;5;6</Comparators>
+              <HeuristicMethods size="2" filterStart="0">0;21</HeuristicMethods>
+            </Genotype>
+          </Individual>
+        </Member>
+      </HallOfFame>
+    </Log>
+    <Log>Current date and time: 07:28:41 15 Aug 2026</Log>
+    <Log>End of (unsuccessful) evolution</Log>
+  </Logger>
+</Beagle>

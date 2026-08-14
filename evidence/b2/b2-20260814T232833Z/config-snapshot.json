@@ -1,0 +1,126 @@
+{
+  "aggregate_sha256": "25c31a5db5bb36678ddfbe17f047b86156de3bc562c8a3f05d958d074c3295c8",
+  "budgets": {
+    "certificate_n11": {
+      "peak_memory_bytes": 12884901888,
+      "wall_seconds": 14400
+    },
+    "constructive": {
+      "aggregate_wall_seconds": 21600,
+      "peak_memory_bytes": 10737418240,
+      "per_seed_cpu_seconds": 900,
+      "threads_per_seed": 1
+    },
+    "exact_n9": {
+      "peak_memory_bytes": 1073741824,
+      "wall_seconds": 600
+    },
+    "frozen_at": "2026-08-15",
+    "gpu_allowed": false,
+    "schema_version": "s13-budgets/v1",
+    "stop_rules": [
+      "Stop a seed at its CPU cap and preserve TIMEOUT evidence.",
+      "Stop the constructive batch at its aggregate wall or memory cap.",
+      "A timeout or unsuccessful search is MEASURED failure, never a proof.",
+      "If any constructive baseline emits fewer than 45 comparators, freeze it, run only both B1 verifiers, and stop for a new contract."
+    ],
+    "total_after_setup": {
+      "wall_seconds": 43200
+    },
+    "transparent_baselines": {
+      "greedy_aggregate_wall_seconds": 600,
+      "greedy_generations": 0,
+      "greedy_population_per_seed": 20,
+      "random_aggregate_wall_seconds": 300,
+      "random_trials_per_seed": 100
+    }
+  },
+  "files": [
+    {
+      "path": "config/frozen/b2-execution.json",
+      "sha256": "71ebce6ae9b803ae4121421d796223c4a2f08b5b2c976e2f45d00ebb675cba78"
+    },
+    {
+      "path": "config/frozen/b2-senso.json",
+      "sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff"
+    },
+    {
+      "path": "config/frozen/budgets.json",
+      "sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f"
+    },
+    {
+      "path": "config/frozen/seeds.json",
+      "sha256": "dcac67a8eb5b5c14d9629d88fd3240da3aa5d4fa3c77d479d274c901273d7a0b"
+    },
+    {
+      "path": "docs/b2-execution.md",
+      "sha256": "188b3936ca38002a5c263f1913208a49a6b5089180418c3a2995c92045328c53"
+    },
+    {
+      "path": "docs/b2-setup-audit.md",
+      "sha256": "c44b18b8e8fa3ccd7490e3babd967b532384a88940154c2c66ae33aa7951663e"
+    },
+    {
+      "path": "docs/candidate-format.md",
+      "sha256": "4047c91a379fe88b7d96201d13690ab0b2e98751abd27ba4975d33f1e3664a4a"
+    },
+    {
+      "path": "evidence/b1/b1-20260814T231402Z/manifest.json",
+      "sha256": "51c22ef534a0cce11676b39e05b8c601a9760f075efee0f5a5232a7195a37e44"
+    },
+    {
+      "path": "src/random_baseline.py",
+      "sha256": "91fe5f12aa9e55c33546e790f20a747108a7f49420ef185851f994f789c80de9"
+    },
+    {
+      "path": "src/verifier_a.py",
+      "sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e"
+    },
+    {
+      "path": "src/verifier_b.go",
+      "sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f"
+    },
+    {
+      "path": "tests/test_b2_baselines.py",
+      "sha256": "7f040698d9e46cc254c16d412dbf8e683104fec8fb8010caa592e5aa4f467e14"
+    },
+    {
+      "path": "tools/b2_gate.py",
+      "sha256": "29cfc314176b94f40e1414042746968b6425db0a22c7ea878dc43ca21975c84d"
+    },
+    {
+      "path": "tools/patches/symmetry-1.1-macos.patch",
+      "sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09"
+    },
+    {
+      "path": "tools/run_with_limits.py",
+      "sha256": "c81487b086f729d7c96caf33e0752d07265a309f27668b9de6befb1ef75452f4"
+    },
+    {
+      "path": "tools/setup_senso.py",
+      "sha256": "4fa29c1e16662bb40699dba1d6ace010b8c4eb278d651125427c2d1dfca8c51a"
+    }
+  ],
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ]
+}

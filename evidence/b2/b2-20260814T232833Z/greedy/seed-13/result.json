@@ -1,0 +1,36 @@
+{
+  "baseline": "greedy",
+  "best_size": 48,
+  "candidate_path": "greedy/seed-13/candidate.sortnet",
+  "evaluations": 20,
+  "generation": 0,
+  "milestone_sha256": "4b63a22bf5acdccefdcf878d13ebc607d1949ed179887eeca7c4f0d9c74d7742",
+  "milestone_size_bytes": 6669,
+  "resource": {
+    "cpu_limit_seconds": 60,
+    "cpu_seconds": 0.03,
+    "exit_code": 0,
+    "memory_limit_bytes": 10737418240,
+    "peak_rss_bytes": 5128192,
+    "status": "PASS",
+    "stderr_sha256": "e51e211ab91f7ab8fb8fb92436329c9b84ae231290d6dd4bc73ce8e0ca47333f",
+    "stdout_sha256": "377b91ccf43c840c5e75aea4fd26d6545cf409db9d660d9d7dfe844997bda509",
+    "system_seconds": 0.0,
+    "time_peak_rss_bytes": 5128192,
+    "time_real_seconds": 0.04,
+    "user_seconds": 0.03,
+    "wall_limit_seconds": 60,
+    "wall_seconds": 0.264858
+  },
+  "seed": 13,
+  "status": "PASS",
+  "verification": {
+    "artifact_sha256": "f711815b92df5abed1bd661af59e169638f62052d8094c3b8e9b6a73946623e8",
+    "candidate_checksum": "5b380e55f42b92107ecdc6ef6d58da4ea6a3f1c7a6a1001dbce2554ecd8ecda3",
+    "comparators": 48,
+    "verifier_a": "ACCEPT",
+    "verifier_a_report_sha256": "47ecd123f9296f35284970e4c1eb3499f470ac2dbd9823ec769fb37bcfde6fbb",
+    "verifier_b": "ACCEPT",
+    "verifier_b_report_sha256": "36c7602a864d242cd1d5762d89b2bace13ab44b9305b31a7b59736773a922c2c"
+  }
+}
