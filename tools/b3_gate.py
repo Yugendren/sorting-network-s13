@@ -384,6 +384,7 @@ def main() -> int:
             SOURCES_PATH,
             ROOT / "docs/b3-execution.md",
             ROOT / "docs/b3-setup-audit.md",
+            ROOT / "tools/patches/sortnetopt-macos-proc.patch",
             ROOT / "tools/setup_sortnetopt.py",
             ROOT / "tools/fetch_harder_certificate.py",
             ROOT / "tools/b3_gate.py",
@@ -409,11 +410,15 @@ def main() -> int:
         )
         shutil.copyfile(CONFIG_PATH, out / "frozen-b3-config.json")
         write_json(out / "toolchain-build-manifest.json", toolchain)
+        cargo_lock = ROOT / toolchain["generated_cargo_lock"]["path"]
+        shutil.copyfile(cargo_lock, out / "generated-Cargo.lock")
         write_json(out / "certificate-cache-manifest.json", certificate_cache)
         write_json(
             out / "external-source-reference.json",
             {
                 "sortnetopt": toolchain["upstream"],
+                "sortnetopt_portability_patch": toolchain["portability_patch"],
+                "sortnetopt_generated_cargo_lock": toolchain["generated_cargo_lock"],
                 "certificate": {
                     "url": certificate_cache["url"],
                     "doi": certificate_cache["doi"],
@@ -426,12 +431,13 @@ def main() -> int:
             },
         )
 
+        runtime_source = ROOT / toolchain["runtime_source_path"]
         n9_data = prepare_official_datadir(work / "n9-data")
         n9_stage = out / "n9-workflow"
         n9_command = ["bash", "search_and_verify.sh", "9", str(n9_data)]
         n9_resource = run_limited(
             n9_command,
-            UPSTREAM,
+            runtime_source,
             n9_stage,
             env=env,
             wall_limit=budgets["exact_n9"]["wall_seconds"],
@@ -470,7 +476,7 @@ def main() -> int:
         negative_command = ["bash", "verify_proof_cert.sh", str(corrupt_proof)]
         negative_resource = run_limited(
             negative_command,
-            UPSTREAM,
+            runtime_source,
             negative_run,
             env=env,
             wall_limit=min(120, budgets["exact_n9"]["wall_seconds"]),
@@ -507,7 +513,7 @@ def main() -> int:
         n11_command = ["bash", "verify_proof_cert.sh", str(certificate_path)]
         n11_resource = run_limited(
             n11_command,
-            UPSTREAM,
+            runtime_source,
             n11_stage,
             env=env,
             wall_limit=budgets["certificate_n11"]["wall_seconds"],

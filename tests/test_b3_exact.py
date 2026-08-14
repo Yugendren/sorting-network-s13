@@ -47,8 +47,38 @@ class B3ExactTests(unittest.TestCase):
         assert manifest is not None
         self.assertEqual(manifest["status"], "PASS")
         self.assertEqual(manifest["upstream"]["commit"], setup_sortnetopt.PINNED_COMMIT)
+        self.assertEqual(
+            manifest["portability_patch"]["sha256"],
+            b3_gate.sha256(setup_sortnetopt.PORTABILITY_PATCH),
+        )
+        runtime_source = ROOT / manifest["runtime_source_path"]
+        changed = subprocess.check_output(
+            ["git", "diff", "--name-only"], cwd=runtime_source, text=True
+        ).splitlines()
+        self.assertEqual(changed, ["src/logging.rs"])
+        cargo_lock = ROOT / manifest["generated_cargo_lock"]["path"]
+        self.assertEqual(
+            b3_gate.sha256(cargo_lock), manifest["generated_cargo_lock"]["sha256"]
+        )
         self.assertIn("x86_64", manifest["checker_binary"]["file_type"])
         self.assertIn("arm64", manifest["rust_binary"]["file_type"])
+
+    def test_patched_diagnostic_logger_is_safe_without_proc(self) -> None:
+        manifest = setup_sortnetopt.verify_active()
+        assert manifest is not None
+        binary = ROOT / manifest["rust_binary"]["path"]
+        completed = subprocess.run(
+            [str(binary), "-m", "gnp", "3"],
+            cwd=ROOT / manifest["runtime_source_path"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("[   0 ?]", completed.stdout)
+        self.assertIn("layer 4 size is 0", completed.stdout)
 
     def test_active_certificate_matches_published_identity(self) -> None:
         manifest = fetch_harder_certificate.verify_active()

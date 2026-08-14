@@ -22,6 +22,7 @@ UPSTREAM = ROOT / ".cache/third_party/sortnetopt"
 BUILD_ROOT = ROOT / ".build/b3-toolchain"
 ACTIVE = BUILD_ROOT / "active.json"
 STACK_ROOT = ROOT / ".cache/toolchains/b3-stack-root"
+PORTABILITY_PATCH = ROOT / "tools/patches/sortnetopt-macos-proc.patch"
 PINNED_COMMIT = "0b5d09c47446096f9e3a0812b35afc72b7f2a718"
 STACK_LOCK_SHA256 = "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc"
 STRICT_PATCH_SHA256 = "df374fe21c9aa07ee91da700dc2642581c999b61defdacc1ee201a87225435e0"
@@ -93,6 +94,27 @@ def verify_active() -> dict[str, Any] | None:
             return None
         identity = upstream_identity()
         if identity["tracked_source_aggregate_sha256"] != manifest["upstream"]["tracked_source_aggregate_sha256"]:
+            return None
+        portability = manifest["portability_patch"]
+        if portability["sha256"] != sha256(PORTABILITY_PATCH):
+            return None
+        runtime_source = ROOT / manifest["runtime_source_path"]
+        if not runtime_source.is_dir():
+            return None
+        if command_output(["git", "rev-parse", "HEAD"], cwd=runtime_source) != PINNED_COMMIT:
+            return None
+        changed = command_output(["git", "diff", "--name-only"], cwd=runtime_source).splitlines()
+        if changed != ["src/logging.rs"]:
+            return None
+        logging_source = runtime_source / "src/logging.rs"
+        if sha256(logging_source) != portability["patched_logging_sha256"]:
+            return None
+        cargo_lock = ROOT / manifest["generated_cargo_lock"]["path"]
+        if (
+            not cargo_lock.is_file()
+            or cargo_lock.stat().st_size != manifest["generated_cargo_lock"]["size_bytes"]
+            or sha256(cargo_lock) != manifest["generated_cargo_lock"]["sha256"]
+        ):
             return None
         for key in ("stack_wrapper", "rust_binary", "checker_binary"):
             item = manifest[key]
@@ -179,20 +201,30 @@ def main() -> int:
 
     status = "FAIL"
     error: str | None = None
+    runtime_source = attempt / "source"
     try:
-        run(["cargo", "build", "--release"], UPSTREAM)
-        checker_dir = UPSTREAM / "checker/snocheck"
+        run(
+            ["git", "worktree", "add", "--detach", str(runtime_source), PINNED_COMMIT],
+            UPSTREAM,
+        )
+        run(["patch", "-V", "none", "-p1", "-i", str(PORTABILITY_PATCH)], runtime_source)
+        changed = command_output(["git", "diff", "--name-only"], cwd=runtime_source).splitlines()
+        if changed != ["src/logging.rs"]:
+            raise RuntimeError(f"portability patch changed unexpected paths: {changed}")
+        run(["git", "diff", "--check"], runtime_source)
+        run(["cargo", "build", "--release"], runtime_source)
+        checker_dir = runtime_source / "checker/snocheck"
         run(["stack", "setup"], checker_dir)
         run(
             ["stack", "build", "--copy-bins", "--local-bin-path", str(bin_dir)],
             checker_dir,
         )
-        rust_binary = UPSTREAM / "target/release/sortnetopt"
+        rust_binary = runtime_source / "target/release/sortnetopt"
         checker_binary = bin_dir / "snocheck"
         if not rust_binary.is_file() or not checker_binary.is_file():
             raise RuntimeError("expected Rust or Haskell executable is missing after build")
-        run([str(rust_binary), "--help"], UPSTREAM)
-        run([str(checker_binary)], UPSTREAM)
+        run([str(rust_binary), "--help"], runtime_source)
+        run([str(checker_binary)], runtime_source)
         status = "PASS"
     except Exception as exc:
         error = str(exc)
@@ -210,6 +242,26 @@ def main() -> int:
         "portability_mode": "aarch64 Stack host selecting x86_64 GHC under Rosetta",
         "stack_root": STACK_ROOT.relative_to(ROOT).as_posix(),
         "upstream": identity,
+        "runtime_source_path": runtime_source.relative_to(ROOT).as_posix(),
+        "portability_patch": {
+            "path": PORTABILITY_PATCH.relative_to(ROOT).as_posix(),
+            "sha256": sha256(PORTABILITY_PATCH),
+            "purpose": "return unavailable metrics when Linux /proc/self/status is absent",
+            "algorithm_effect": "none; diagnostic logging only",
+            "patched_logging_sha256": sha256(runtime_source / "src/logging.rs")
+            if (runtime_source / "src/logging.rs").is_file()
+            else None,
+        },
+        "generated_cargo_lock": {
+            "path": (runtime_source / "Cargo.lock").relative_to(ROOT).as_posix(),
+            "sha256": sha256(runtime_source / "Cargo.lock")
+            if (runtime_source / "Cargo.lock").is_file()
+            else None,
+            "size_bytes": (runtime_source / "Cargo.lock").stat().st_size
+            if (runtime_source / "Cargo.lock").is_file()
+            else None,
+            "note": "upstream omits Cargo.lock; this records the setup-time resolution",
+        },
         "stack_wrapper": {
             "path": wrapper.relative_to(ROOT).as_posix(),
             "sha256": sha256(wrapper),
@@ -223,7 +275,7 @@ def main() -> int:
         "build_log_sha256": sha256(log_path),
     }
     for key, path in (
-        ("rust_binary", UPSTREAM / "target/release/sortnetopt"),
+        ("rust_binary", runtime_source / "target/release/sortnetopt"),
         ("checker_binary", bin_dir / "snocheck"),
     ):
         if path.is_file():

@@ -25,6 +25,20 @@ gate therefore creates the empty, unique, Git-ignored data directory before
 invoking the unchanged official command. A regression test requires the leaf
 to resolve and rejects accidental reuse.
 
+The official command also enables a diagnostic memory logger that reads Linux
+`/proc/self/status` with `unwrap()`. On macOS this panics before the search
+algorithm is called. Setup creates a separate ignored worktree at the pinned
+commit and applies one hashed portability patch: a missing `/proc` file returns
+the logger's existing `(0, "?")` unavailable value. The patch changes only
+`src/logging.rs`; search, pruning, proof generation, and checked verification
+remain byte-for-byte upstream. Actual process-tree RSS is still measured and
+enforced by the independent gate parent.
+
+The upstream repository omits `Cargo.lock`. Setup therefore records the exact
+generated resolution, verifies it with the active build, and copies that small
+lock file into scored evidence. This is an execution identity record, not a
+claim that the author originally used those transitive package releases.
+
 The Zenodo file is downloaded resumably to `.cache/certificates`. Its frozen
 compressed size (1,247,864,564 bytes) and MD5 are checked before it is renamed,
 then its decompressed SHA-256 is checked against the digest published by the

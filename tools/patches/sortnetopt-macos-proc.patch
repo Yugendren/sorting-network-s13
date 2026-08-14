@@ -1,0 +1,15 @@
+--- a/src/logging.rs
++++ b/src/logging.rs
+@@ -42,9 +42,12 @@ pub fn setup(print_mem_usage: bool) {
+ fn get_mem_usage() -> (usize, &'static str) {
+     let prefix = "VmHWM:";
+-    if let Some(mem_line) = std::fs::read_to_string("/proc/self/status")
+-        .unwrap()
++    let status = match std::fs::read_to_string("/proc/self/status") {
++        Ok(status) => status,
++        Err(_) => return (0, "?"),
++    };
++    if let Some(mem_line) = status
+         .lines()
+         .filter(|line| line.starts_with(prefix))
+         .next()
