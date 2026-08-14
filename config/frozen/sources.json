@@ -28,8 +28,11 @@
       "url": "https://github.com/jix/sortnetopt.git",
       "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
       "license": "UNKNOWN (repository contains no LICENSE or COPYING file)",
+      "cargo_toml_path": "Cargo.toml",
       "cargo_toml_sha256": "6da3df5328a3c833bb96cfb392bc664851b4249fd1298192a13b259063b4bfc4",
+      "stack_yaml_path": "checker/snocheck/stack.yaml",
       "stack_yaml_sha256": "9d1478994f676a6b33b5dd33a2325fbbd4aa0e1d255ee0dc609e02704a5f262c",
+      "stack_lock_path": "checker/snocheck/stack.yaml.lock",
       "stack_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc"
     },
     {

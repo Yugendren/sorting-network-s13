@@ -66,6 +66,19 @@ class B0FreezeTests(unittest.TestCase):
             self.assertEqual(path.stat().st_size, source["size_bytes"])
             self.assertEqual(sha256(path), source["sha256"])
 
+    def test_sortnetopt_lock_paths_and_hashes_match(self) -> None:
+        sources = json.loads((FROZEN / "sources.json").read_text())["sources"]
+        source = next(item for item in sources if item["id"] == "sortnetopt")
+        checkout = ROOT / ".cache/third_party/sortnetopt"
+        for path_field, hash_field in (
+            ("cargo_toml_path", "cargo_toml_sha256"),
+            ("stack_yaml_path", "stack_yaml_sha256"),
+            ("stack_lock_path", "stack_lock_sha256"),
+        ):
+            path = checkout / source[path_field]
+            self.assertTrue(path.is_file(), path)
+            self.assertEqual(sha256(path), source[hash_field])
+
     def test_every_required_frozen_file_exists(self) -> None:
         freeze = json.loads((FROZEN / "b0-freeze.json").read_text())
         required = freeze["required_frozen_files"]

@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/b0_gate.py"
+  ],
+  "config_sha256": "cbcc5b9992af1160c780d95c5e89a3058a793ef312fab4f9a8a72ca21ed85ea5",
+  "cpu_seconds": 0.015548,
+  "dirty_at_start": false,
+  "ended_at": "2026-08-14T23:00:33.248934+00:00",
+  "error": "[Errno 2] No such file or directory: '/Users/yugendren/experiments/sorting_network_s13/.cache/third_party/sortnetopt/stack.yaml'",
+  "gate": "B0",
+  "host": {},
+  "peak_rss_bytes": 25509888,
+  "run_id": "b0-20260814T230033Z",
+  "schema_version": "s13-evidence-manifest/v1",
+  "source_commit": "744826ddff0884e53ba3d94db05773fcb669b86f",
+  "started_at": "2026-08-14T23:00:33.201545+00:00",
+  "status": "FAIL",
+  "threads": 1,
+  "wall_seconds": 0.054307
+}

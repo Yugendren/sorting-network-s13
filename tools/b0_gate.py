@@ -212,12 +212,13 @@ def validate_sources() -> list[dict[str, Any]]:
         )
 
     sortnetopt = THIRD_PARTY / "sortnetopt"
-    for field, relative in (
-        ("cargo_toml_sha256", "Cargo.toml"),
-        ("stack_yaml_sha256", "stack.yaml"),
-        ("stack_lock_sha256", "stack.yaml.lock"),
+    for path_field, hash_field in (
+        ("cargo_toml_path", "cargo_toml_sha256"),
+        ("stack_yaml_path", "stack_yaml_sha256"),
+        ("stack_lock_path", "stack_lock_sha256"),
     ):
-        if sha256(sortnetopt / relative) != by_id["sortnetopt"][field]:
+        relative = by_id["sortnetopt"][path_field]
+        if sha256(sortnetopt / relative) != by_id["sortnetopt"][hash_field]:
             raise RuntimeError(f"sortnetopt pinned-file mismatch: {relative}")
 
     catalog_git_html = THIRD_PARTY / "dobbelaere-catalog/sorting_networks_extended.html"
