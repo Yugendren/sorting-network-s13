@@ -1,0 +1,56 @@
+{
+  "schema_version": "s13-b0-freeze/v1",
+  "frozen_at": "2026-08-15T00:00:00+08:00",
+  "supplied_snapshot_commit": "fa0fc41e0bc2841a38aed55418602db6049c89b8",
+  "authority": {
+    "contract_path": "PROJECT_CONTRACT.md",
+    "contract_sha256": "6f345adb8c2037c28d4f08bf04cdbba6205de8848768b52c4bc9f09f737e1d61",
+    "prompt_path": "CODEX_BASELINE_PROMPT.md",
+    "prompt_sha256": "f1f99ff05de9baab68ef0056458a3932094f3b0cc2d7fde55db28b3edad52ad9",
+    "agents_path": "AGENTS.md",
+    "agents_sha256": "4018c4202c2dedf27b7f3517f90e68482ae38cd284a2dccd6a9e9b7757dfbbaa"
+  },
+  "problem": {
+    "channels": 13,
+    "metric": "comparator_count",
+    "locally_audited_public_lower_bound": 44,
+    "locally_audited_public_upper_bound": 45,
+    "minimum_depth_context_only": 9,
+    "baseline_target_size": 45,
+    "frontier_search_allowed": false
+  },
+  "host_policy": {
+    "host": "Apple M4 Mac mini",
+    "cpu_cores": 10,
+    "memory_bytes": 17179869184,
+    "constructive_threads": 1,
+    "gpu_allowed": false,
+    "remote_compute_allowed": false
+  },
+  "required_frozen_files": [
+    ".gitignore",
+    "Makefile",
+    "pyproject.toml",
+    "uv.lock",
+    "config/frozen/b0-freeze.json",
+    "config/frozen/b2-senso.json",
+    "config/frozen/b3-exact.json",
+    "config/frozen/budgets.json",
+    "config/frozen/dependencies.lock.json",
+    "config/frozen/evidence-manifest.schema.json",
+    "config/frozen/seeds.json",
+    "config/frozen/sources.json",
+    "docs/candidate-format.md",
+    "docs/baseline-protocol.md",
+    "docs/current-status-audit.md",
+    "docs/licensing-audit.md",
+    "docs/senso-portability.md",
+    "docs/source-ledger.md",
+    "docs/trust-boundary.md",
+    "tests/test_b0_freeze.py",
+    "tools/b0_gate.py",
+    "tools/evidence_check.py",
+    "tools/setup_sources.py",
+    "tools/patches/symmetry-1.1-macos.patch"
+  ]
+}

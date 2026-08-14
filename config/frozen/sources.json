@@ -1,0 +1,71 @@
+{
+  "schema_version": "s13-sources/v1",
+  "retrieved_at": "2026-08-15T00:00:00+08:00",
+  "sources": [
+    {
+      "id": "dobbelaere-catalog",
+      "role": "current bound and public 45-comparator witness",
+      "url": "https://bertdobbelaere.github.io/sorting_networks_extended.html",
+      "repository": "https://github.com/BertDobbelaere/bertdobbelaere.github.io.git",
+      "commit": "49b355d484aa92c2a661b6ab1a2f981a60b7c0c6",
+      "cache_file": "sorting_networks_extended.html",
+      "sha256": "8a2d11c9f2ac66e16ea93a9c4301971b47d3115eaf28d4e12b50079c8238d116",
+      "size_bytes": 302892,
+      "license": "UNKNOWN"
+    },
+    {
+      "id": "harder-paper-v3",
+      "role": "certified lower-bound method and statements",
+      "url": "https://arxiv.org/pdf/2012.04400v3",
+      "cache_file": "harder-v3.pdf",
+      "sha256": "48a54deefef544dce2e1b8b73babb501a3990628d0ddc582333bfb2f925fd203",
+      "size_bytes": 652133,
+      "license": "arXiv page links a Creative Commons license"
+    },
+    {
+      "id": "sortnetopt",
+      "role": "official search, certificate generator, and checked pipeline",
+      "url": "https://github.com/jix/sortnetopt.git",
+      "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+      "license": "UNKNOWN (repository contains no LICENSE or COPYING file)",
+      "cargo_toml_sha256": "6da3df5328a3c833bb96cfb392bc664851b4249fd1298192a13b259063b4bfc4",
+      "stack_yaml_sha256": "9d1478994f676a6b33b5dd33a2325fbbd4aa0e1d255ee0dc609e02704a5f262c",
+      "stack_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc"
+    },
+    {
+      "id": "harder-n11-certificate",
+      "role": "published certificate to replay, never commit",
+      "url": "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content",
+      "doi": "10.5281/zenodo.4108365",
+      "compressed_size_bytes": 1247864564,
+      "compressed_md5": "2847374c6bab1260c9771d6fafe65f44",
+      "uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "valsalam-miikkulainen-paper",
+      "role": "SENSO algorithm and published parameters",
+      "url": "https://www.jmlr.org/papers/volume14/valsalam13a/valsalam13a.pdf",
+      "cache_file": "valsalam13a.pdf",
+      "sha256": "59522734f52c0b4927e80eba4971a49ba6cc756ea5d072e382af57648544df3e",
+      "size_bytes": 507961,
+      "license": "PUBLISHED JMLR article; redistribution terms not inferred"
+    },
+    {
+      "id": "symmetry-1.1",
+      "role": "author-hosted SENSO implementation",
+      "url": "https://www.cs.utexas.edu/users/nn/downloads/software/symmetry-1.1.tar.gz",
+      "cache_file": "symmetry-1.1.tar.gz",
+      "sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+      "size_bytes": 22506545,
+      "license": "mixed; experiments/COPYING BSD-3-Clause, OpenBEAGLE/SN LGPL-2.1-or-later, bundled components retain their own terms"
+    },
+    {
+      "id": "wang-n28d13-context",
+      "role": "optional construction context only",
+      "url": "https://github.com/wcgbg/sorting-network-n28d13.git",
+      "commit": "41950ab137671c6573b6e65a00ba2e52c159fea8",
+      "license": "MIT"
+    }
+  ]
+}

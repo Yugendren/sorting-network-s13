@@ -1,0 +1,28 @@
+{
+  "schema_version": "s13-seeds/v1",
+  "frozen_at": "2026-08-15",
+  "generator": "explicit",
+  "note": "The paper states that runs used different seeds but does not publish them; these nonzero seeds are ASSUMED protocol inputs, not reconstructed historical seeds.",
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ]
+}

@@ -1,0 +1,13 @@
+.cache/
+.build/
+__pycache__/
+*.pyc
+*.profraw
+.DS_Store
+
+# Third-party certificates, source trees, compiler caches, and transient runs.
+external/
+tmp/
+
+# Evidence is committed explicitly after each scored gate. Development runs stay ignored.
+evidence/dev/

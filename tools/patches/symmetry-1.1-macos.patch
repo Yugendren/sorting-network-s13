@@ -1,0 +1,23 @@
+--- symmetry-1.1.orig/beagle/beagle/include/beagle/RouletteT.hpp
++++ symmetry-1.1/beagle/beagle/include/beagle/RouletteT.hpp
+@@ -89 +89 @@
+-		push_back(std::make_pair(inWeight,inValue));
++		this->push_back(std::make_pair(inWeight,inValue));
+--- symmetry-1.1.orig/beagle/beagle/SN/include/beagle/SN/Network.hpp
++++ symmetry-1.1/beagle/beagle/SN/include/beagle/SN/Network.hpp
+@@ -17 +17,6 @@
+-#include <ext/slist>
++#if defined(__clang__)
++#include <forward_list>
++namespace __gnu_cxx { template <class T> using slist = std::forward_list<T>; }
++#else
++#include <ext/slist>
++#endif
+--- symmetry-1.1.orig/beagle/beagle/SN/src/MutationAddComparatorOp.cpp
++++ symmetry-1.1/beagle/beagle/SN/src/MutationAddComparatorOp.cpp
+@@ -289 +289 @@
+-                            lAsymmetricComparators.erase(lIter);
++                            lAsymmetricComparators.pop_front();
+@@ -388 +388 @@
+-                    ioAsymmetricComparators.erase(lIter);
++                    ioAsymmetricComparators.pop_front();

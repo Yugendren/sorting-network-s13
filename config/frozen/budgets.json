@@ -1,0 +1,35 @@
+{
+  "schema_version": "s13-budgets/v1",
+  "frozen_at": "2026-08-15",
+  "gpu_allowed": false,
+  "constructive": {
+    "threads_per_seed": 1,
+    "per_seed_cpu_seconds": 900,
+    "aggregate_wall_seconds": 21600,
+    "peak_memory_bytes": 10737418240
+  },
+  "transparent_baselines": {
+    "random_trials_per_seed": 100,
+    "random_aggregate_wall_seconds": 300,
+    "greedy_population_per_seed": 20,
+    "greedy_generations": 0,
+    "greedy_aggregate_wall_seconds": 600
+  },
+  "exact_n9": {
+    "wall_seconds": 600,
+    "peak_memory_bytes": 1073741824
+  },
+  "certificate_n11": {
+    "wall_seconds": 14400,
+    "peak_memory_bytes": 12884901888
+  },
+  "total_after_setup": {
+    "wall_seconds": 43200
+  },
+  "stop_rules": [
+    "Stop a seed at its CPU cap and preserve TIMEOUT evidence.",
+    "Stop the constructive batch at its aggregate wall or memory cap.",
+    "A timeout or unsuccessful search is MEASURED failure, never a proof.",
+    "If any constructive baseline emits fewer than 45 comparators, freeze it, run only both B1 verifiers, and stop for a new contract."
+  ]
+}

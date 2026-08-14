@@ -1,0 +1,23 @@
+{
+  "schema_version": "s13-senso-baseline/v1",
+  "frozen_at": "2026-08-15",
+  "implementation": "external-pinned-symmetry-1.1",
+  "channels": 13,
+  "metric": "comparator_count",
+  "acceptance_size": 45,
+  "population": 200,
+  "generations": 500,
+  "estimate_fraction": 0.5,
+  "estimate_probability": 0.5,
+  "gaussian_truncation": true,
+  "gaussian_mean_fraction": 0.5,
+  "gaussian_stddev_fraction": 0.25,
+  "greedy_filter_methods": [0, 21],
+  "prefer_reflection_symmetric_comparators_probability": 1.0,
+  "variant": 2,
+  "deviations": [
+    "The paper's 20 historical seeds are unpublished; config/frozen/seeds.json supplies new frozen seeds.",
+    "The original source is compiled on arm64 macOS with the audited portability patch tools/patches/symmetry-1.1-macos.patch.",
+    "The scored batch is single-process and one seed at a time to make CPU accounting explicit."
+  ]
+}

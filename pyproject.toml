@@ -1,0 +1,9 @@
+[project]
+name = "mericanii-s13-baseline"
+version = "0.1.0"
+description = "Proof-aware baseline laboratory for 13-input sorting networks"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
