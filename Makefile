@@ -6,6 +6,8 @@ PYTHON ?= python3
 setup:
 	$(PYTHON) tools/setup_sources.py
 	$(PYTHON) tools/setup_senso.py
+	$(PYTHON) tools/setup_sortnetopt.py
+	$(PYTHON) tools/fetch_harder_certificate.py
 
 verify:
 	$(PYTHON) -m unittest discover -s tests -p 'test_*.py' -v
@@ -20,8 +22,7 @@ baseline-b2:
 	$(PYTHON) tools/b2_gate.py
 
 baseline-b3:
-	@echo "B3 is not established yet; run only after the B2 checkpoint." >&2
-	@exit 2
+	$(PYTHON) tools/b3_gate.py
 
 baseline-b4:
 	@echo "B4 is not established yet; run only after the B3 checkpoint." >&2
