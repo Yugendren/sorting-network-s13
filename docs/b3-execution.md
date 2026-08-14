@@ -19,6 +19,12 @@ dependencies. Setup records the upstream aggregate hash, lock hash,
 strict/parallel patch hash, commands, logs, and executable identities. Failed
 setup attempts are retained.
 
+The upstream shell workflow resolves `DATADIR` before creating it. GNU
+`realpath` accepts that missing leaf, while macOS `realpath` rejects it. The
+gate therefore creates the empty, unique, Git-ignored data directory before
+invoking the unchanged official command. A regression test requires the leaf
+to resolve and rejects accidental reuse.
+
 The Zenodo file is downloaded resumably to `.cache/certificates`. Its frozen
 compressed size (1,247,864,564 bytes) and MD5 are checked before it is renamed,
 then its decompressed SHA-256 is checked against the digest published by the

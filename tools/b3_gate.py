@@ -334,6 +334,14 @@ def generated_artifacts(directory: Path) -> list[dict[str, Any]]:
     ]
 
 
+def prepare_official_datadir(path: Path) -> Path:
+    """Make the leaf resolvable before the upstream script's early realpath call."""
+    path.mkdir(parents=True, exist_ok=False)
+    if not path.is_dir() or not path.resolve().is_absolute():
+        raise RuntimeError(f"failed to prepare official data directory: {path}")
+    return path
+
+
 def prior_scored_wall_seconds() -> float:
     total = 0.0
     for gate in ("b1", "b2"):
@@ -418,7 +426,7 @@ def main() -> int:
             },
         )
 
-        n9_data = work / "n9-data"
+        n9_data = prepare_official_datadir(work / "n9-data")
         n9_stage = out / "n9-workflow"
         n9_command = ["bash", "search_and_verify.sh", "9", str(n9_data)]
         n9_resource = run_limited(

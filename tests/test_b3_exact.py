@@ -81,6 +81,24 @@ class B3ExactTests(unittest.TestCase):
         self.assertEqual(mutation["replacement_byte"], 255)
         self.assertNotEqual(mutation["source_sha256"], mutation["corrupted_sha256"])
 
+    def test_official_datadir_is_created_before_realpath(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "new" / "data"
+            prepared = b3_gate.prepare_official_datadir(target)
+            self.assertEqual(prepared, target)
+            self.assertTrue(prepared.is_dir())
+            self.assertEqual(
+                subprocess.run(
+                    ["realpath", str(prepared)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                ).returncode,
+                0,
+            )
+            with self.assertRaises(FileExistsError):
+                b3_gate.prepare_official_datadir(target)
+
 
 if __name__ == "__main__":
     unittest.main()
