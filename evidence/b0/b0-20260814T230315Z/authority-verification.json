@@ -1,0 +1,14 @@
+[
+  {
+    "path": "PROJECT_CONTRACT.md",
+    "sha256": "6f345adb8c2037c28d4f08bf04cdbba6205de8848768b52c4bc9f09f737e1d61"
+  },
+  {
+    "path": "CODEX_BASELINE_PROMPT.md",
+    "sha256": "f1f99ff05de9baab68ef0056458a3932094f3b0cc2d7fde55db28b3edad52ad9"
+  },
+  {
+    "path": "AGENTS.md",
+    "sha256": "4018c4202c2dedf27b7f3517f90e68482ae38cd284a2dccd6a9e9b7757dfbbaa"
+  }
+]

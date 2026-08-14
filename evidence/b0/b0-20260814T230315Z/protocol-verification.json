@@ -1,0 +1,200 @@
+{
+  "aggregate_sha256": "9efccb2d1b3fcafef9385ddb562a5e202136bc31c64cfc64bdc3c9bdea60b67c",
+  "b2_config_sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff",
+  "b3_config_sha256": "73dfb958c2155ee4f9241c80fc3299d68e4b0ea2ffa2660ea8c8e991d69e4263",
+  "budgets_sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f",
+  "host_policy": {
+    "constructive_threads": 1,
+    "cpu_cores": 10,
+    "gpu_allowed": false,
+    "host": "Apple M4 Mac mini",
+    "memory_bytes": 17179869184,
+    "remote_compute_allowed": false
+  },
+  "required_file_sha256": [
+    {
+      "path": ".gitignore",
+      "sha256": "e3e902f24e6010a2296d340f73d8dc1a682c9f1e276d7db9a8d53521ec6af32b"
+    },
+    {
+      "path": "Makefile",
+      "sha256": "df9cdab2651b3203be0616d5908b3bed10a6a76b0398fd0c1bfb356b37dc4e4d"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "3a924b44abac1fb44d1d237a1f899f1b7a6c8295129c0df3689b544e93df2bce"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "41161a2abecaf1bc18908a7a795b9e2d79c0d0008acfb8d35a848b9b24162ed0"
+    },
+    {
+      "path": "config/frozen/b0-freeze.json",
+      "sha256": "4616a5148f0ca4a0c0cc3334156a1e9e748a2094b543963ce727d2311aae1238"
+    },
+    {
+      "path": "config/frozen/b2-senso.json",
+      "sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff"
+    },
+    {
+      "path": "config/frozen/b3-exact.json",
+      "sha256": "73dfb958c2155ee4f9241c80fc3299d68e4b0ea2ffa2660ea8c8e991d69e4263"
+    },
+    {
+      "path": "config/frozen/budgets.json",
+      "sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f"
+    },
+    {
+      "path": "config/frozen/dependencies.lock.json",
+      "sha256": "5dc5c55dda96460428874d9b389049f2550707520779dadb081a0b8da6568d9c"
+    },
+    {
+      "path": "config/frozen/evidence-manifest.schema.json",
+      "sha256": "e158a5994523220cc7656cf97b6900ddd646fd6b43b7b87bbc32a5ab68f6ba6f"
+    },
+    {
+      "path": "config/frozen/seeds.json",
+      "sha256": "dcac67a8eb5b5c14d9629d88fd3240da3aa5d4fa3c77d479d274c901273d7a0b"
+    },
+    {
+      "path": "config/frozen/sources.json",
+      "sha256": "0110d7a5872737bd2629c84e0b09b410ef6628f9fa9826351d45698dbd3a5a76"
+    },
+    {
+      "path": "docs/candidate-format.md",
+      "sha256": "4047c91a379fe88b7d96201d13690ab0b2e98751abd27ba4975d33f1e3664a4a"
+    },
+    {
+      "path": "docs/baseline-protocol.md",
+      "sha256": "42e344b45eed80594f2f312985d4fcbbccb944f7b3aca68a287db697240fbe2f"
+    },
+    {
+      "path": "docs/current-status-audit.md",
+      "sha256": "b2c210a1c52d7cb6bacbf277451b00c8ee5892d63c4ab811923caea24e28e2ae"
+    },
+    {
+      "path": "docs/licensing-audit.md",
+      "sha256": "38efee70fca0d06b291f29e4f74efddf9a3fbaad0632f661ac0af659a9373507"
+    },
+    {
+      "path": "docs/senso-portability.md",
+      "sha256": "3d250fa05f83d254fa4f126c81e23a319231898c93add12964c9ae3d8983e406"
+    },
+    {
+      "path": "docs/source-ledger.md",
+      "sha256": "36d4a28b369168a738fde349585e1f85854530e1ab3d888e6f5d200e9741a057"
+    },
+    {
+      "path": "docs/trust-boundary.md",
+      "sha256": "3403334b6389da9b93dac43d9cbf76f36e18a1f3a923026cde908b84dc54eea2"
+    },
+    {
+      "path": "tests/test_b0_freeze.py",
+      "sha256": "bdbcde144dda389a82fbbb1cfffc27d5f31c7fdec225b8ed2f6c29fbd3d7e71d"
+    },
+    {
+      "path": "tests/test_evidence_check.py",
+      "sha256": "656227cf5b861db0a1c99e26375cd07bf04dbb190648488f82e90bcd4f714ba8"
+    },
+    {
+      "path": "tools/b0_gate.py",
+      "sha256": "436fbd350ba814a1b605d4fda98c2ace8c3ba4a19593a78407ff4c3fd05e69cb"
+    },
+    {
+      "path": "tools/evidence_check.py",
+      "sha256": "8bff45e09b2f78686b280c42d285ddbaa275f0f70b30de7ccb3e19dcad8fe5f8"
+    },
+    {
+      "path": "tools/setup_sources.py",
+      "sha256": "7ac09423a7d137a707cec7a566b683a4dfe89c0ce1e5a14b92440249dc54272b"
+    },
+    {
+      "path": "tools/patches/symmetry-1.1-macos.patch",
+      "sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09"
+    }
+  ],
+  "required_files": [
+    ".gitignore",
+    "Makefile",
+    "pyproject.toml",
+    "uv.lock",
+    "config/frozen/b0-freeze.json",
+    "config/frozen/b2-senso.json",
+    "config/frozen/b3-exact.json",
+    "config/frozen/budgets.json",
+    "config/frozen/dependencies.lock.json",
+    "config/frozen/evidence-manifest.schema.json",
+    "config/frozen/seeds.json",
+    "config/frozen/sources.json",
+    "docs/candidate-format.md",
+    "docs/baseline-protocol.md",
+    "docs/current-status-audit.md",
+    "docs/licensing-audit.md",
+    "docs/senso-portability.md",
+    "docs/source-ledger.md",
+    "docs/trust-boundary.md",
+    "tests/test_b0_freeze.py",
+    "tests/test_evidence_check.py",
+    "tools/b0_gate.py",
+    "tools/evidence_check.py",
+    "tools/setup_sources.py",
+    "tools/patches/symmetry-1.1-macos.patch"
+  ],
+  "resource_limits": {
+    "certificate_n11": {
+      "peak_memory_bytes": 12884901888,
+      "wall_seconds": 14400
+    },
+    "constructive": {
+      "aggregate_wall_seconds": 21600,
+      "peak_memory_bytes": 10737418240,
+      "per_seed_cpu_seconds": 900,
+      "threads_per_seed": 1
+    },
+    "exact_n9": {
+      "peak_memory_bytes": 1073741824,
+      "wall_seconds": 600
+    },
+    "frozen_at": "2026-08-15",
+    "gpu_allowed": false,
+    "schema_version": "s13-budgets/v1",
+    "stop_rules": [
+      "Stop a seed at its CPU cap and preserve TIMEOUT evidence.",
+      "Stop the constructive batch at its aggregate wall or memory cap.",
+      "A timeout or unsuccessful search is MEASURED failure, never a proof.",
+      "If any constructive baseline emits fewer than 45 comparators, freeze it, run only both B1 verifiers, and stop for a new contract."
+    ],
+    "total_after_setup": {
+      "wall_seconds": 43200
+    },
+    "transparent_baselines": {
+      "greedy_aggregate_wall_seconds": 600,
+      "greedy_generations": 0,
+      "greedy_population_per_seed": 20,
+      "random_aggregate_wall_seconds": 300,
+      "random_trials_per_seed": 100
+    }
+  },
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ]
+}

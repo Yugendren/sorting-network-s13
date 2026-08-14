@@ -1,0 +1,16 @@
+{
+  "branch": "goal/s13-baseline",
+  "head": "19bd4efadddf75182caa8012981917c0938aa2ed",
+  "recent_commits": [
+    "19bd4ef test(b0): harden immutable evidence validation",
+    "3378830 fix(b0): preserve failed gate and pin checker paths",
+    "744826d feat(b0): freeze baseline protocol and sources",
+    "fa0fc41 chore: freeze supplied S(13) baseline contract"
+  ],
+  "status_porcelain": "",
+  "worktrees_porcelain": [
+    "worktree /Users/yugendren/experiments/sorting_network_s13",
+    "HEAD 19bd4efadddf75182caa8012981917c0938aa2ed",
+    "branch refs/heads/goal/s13-baseline"
+  ]
+}

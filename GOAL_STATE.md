@@ -18,10 +18,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Current milestone: B0 -- inspect, audit, and freeze.
+- Current milestone: B1 -- establish independent construction truth.
 - Repository state: branch `goal/s13-baseline`; supplied snapshot commit
-  `fa0fc41e0bc2841a38aed55418602db6049c89b8`; frozen B0 implementation commit
-  `744826ddff0884e53ba3d94db05773fcb669b86f`.
+  `fa0fc41e0bc2841a38aed55418602db6049c89b8`; final B0 gate source commit
+  `19bd4efadddf75182caa8012981917c0938aa2ed`.
 - Research snapshot: live audit on 2026-08-15 found maintained bounds
   `44 <= S(13) <= 45`; no primary/current source in the audit settled S(13).
 - Known construction: public 45-comparator, 10-layer network.
@@ -30,18 +30,17 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 - Local machine: Apple M4 Mac mini, 10 CPU cores, 16 GiB RAM.
 - RTX 3060 server: available but prohibited for the baseline unless the
   contract is versioned by the user.
-- Verified implementation/evidence: source cache, protocol freeze, dependency
-  lock, and portability patch pass narrow tests. The first B0 run failed safely
-  on an incorrect Stack lock path; the corrected run passed. Evidence-validator
-  hardening changed the frozen B0 aggregate, so one final clean B0 rerun is
-  required before advancing.
+- Verified implementation/evidence: B0 PASS. The source/status audit, protocol,
+  20 seeds, dependency lock, budgets, portability patch, and immutable evidence
+  policy are frozen at aggregate SHA-256
+  `9efccb2d1b3fcafef9385ddb562a5e202136bc31c64cfc64bdc3c9bdea60b67c`.
 - Terminal verdict: `PENDING`.
 
 ## Baseline acceptance gates
 
 | Gate | State | Evidence |
 |---|---|---|
-| B0 source and protocol freeze | PASS SUPERSEDED; RETRY REQUIRED | `evidence/b0/b0-20260814T230128Z` |
+| B0 source and protocol freeze | PASS | `evidence/b0/b0-20260814T230315Z` |
 | B1 independent construction truth | NOT RUN | -- |
 | B2 20-seed constructive baseline | NOT RUN | -- |
 | B3 exact/certificate baseline | NOT RUN | -- |
@@ -49,5 +48,6 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Next smallest action
 
-1. Commit the corrected PASS evidence and hardened evidence validator.
-2. Rerun B0 from the resulting clean commit; do not start B1 unless it passes.
+1. Build Verifier A and Verifier B without shared parsing or execution logic.
+2. Establish the full B1 fixture, differential, metamorphic, mutation, and
+   deterministic-replay gate before starting B2.
