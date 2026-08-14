@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import struct
+import sys
 import tempfile
 import unittest
 
@@ -13,6 +15,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class B3ExactTests(unittest.TestCase):
+    def test_direct_script_entry_can_import_local_tools(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import runpy; runpy.run_path('tools/b3_gate.py', run_name='b3_import_probe')",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_frozen_source_identities_agree(self) -> None:
         config = json.loads((ROOT / "config/frozen/b3-exact.json").read_text())
         sources = json.loads((ROOT / "config/frozen/sources.json").read_text())["sources"]

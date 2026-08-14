@@ -19,6 +19,8 @@ import sys
 import time
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from tools import fetch_harder_certificate, setup_sortnetopt
 
 

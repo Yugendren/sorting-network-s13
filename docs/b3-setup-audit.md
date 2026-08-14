@@ -31,3 +31,12 @@ aggregate SHA-256
 `56b18efa19f3727f1945696f53bb597aec9b13ec210680578b1dc0b0b253a474`.
 No upstream code, checked extraction, proof artifact, or sibling repository was
 modified.
+
+The first `make baseline-b3` launch from source commit
+`4364aaa585fd24d451cdaaa11030c57c6c7b4c04` failed before gate initialization:
+direct execution of `tools/b3_gate.py` raised `ModuleNotFoundError: No module
+named 'tools'`. No Rust search, Haskell checker, scored evidence directory, or
+scientific output was created. The complete failure was retained in the task
+execution record. The portability fix only adds the project root to the direct
+script import path, and a subprocess regression test exercises that exact
+entry mode before the retry.
