@@ -1,0 +1,15 @@
+{
+  "boost": "boost 1.90.0_1",
+  "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21) (Homebrew)",
+  "clang": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "cmake": "cmake version 4.3.3",
+  "gcc": "gcc-16 (Homebrew GCC 16.1.0) 16.1.0",
+  "git": "git version 2.50.1 (Apple Git-155)",
+  "go": "go version go1.26.4 darwin/arm64",
+  "make": "GNU Make 3.81",
+  "node": "v26.0.0",
+  "python": "Python 3.14.4",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14) (Homebrew)",
+  "uv": "uv 0.11.28 (Homebrew 2026-07-07 aarch64-apple-darwin)",
+  "zstd": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+}

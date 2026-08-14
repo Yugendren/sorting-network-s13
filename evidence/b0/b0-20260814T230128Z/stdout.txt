@@ -1,0 +1,3 @@
+B0 falsifiable gate: freeze is internally consistent and target is not stale.
+PASS: catalog snapshot states 44...45 and contains the 45-comparator witness.
+PASS: authority, source, seed, budget, dependency, and evidence freezes verified.

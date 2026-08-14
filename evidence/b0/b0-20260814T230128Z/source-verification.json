@@ -1,0 +1,42 @@
+[
+  {
+    "id": "dobbelaere-catalog",
+    "path": ".cache/sources/sorting_networks_extended.html",
+    "sha256": "8a2d11c9f2ac66e16ea93a9c4301971b47d3115eaf28d4e12b50079c8238d116",
+    "size_bytes": 302892,
+    "status": "ARTIFACT_VERIFIED"
+  },
+  {
+    "id": "harder-paper-v3",
+    "path": ".cache/sources/harder-v3.pdf",
+    "sha256": "48a54deefef544dce2e1b8b73babb501a3990628d0ddc582333bfb2f925fd203",
+    "size_bytes": 652133,
+    "status": "ARTIFACT_VERIFIED"
+  },
+  {
+    "id": "valsalam-miikkulainen-paper",
+    "path": ".cache/sources/valsalam13a.pdf",
+    "sha256": "59522734f52c0b4927e80eba4971a49ba6cc756ea5d072e382af57648544df3e",
+    "size_bytes": 507961,
+    "status": "ARTIFACT_VERIFIED"
+  },
+  {
+    "id": "symmetry-1.1",
+    "path": ".cache/sources/symmetry-1.1.tar.gz",
+    "sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+    "size_bytes": 22506545,
+    "status": "ARTIFACT_VERIFIED"
+  },
+  {
+    "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+    "id": "sortnetopt",
+    "path": ".cache/third_party/sortnetopt",
+    "status": "ARTIFACT_VERIFIED"
+  },
+  {
+    "commit": "49b355d484aa92c2a661b6ab1a2f981a60b7c0c6",
+    "id": "dobbelaere-catalog",
+    "path": ".cache/third_party/dobbelaere-catalog",
+    "status": "ARTIFACT_VERIFIED"
+  }
+]

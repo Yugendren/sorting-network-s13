@@ -48,6 +48,7 @@
     "docs/source-ledger.md",
     "docs/trust-boundary.md",
     "tests/test_b0_freeze.py",
+    "tests/test_evidence_check.py",
     "tools/b0_gate.py",
     "tools/evidence_check.py",
     "tools/setup_sources.py",

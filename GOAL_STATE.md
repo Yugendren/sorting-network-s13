@@ -31,16 +31,17 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 - RTX 3060 server: available but prohibited for the baseline unless the
   contract is versioned by the user.
 - Verified implementation/evidence: source cache, protocol freeze, dependency
-  lock, and portability patch pass narrow tests. First B0 gate run failed safely
-  because the gate used an incorrect repository-relative Stack lock path; its
-  immutable evidence is preserved.
+  lock, and portability patch pass narrow tests. The first B0 run failed safely
+  on an incorrect Stack lock path; the corrected run passed. Evidence-validator
+  hardening changed the frozen B0 aggregate, so one final clean B0 rerun is
+  required before advancing.
 - Terminal verdict: `PENDING`.
 
 ## Baseline acceptance gates
 
 | Gate | State | Evidence |
 |---|---|---|
-| B0 source and protocol freeze | FAIL, RETRY REQUIRED | `evidence/b0/b0-20260814T230033Z` |
+| B0 source and protocol freeze | PASS SUPERSEDED; RETRY REQUIRED | `evidence/b0/b0-20260814T230128Z` |
 | B1 independent construction truth | NOT RUN | -- |
 | B2 20-seed constructive baseline | NOT RUN | -- |
 | B3 exact/certificate baseline | NOT RUN | -- |
@@ -48,5 +49,5 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Next smallest action
 
-1. Commit the exact nested Stack lock path correction and failed evidence.
+1. Commit the corrected PASS evidence and hardened evidence validator.
 2. Rerun B0 from the resulting clean commit; do not start B1 unless it passes.

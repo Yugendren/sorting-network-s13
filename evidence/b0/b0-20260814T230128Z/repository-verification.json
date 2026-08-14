@@ -1,0 +1,15 @@
+{
+  "branch": "goal/s13-baseline",
+  "head": "33788306a259b64a770b773196f9530da8a1237f",
+  "recent_commits": [
+    "3378830 fix(b0): preserve failed gate and pin checker paths",
+    "744826d feat(b0): freeze baseline protocol and sources",
+    "fa0fc41 chore: freeze supplied S(13) baseline contract"
+  ],
+  "status_porcelain": "",
+  "worktrees_porcelain": [
+    "worktree /Users/yugendren/experiments/sorting_network_s13",
+    "HEAD 33788306a259b64a770b773196f9530da8a1237f",
+    "branch refs/heads/goal/s13-baseline"
+  ]
+}
