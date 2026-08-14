@@ -1,0 +1,15 @@
+{
+  "cpu_seconds": 0.0,
+  "exit_code": 1,
+  "memory_limit_bytes": 1073741824,
+  "peak_rss_bytes": 2424832,
+  "status": "REJECTED",
+  "stderr_sha256": "2104bc3217f4ee63369a780cf07703214ed928d50e65bfc232e87a47641ffbbf",
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "system_seconds": 0.0,
+  "time_peak_rss_bytes": 2031616,
+  "time_real_seconds": 0.0,
+  "user_seconds": 0.0,
+  "wall_limit_seconds": 600,
+  "wall_seconds": 0.274836
+}

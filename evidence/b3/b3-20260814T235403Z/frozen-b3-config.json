@@ -1,0 +1,13 @@
+{
+  "schema_version": "s13-exact-baseline/v1",
+  "frozen_at": "2026-08-15",
+  "repository": "https://github.com/jix/sortnetopt.git",
+  "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+  "n9_command": "bash search_and_verify.sh 9 DATADIR",
+  "n11_command": "bash verify_proof_cert.sh CERTBIN",
+  "n11_regeneration_allowed": false,
+  "certificate_doi": "10.5281/zenodo.4108365",
+  "certificate_uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+  "checker_snapshot": "lts-14.10",
+  "checker_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc"
+}

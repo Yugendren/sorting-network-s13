@@ -1,0 +1,19 @@
+realpath: /Users/yugendren/experiments/sorting_network_s13/.build/b3-runs/b3-20260814T235403Z/n9-data: No such file or directory
+        0.00 real         0.00 user         0.00 sys
+             2031616  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                 577  page reclaims
+                   9  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   1  signals received
+                   6  voluntary context switches
+                  20  involuntary context switches
+            16343840  instructions retired
+             8166796  cycles elapsed
+             1245496  peak memory footprint

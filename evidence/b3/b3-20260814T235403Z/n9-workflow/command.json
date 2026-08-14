@@ -1,0 +1,21 @@
+{
+  "command": [
+    "bash",
+    "search_and_verify.sh",
+    "9",
+    "/Users/yugendren/experiments/sorting_network_s13/.build/b3-runs/b3-20260814T235403Z/n9-data"
+  ],
+  "cwd": ".cache/third_party/sortnetopt",
+  "environment": {
+    "PATH_prefix": "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260814T234115Z/bin",
+    "STACK_ROOT": "/Users/yugendren/experiments/sorting_network_s13/.cache/toolchains/b3-stack-root"
+  },
+  "wrapped_command": [
+    "/usr/bin/time",
+    "-l",
+    "bash",
+    "search_and_verify.sh",
+    "9",
+    "/Users/yugendren/experiments/sorting_network_s13/.build/b3-runs/b3-20260814T235403Z/n9-data"
+  ]
+}

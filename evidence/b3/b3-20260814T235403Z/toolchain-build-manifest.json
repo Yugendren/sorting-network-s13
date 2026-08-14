@@ -1,0 +1,85 @@
+{
+  "build_log_sha256": "ab8e2202419dfaef504aa934ea0a5d7bdf5a4f9275aab035bf7ffd9134c63c3b",
+  "cargo_version": "cargo 1.95.0 (f2d3ce0bd 2026-03-21) (Homebrew)",
+  "checker_binary": {
+    "file_type": "Mach-O 64-bit executable x86_64",
+    "path": ".build/b3-toolchain/attempt-20260814T234115Z/bin/snocheck",
+    "sha256": "b37025c99c59cc1df764a79980430c5cf46e01dffa2f0a708378089608bec073",
+    "size_bytes": 1373408
+  },
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--release"
+      ],
+      "cwd": ".cache/third_party/sortnetopt",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "stack",
+        "setup"
+      ],
+      "cwd": ".cache/third_party/sortnetopt/checker/snocheck",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "stack",
+        "build",
+        "--copy-bins",
+        "--local-bin-path",
+        "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260814T234115Z/bin"
+      ],
+      "cwd": ".cache/third_party/sortnetopt/checker/snocheck",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "/Users/yugendren/experiments/sorting_network_s13/.cache/third_party/sortnetopt/target/release/sortnetopt",
+        "--help"
+      ],
+      "cwd": ".cache/third_party/sortnetopt",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260814T234115Z/bin/snocheck"
+      ],
+      "cwd": ".cache/third_party/sortnetopt",
+      "exit_code": 0
+    }
+  ],
+  "ended_at": "2026-08-14T23:44:25.325909+00:00",
+  "host_machine": "arm64",
+  "portability_mode": "aarch64 Stack host selecting x86_64 GHC under Rosetta",
+  "rust_binary": {
+    "file_type": "Mach-O 64-bit executable arm64",
+    "path": ".cache/third_party/sortnetopt/target/release/sortnetopt",
+    "sha256": "cd82f096f1e2fb7dacc647d9bc2458aa0b7c9324e143a9d90bd2fc21c3c2bd93",
+    "size_bytes": 5209000
+  },
+  "rustc_version": "rustc 1.95.0 (59807616e 2026-04-14) (Homebrew)",
+  "schema_version": "s13-harder-toolchain-build/v1",
+  "stack_root": ".cache/toolchains/b3-stack-root",
+  "stack_version": "Version 3.11.1 aarch64",
+  "stack_wrapper": {
+    "path": ".build/b3-toolchain/attempt-20260814T234115Z/bin/stack",
+    "sha256": "a9601711ed279991bf19cd906b3ee7d09e2d0eb2a030959a9913d5aaf51b7ca6",
+    "size_bytes": 78
+  },
+  "started_at": "2026-08-14T23:41:15.781744+00:00",
+  "status": "PASS",
+  "upstream": {
+    "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+    "repository": "https://github.com/jix/sortnetopt.git",
+    "stack_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc",
+    "strict_and_parallel_patch_sha256": "df374fe21c9aa07ee91da700dc2642581c999b61defdacc1ee201a87225435e0",
+    "tracked_file_count": 44,
+    "tracked_source_aggregate_sha256": "56b18efa19f3727f1945696f53bb597aec9b13ec210680578b1dc0b0b253a474"
+  },
+  "wall_seconds": 189.545153,
+  "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+}

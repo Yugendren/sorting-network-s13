@@ -1,0 +1,2 @@
+B3 falsifiable gate: official n=9 workflow, exact n=11 replay, and safe corrupted-certificate rejection must all pass.
+FAIL: n=9 official command ended as REJECTED

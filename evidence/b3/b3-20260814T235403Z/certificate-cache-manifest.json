@@ -1,0 +1,49 @@
+{
+  "commands": [
+    {
+      "command": [
+        "/usr/bin/curl",
+        "--location",
+        "--fail",
+        "--retry",
+        "5",
+        "--retry-delay",
+        "5",
+        "--continue-at",
+        "-",
+        "--output",
+        "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.zst.partial",
+        "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content"
+      ],
+      "cwd": "/Users/yugendren/experiments/sorting_network_s13",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "/opt/homebrew/bin/zstd",
+        "--decompress",
+        "--force",
+        "--no-progress",
+        "-o",
+        "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.partial",
+        "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.zst"
+      ],
+      "cwd": "/Users/yugendren/experiments/sorting_network_s13",
+      "exit_code": 0
+    }
+  ],
+  "compressed_md5": "2847374c6bab1260c9771d6fafe65f44",
+  "compressed_path": ".cache/certificates/proof_cert_11.bin.zst",
+  "compressed_size_bytes": 1247864564,
+  "doi": "10.5281/zenodo.4108365",
+  "ended_at": "2026-08-14T23:49:17.143705+00:00",
+  "fetch_log_sha256": "76e62a4c88cf18859da7be6b5a0335f4aaf9288043814882acbdb68bababac97",
+  "schema_version": "s13-harder-certificate-cache/v1",
+  "started_at": "2026-08-14T23:44:34.568542+00:00",
+  "status": "PASS",
+  "uncompressed_path": ".cache/certificates/proof_cert_11.bin",
+  "uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+  "uncompressed_size_bytes": 3068651498,
+  "url": "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content",
+  "wall_seconds": 282.576548
+}
