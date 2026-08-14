@@ -1,0 +1,10 @@
+sorting-network-v1
+channels 3
+declared_count 1
+layer_count -
+source project-malformed-reversed-pair
+truth_label ASSUMED
+comparators_begin
+2 1
+comparators_end
+sha256 318e7b0e34c0ea255870c85ccd98280139a66d3c8e03c506a1cd4099654937e1

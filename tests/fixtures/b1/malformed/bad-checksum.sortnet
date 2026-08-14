@@ -1,0 +1,10 @@
+sorting-network-v1
+channels 2
+declared_count 1
+layer_count -
+source project-malformed-bad-checksum
+truth_label ASSUMED
+comparators_begin
+0 1
+comparators_end
+sha256 0000000000000000000000000000000000000000000000000000000000000000

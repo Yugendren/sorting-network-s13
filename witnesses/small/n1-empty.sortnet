@@ -1,0 +1,9 @@
+sorting-network-v1
+channels 1
+declared_count 0
+layer_count -
+source project-trusted-small-fixture-n1
+truth_label ASSUMED
+comparators_begin
+comparators_end
+sha256 cd5def3bcc3aa84b153292359bbf15f6ac33c6c08b308094c861177b3f8ef4c8

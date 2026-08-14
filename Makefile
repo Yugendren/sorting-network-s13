@@ -13,8 +13,7 @@ baseline-b0:
 	$(PYTHON) tools/b0_gate.py
 
 baseline-b1:
-	@echo "B1 is not established yet; run only after the B0 checkpoint." >&2
-	@exit 2
+	$(PYTHON) tools/b1_gate.py
 
 baseline-b2:
 	@echo "B2 is not established yet; run only after the B1 checkpoint." >&2

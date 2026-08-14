@@ -1,0 +1,11 @@
+sorting-network-v1
+channels 2
+declared_count 1
+layer_count -
+source project-malformed-trailing-data
+truth_label ASSUMED
+comparators_begin
+0 1
+comparators_end
+sha256 b2948848bfd33e892fb54746fe7daf9ac3207e8a6c6d9abcb30dfd2c28a5645f
+unexpected

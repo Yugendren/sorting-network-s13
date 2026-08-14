@@ -1,0 +1,11 @@
+sorting-network-v1
+channels 2
+declared_count 2
+layer_count -
+source project-repeated-comparator-positive-fixture
+truth_label ASSUMED
+comparators_begin
+0 1
+0 1
+comparators_end
+sha256 aa861ee51d97d04ff3399dacdffd9200ecbe9f0cce07fe08b1ae5697f52d080b

@@ -1,0 +1,11 @@
+sorting-network-v1
+channels 3
+declared_count 2
+layer_count 2
+source project-malformed-mixed-layers
+truth_label ASSUMED
+comparators_begin
+0 1 0
+1 2
+comparators_end
+sha256 24f75c75f238ae8ca0077b1f8ed91a8a71bb1dc82d10fc1ccebf4849272e7066

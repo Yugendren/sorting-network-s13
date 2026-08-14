@@ -1,0 +1,11 @@
+sorting-network-v1
+channels 3
+declared_count 2
+layer_count -
+source project-deliberately-invalid-n3
+truth_label ASSUMED
+comparators_begin
+0 1
+1 2
+comparators_end
+sha256 562dd553e48438dea42462bac49eb4649dda03296803ca7bfcdffd672b5138b4

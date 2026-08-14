@@ -1,0 +1,10 @@
+sorting-network-v1
+channels 2
+declared_count 2
+layer_count -
+source project-malformed-count-mismatch
+truth_label ASSUMED
+comparators_begin
+0 1
+comparators_end
+sha256 4a24944b0e76efbab9c8caf854f8d9ff68ae9fed1f2b8089fbcc2876bfe9ab1f

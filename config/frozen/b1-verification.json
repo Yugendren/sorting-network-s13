@@ -1,0 +1,101 @@
+{
+  "schema_version": "s13-b1-verification/v1",
+  "frozen_at": "2026-08-15",
+  "verifier_a": {
+    "path": "src/verifier_a.py",
+    "method": "Python direct enumeration of integer inputs in ascending order"
+  },
+  "verifier_b": {
+    "path": "src/verifier_b.go",
+    "method": "Go bit-parallel channel truth tables"
+  },
+  "positive_fixtures": [
+    {
+      "path": "witnesses/public/n13-45-dobbelaere.sortnet",
+      "expected_channels": 13,
+      "artifact_sha256": "35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83",
+      "candidate_checksum": "9358d2c5e17720df3b5b4d2c2e209b973c8531aa3174eab140bca369a4212403"
+    },
+    {
+      "path": "witnesses/small/n1-empty.sortnet",
+      "expected_channels": 1,
+      "artifact_sha256": "a917c59006cdf1b2095453d63ccad17e57732cf415844fbf6a9600ae09204d7f",
+      "candidate_checksum": "cd5def3bcc3aa84b153292359bbf15f6ac33c6c08b308094c861177b3f8ef4c8"
+    },
+    {
+      "path": "witnesses/small/n2-one.sortnet",
+      "expected_channels": 2,
+      "artifact_sha256": "fab64e04b46a684cce60005604f2fed748d71bedc483ac6f0564584c3ef64aa7",
+      "candidate_checksum": "97f0da9d2edf8f7f2fa2380b28cf14d972d4b0c15cfe6f79e794092f7003df2d"
+    },
+    {
+      "path": "witnesses/small/n2-repeated.sortnet",
+      "expected_channels": 2,
+      "artifact_sha256": "1db011109488f0521cfc381b0d206f706f9a0887c7fbec09e508ad9afa707682",
+      "candidate_checksum": "aa861ee51d97d04ff3399dacdffd9200ecbe9f0cce07fe08b1ae5697f52d080b"
+    },
+    {
+      "path": "witnesses/small/n3-three.sortnet",
+      "expected_channels": 3,
+      "artifact_sha256": "5f0cf98f3d36936d3693146c152d4a5d00d1688fce52b2f4e348bbc847d14dbb",
+      "candidate_checksum": "a898f6ffda24d53b3f2bfa71914765106d7a7640bdefffe1117a134acf080948"
+    },
+    {
+      "path": "witnesses/small/n4-five.sortnet",
+      "expected_channels": 4,
+      "artifact_sha256": "49e49af9cde40191cf0607a301c9300db8a6524d4ffd4d76eb865f45c067cc12",
+      "candidate_checksum": "7ad79b028684c0ce5a66be31f8f1978a6808ef0e5bfa015ee4b0fafdc7950848"
+    }
+  ],
+  "negative_fixtures": [
+    {
+      "path": "tests/fixtures/b1/negative/n3-two-comparator.sortnet",
+      "expected_channels": 3,
+      "artifact_sha256": "4c9b8f75a7baff45a8547e1c043e041ece1695aabea567522bf768eef955c8c3",
+      "candidate_checksum": "562dd553e48438dea42462bac49eb4649dda03296803ca7bfcdffd672b5138b4"
+    }
+  ],
+  "malformed_fixtures": [
+    {"path": "tests/fixtures/b1/malformed/bad-checksum.sortnet", "expected_channels": 2, "artifact_sha256": "d1df34f70cbf441d0594ac46c4f63fcb2992f180ca5cd506491091d0c4ddb674"},
+    {"path": "tests/fixtures/b1/malformed/count-mismatch.sortnet", "expected_channels": 2, "artifact_sha256": "af03b77250299d1653c135094ac8b7d7025b994e7f1dab9540ef6efe54f37648"},
+    {"path": "tests/fixtures/b1/malformed/layer-conflict.sortnet", "expected_channels": 3, "artifact_sha256": "020ca24e593a137710aa1c19e6056af37ae8ff6dd65a76fc855eef6781f9988b"},
+    {"path": "tests/fixtures/b1/malformed/mixed-layers.sortnet", "expected_channels": 3, "artifact_sha256": "1ecf536b31d5229a3265b75cb3c663cce3b6730ee8968dd1147869d6485abeaa"},
+    {"path": "tests/fixtures/b1/malformed/out-of-range.sortnet", "expected_channels": 3, "artifact_sha256": "817c2dbc0e4dc0ceab94beff49f3cdb31fb9ed57548db1a5adc8814686f02871"},
+    {"path": "tests/fixtures/b1/malformed/reversed-pair.sortnet", "expected_channels": 3, "artifact_sha256": "7a25fe94959b7c26a70d61f79f3df90bea9a91d0536e92e93e6ae536b5b937e0"},
+    {"path": "tests/fixtures/b1/malformed/trailing-data.sortnet", "expected_channels": 2, "artifact_sha256": "df419e55ebe844f745ab43f7b257c2eb1ee5075d97e88b17a8ec4d7b3c43761f"}
+  ],
+  "wrong_channel_fixture": {
+    "path": "witnesses/small/n2-one.sortnet",
+    "expected_channels": 3
+  },
+  "witness_mutations": {
+    "removed_zero_based_indices": [0, 22, 44],
+    "required_verdict": "INVALID"
+  },
+  "reflection_metamorphisms": [
+    "witnesses/public/n13-45-dobbelaere.sortnet",
+    "witnesses/small/n3-three.sortnet",
+    "witnesses/small/n4-five.sortnet",
+    "tests/fixtures/b1/negative/n3-two-comparator.sortnet"
+  ],
+  "random_differential": {
+    "seed": 13004520260815,
+    "cases": 200,
+    "minimum_channels": 2,
+    "maximum_channels": 7,
+    "maximum_comparators": 18
+  },
+  "exhaustive_subset": {
+    "channels": 3,
+    "maximum_length": 3,
+    "candidate_count": 40,
+    "expected_accept_count": 6
+  },
+  "deterministic_replays": 2,
+  "limits": {
+    "wall_seconds": 180,
+    "peak_memory_bytes": 1073741824,
+    "threads": 1,
+    "per_verifier_timeout_seconds": 10
+  }
+}
