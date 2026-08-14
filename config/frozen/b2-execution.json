@@ -1,0 +1,68 @@
+{
+  "schema_version": "s13-b2-execution/v1",
+  "frozen_at": "2026-08-15",
+  "parents": {
+    "b2_senso_path": "config/frozen/b2-senso.json",
+    "b2_senso_sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff",
+    "budgets_path": "config/frozen/budgets.json",
+    "budgets_sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f",
+    "seeds_path": "config/frozen/seeds.json",
+    "seeds_sha256": "dcac67a8eb5b5c14d9629d88fd3240da3aa5d4fa3c77d479d274c901273d7a0b"
+  },
+  "b1_prerequisite": {
+    "manifest_path": "evidence/b1/b1-20260814T231402Z/manifest.json",
+    "manifest_sha256": "51c22ef534a0cce11676b39e05b8c601a9760f075efee0f5a5232a7195a37e44"
+  },
+  "external_senso": {
+    "archive_path": ".cache/sources/symmetry-1.1.tar.gz",
+    "archive_sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+    "patch_path": "tools/patches/symmetry-1.1-macos.patch",
+    "patch_sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09",
+    "threads": 1
+  },
+  "senso": {
+    "population": 200,
+    "generations": 500,
+    "command_overrides": [
+      "sn.init.numinputs=13",
+      "sn.init.filter=0:21",
+      "sn.init.initfuncs=1",
+      "sn.eval.compfit=1",
+      "sn.estimate.frac=0.5",
+      "sn.estimate.prob=0.5",
+      "sn.estimate.gtrun=1",
+      "sn.mutation.mksym=1",
+      "ms.write.interval=0",
+      "ms.write.compress=1"
+    ],
+    "acceptance_size": 45,
+    "expected_processed_evaluations": 50200
+  },
+  "greedy": {
+    "implementation": "pinned SENSO initialization only",
+    "population_per_seed": 20,
+    "generations": 0,
+    "variant_2_symmetry_probability": 1.0,
+    "returned_candidates_per_seed": 1
+  },
+  "random": {
+    "implementation": "src/random_baseline.py",
+    "algorithm": "uniform random comparator pairs with replacement; stop at first sorting network",
+    "trials_per_seed": 100,
+    "max_comparators_per_trial": 512,
+    "returned_candidates_per_seed": 1
+  },
+  "resource_enforcement": {
+    "cpu": "RLIMIT_CPU in tools/run_with_limits.py",
+    "wall": "parent monotonic deadline and process-group termination",
+    "memory": "parent polls aggregate process-tree RSS every 0.25 seconds",
+    "memory_poll_seconds": 0.25
+  },
+  "truth_labels": {
+    "paper_parameters": "PUBLISHED",
+    "variant_2_probability_mapping": "ASSUMED",
+    "frozen_seeds": "ASSUMED",
+    "local_runs": "MEASURED",
+    "accepted_candidates": "LOCALLY_REPRODUCED"
+  }
+}
