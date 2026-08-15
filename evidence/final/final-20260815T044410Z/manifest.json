@@ -1,0 +1,17 @@
+{
+  "canonical_report_path": "evidence/final/final-20260815T044410Z/canonical-terminal-report.md",
+  "canonical_report_sha256": "1417ca512130744cfba9fed69a37ad836057d07bcb975ff6ed39117bcb4bcbab",
+  "contract_sha256": "6d8e9c3d0c4719bbd4c28bf55bc068ead10407e4a5928978afc55be338e503e6",
+  "created_at": "2026-08-15T04:44:10Z",
+  "e4_aggregation_sha256": "299e762e77089e36987322dd82d6f10088307583cb958a33182e42f679744d1c",
+  "e4_exam_manifest_sha256": "21059f51efcd92421ba2cdcc2be3ce5996ab2292bf4be370d61539fdcc20fea9",
+  "e4_integrity_replay_sha256": "e8f9089a9f8484f4111fe3c900f1d025813c65fefc93ff497cd0160a8aafaaef",
+  "e5_started": false,
+  "evidence_replay_path": "evidence/final/final-20260815T044410Z/evidence-replay.txt",
+  "evidence_replay_sha256": "1ce5a5500bca7385474c6c070840d11eaff327fb874aae1081c51a21d25ad6f5",
+  "run_id": "final-20260815T044410Z",
+  "schema_version": "s13-method-terminal-manifest/v1",
+  "source_commit": "fbb89f355fc16f72b24aab6a5b808692551e3854",
+  "status": "COMPLETE",
+  "verdict": "METHOD_REJECTED"
+}

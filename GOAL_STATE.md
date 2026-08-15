@@ -20,9 +20,9 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Current truth
 
-- State: `ACTIVE`.
-- Active milestone: terminal reporting after a valid E4 V2 exam failure; E5 is
-  forbidden and no further search is authorized.
+- State: `COMPLETE` — terminal verdict `METHOD_REJECTED`.
+- Canonical report: `evidence/final/final-20260815T044410Z/canonical-terminal-report.md`;
+  SHA-256 `1417ca51...bcbab`. E5 is forbidden; no further search is authorized.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -110,8 +110,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | E3 matched exam | NOT RUN FOR V1 | E2 prerequisite failed; seeds remain sealed |
 | E4 one repair | COMPLETE / FAIL | V2 0/60 versus SENSO 2/60; integrity PASS |
 | E5 frontier | SKIPPED / FORBIDDEN | Both permitted versions failed validly |
-| Terminal report | ACTIVE | Issue `METHOD_REJECTED`, then stop |
+| Terminal report | COMPLETE | `METHOD_REJECTED`; canonical report `1417ca51...bcbab` |
 
 ## Immediate next action
 
-Commit the immutable E4 evidence, issue the one canonical terminal report, stop.
+STOP. Do not resume search, add version 3, or begin E5 under this goal.
