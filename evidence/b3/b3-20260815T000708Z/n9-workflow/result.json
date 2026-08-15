@@ -1,0 +1,13 @@
+{
+  "checker_output_line": "Just (9,25)",
+  "checker_result": [
+    9,
+    25
+  ],
+  "generated_artifact_count": 150,
+  "local_statement": "The replayed generated certificate establishes the size lower bound S(9) >= 25.",
+  "proof_sha256": "26eb7b47e6b7902e17357e861a8166ceeb056de5b2cdf35401c4f3446916da9b",
+  "proof_size_bytes": 1559129,
+  "status": "PASS",
+  "truth_label": "LOCALLY_REPRODUCED"
+}

@@ -1,0 +1,13 @@
+{
+  "certificate_sha256_after": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+  "certificate_sha256_before": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+  "certificate_size_bytes": 3068651498,
+  "checker_output_line": "Just (11,35)",
+  "checker_result": [
+    11,
+    35
+  ],
+  "local_statement": "The published certificate replay establishes the size lower bound S(11) >= 35.",
+  "status": "PASS",
+  "truth_label": "LOCALLY_REPRODUCED"
+}

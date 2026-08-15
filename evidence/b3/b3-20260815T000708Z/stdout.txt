@@ -1,0 +1,4 @@
+B3 falsifiable gate: official n=9 workflow, exact n=11 replay, and safe corrupted-certificate rejection must all pass.
+PASS: official n=9 workflow returned Just (9,25) in 15.392936 seconds.
+PASS: well-formed n=9 certificate corruption returned Nothing.
+PASS: exact published n=11 certificate returned Just (11,35) in 5148.689796 seconds.

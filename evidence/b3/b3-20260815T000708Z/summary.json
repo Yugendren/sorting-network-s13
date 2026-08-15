@@ -1,0 +1,40 @@
+{
+  "corruption_rejection": {
+    "checker_output_line": "Nothing",
+    "checker_result": null,
+    "safe_rejection": true,
+    "truth_label": "LOCALLY_REPRODUCED"
+  },
+  "n11": {
+    "checker_output_line": "Just (11,35)",
+    "checker_result": [
+      11,
+      35
+    ],
+    "establishes": "S(11) >= 35",
+    "truth_label": "LOCALLY_REPRODUCED"
+  },
+  "n9": {
+    "checker_output_line": "Just (9,25)",
+    "checker_result": [
+      9,
+      25
+    ],
+    "establishes": "S(9) >= 25",
+    "truth_label": "LOCALLY_REPRODUCED"
+  },
+  "prior_scored_wall_seconds": 449.255771,
+  "s11_exact_equality": {
+    "note": "The local replay establishes the lower bound; the matching construction was not separately replayed in B3.",
+    "statement": "S(11)=35",
+    "truth_label": "PUBLISHED"
+  },
+  "s12": {
+    "note": "Paper-derived consequence; no separate n=12 certificate was replayed.",
+    "statement": "S(12)=39",
+    "truth_label": "PUBLISHED"
+  },
+  "status": "PASS",
+  "total_scored_wall_seconds_through_b3": 5618.423088,
+  "total_wall_limit_seconds": 43200
+}

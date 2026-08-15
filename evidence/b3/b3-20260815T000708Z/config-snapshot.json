@@ -1,0 +1,79 @@
+{
+  "aggregate_sha256": "a3939f24623a806403db402a460ac02e62fe4455cfbc11d8e99058ebf303b39e",
+  "budgets": {
+    "certificate_n11": {
+      "peak_memory_bytes": 12884901888,
+      "wall_seconds": 14400
+    },
+    "exact_n9": {
+      "peak_memory_bytes": 1073741824,
+      "wall_seconds": 600
+    },
+    "total_after_setup": {
+      "wall_seconds": 43200
+    }
+  },
+  "config": {
+    "certificate_doi": "10.5281/zenodo.4108365",
+    "certificate_uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+    "checker_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc",
+    "checker_snapshot": "lts-14.10",
+    "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+    "frozen_at": "2026-08-15",
+    "n11_command": "bash verify_proof_cert.sh CERTBIN",
+    "n11_regeneration_allowed": false,
+    "n9_command": "bash search_and_verify.sh 9 DATADIR",
+    "repository": "https://github.com/jix/sortnetopt.git",
+    "schema_version": "s13-exact-baseline/v1"
+  },
+  "files": [
+    {
+      "path": "config/frozen/b3-exact.json",
+      "sha256": "73dfb958c2155ee4f9241c80fc3299d68e4b0ea2ffa2660ea8c8e991d69e4263"
+    },
+    {
+      "path": "config/frozen/budgets.json",
+      "sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f"
+    },
+    {
+      "path": "config/frozen/sources.json",
+      "sha256": "0110d7a5872737bd2629c84e0b09b410ef6628f9fa9826351d45698dbd3a5a76"
+    },
+    {
+      "path": "docs/b3-execution.md",
+      "sha256": "7dbaac4f2b52df0ecaebbdcef73ff992ed3cad5d9aa3065e9613e22d5e57f938"
+    },
+    {
+      "path": "docs/b3-setup-audit.md",
+      "sha256": "b88f7b88fb5323c114c196de33d8300aed90150cde32ee7f0a5066e8b40685ae"
+    },
+    {
+      "path": "evidence/b2/b2-20260814T232833Z/manifest.json",
+      "sha256": "8d057c43edb1e408d4334783cbb0a615110011bfa2aac121319ca32924888d74"
+    },
+    {
+      "path": "tests/test_b3_exact.py",
+      "sha256": "6acd3112a23135a62cea4f6fb510d432f73663fa08bda662a8e07be7293dd894"
+    },
+    {
+      "path": "tools/b3_gate.py",
+      "sha256": "43237e4834c501135a7a52132fad346d8287b3670a45c670456c44c2e69910b7"
+    },
+    {
+      "path": "tools/fetch_harder_certificate.py",
+      "sha256": "cc2aa0dec0fae384fc6ddad1ae7bf9e0cd88b943878cdffaf098404259cae690"
+    },
+    {
+      "path": "tools/patches/sortnetopt-macos-large-read.patch",
+      "sha256": "57b5a0989f937100c71225d34fc609bcb66f409784bd3bee79481c74c68cd848"
+    },
+    {
+      "path": "tools/patches/sortnetopt-macos-proc.patch",
+      "sha256": "49ce5d772ce6dfcb986b7185ec0e7c14d27681126d4dd703bb4ae259cafcdc42"
+    },
+    {
+      "path": "tools/setup_sortnetopt.py",
+      "sha256": "6a86daf110f6f89067dea2b6bebb9c29b3538f4cacbc28adb00bdb628cbce0fe"
+    }
+  ]
+}
