@@ -1,37 +1,43 @@
 # Execution scope
 
-`PROJECT_CONTRACT.md` is the scientific execution authority. Read it completely
-before acting, then read `GOAL_STATE.md` and inspect Git, dependencies, and
-evidence.
+`METHOD_EXPERIMENT_CONTRACT_V1.md` is the active scientific execution
+authority. Read it completely before acting, then read `GOAL_STATE.md`, the
+predecessor `PROJECT_CONTRACT.md`, and inspect Git, dependencies, and evidence.
 
-The active goal is baseline-only:
+The completed B0--B4 baseline is immutable. Never alter, delete, or regenerate
+anything under `evidence/b0` through `evidence/b4`. Its canonical report is
+`evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 
-1. freeze the current problem and source snapshot;
-2. establish two independent witness verifiers;
-3. reproduce a known 45-comparator constructive baseline under frozen seeds;
-4. reproduce the small exact workflow and replay Harder's published n=11
-   certificate;
-5. issue one baseline verdict and stop.
+The active goal has one learned-method hypothesis and at most two versions:
 
-Do not search for a 44-comparator network. Do not attempt to prove that 44 is
-impossible. Do not train ML/RL models, use diffusion, add an LLM search loop,
-rent a GPU, or begin the Mericanii experimental method. These require a later
-contract after `BASELINE_READY`.
+1. E0 freezes sources, seeds, features, budgets, hardware, evidence rules, and
+   the version-1 truncation-ranker role;
+2. E1 instruments unchanged SENSO and builds development data at target 45;
+3. E2 trains and freezes one small completion-value model;
+4. E3 runs one paired 60-seed, 50,200-evaluation-per-method exam;
+5. E4 may change exactly one major element and run one new exam if E3 fails;
+6. E5 runs one bounded 44-comparator campaign only if a method version passes.
 
-Work on one milestone and one falsifiable gate at a time. Preserve failed and
-timed-out runs. A solver status or unsuccessful search is not a proof. Every
-accepted network must pass both independent verifiers. Every lower-bound claim
-must use an independently replayed certificate tied to the exact formula or
-derivation.
+Do not use target 44 in training, features, reward, model selection, E3, or E4.
+Do not add RL, diffusion, MCTS, LLM/multi-agent search, SAT lower-bound work,
+unrelated methods, paid compute, or a third version. LLMs are never scored
+inner-loop oracles. A negative reproducible result is completion.
+
+Work serially with one falsifiable gate active. Preserve every scored success,
+failure, crash, and timeout with exact commands, hashes, resources, and a
+complete immutable inventory. Every claimed successful network must pass both
+unchanged B1 verifiers. Holdout leakage, verifier disagreement, or failed
+integrity replay is `INVALID`.
+
+If a 44-comparator candidate appears, stop search, freeze it, run the two frozen
+verifiers, and follow only the contract's witness-audit procedure. Do not
+publish or contact anyone.
 
 Authority order:
 
-1. `PROJECT_CONTRACT.md`
+1. `METHOD_EXPERIMENT_CONTRACT_V1.md`
 2. `GOAL_STATE.md`
-3. frozen configuration and test manifests
-4. primary-source documentation
-5. implementation convenience
-
-If the live audit shows that `S(13)` has already been settled, stop with
-`STALE_TARGET`; do not silently choose a different open problem.
-
+3. E0-frozen configuration and manifests
+4. `PROJECT_CONTRACT.md` for immutable baseline facts not superseded above
+5. primary sources
+6. implementation convenience
