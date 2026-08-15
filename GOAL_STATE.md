@@ -21,8 +21,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: E4 version-2 integration freeze. Version 1 failed E2
-  validation; neither frozen matched-exam holdout has been run.
+- Active milestone: single-use E4 V2 matched exam. Version 1 failed E2;
+  neither frozen matched-exam holdout has been run.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -110,10 +110,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | E1 dataset | COMPLETE | PASS evidence `e1-20260815T022353Z` |
 | E2 method v1 | COMPLETE / FAIL | Concordance 0.446355505360 < 0.5 |
 | E3 matched exam | NOT RUN FOR V1 | E2 prerequisite failed; seeds remain sealed |
-| E4 one repair | ACTIVE | Freeze unchanged integration, then run E4 exam once |
+| E4 one repair | ACTIVE | Run the frozen 60-pair exam and integrity replay once |
 | E5 frontier | CONDITIONAL | Only after pass; 100M eval / seven-day maximum |
 | Terminal report | PENDING | One allowed verdict, then stop |
 
 ## Immediate next action
 
-Freeze the unchanged V2 integration, then run the single paired E4 exam once.
+Commit the verified exam protocol, then execute the single paired E4 exam once.

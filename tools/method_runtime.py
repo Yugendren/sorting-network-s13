@@ -166,6 +166,7 @@ def run_limited(
     wall_limit: float,
     memory_limit: int,
     environment_overrides: dict[str, str] | None = None,
+    parent_environment_allowlist: tuple[str, ...] | None = None,
     poll_seconds: float = 0.25,
 ) -> dict[str, Any]:
     stdout_path = work_dir / "stdout.txt"
@@ -185,10 +186,16 @@ def run_limited(
         {
             "command": command,
             "wrapped_command": wrapped,
+            "cwd": work_dir.resolve().relative_to(ROOT).as_posix(),
             "environment_overrides": overrides,
+            "parent_environment_allowlist": list(parent_environment_allowlist) if parent_environment_allowlist is not None else None,
         },
     )
-    env = os.environ.copy()
+    env = (
+        os.environ.copy()
+        if parent_environment_allowlist is None
+        else {key: os.environ[key] for key in parent_environment_allowlist if key in os.environ}
+    )
     env.update(
         {
             "GOMAXPROCS": "1",
