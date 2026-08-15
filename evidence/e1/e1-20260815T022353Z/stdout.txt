@@ -1,0 +1,5 @@
+E1 falsifiable gate: instrumentation preserves SENSO and yields every frozen development row without leakage.
+PASS: instrumented-off, instrumented-on, and frozen B2 seed-1 sequences agree at 50200 evaluations.
+PASS: all 20 development seeds exactly reproduced their frozen B2 final candidate sequences.
+PASS: 1004000 rows validated; 1216 success rows map to 413 dual-verified unique candidates.
+PASS: dataset aggregate 5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994 is immutable at .cache/method-v1/datasets/e1-20260815T022353Z/development-dataset.tsv.zst.

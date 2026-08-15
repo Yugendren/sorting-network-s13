@@ -21,7 +21,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: E1 dataset; no training or holdout access has begun.
+- Active milestone: E2 method version 1; no validation or final holdout seed has
+  been run.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -53,6 +54,16 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   `5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465`.
 - E0 preserved one prior tooling FAIL at `evidence/e0/e0-20260815T021347Z`;
   it created no score and motivated the baseline-only inventory preflight.
+- E1 PASS: `evidence/e1/e1-20260815T022353Z`, tested source commit
+  `7d4c13de2328d21c10683242e83a05875978fea5`, manifest SHA-256
+  `af6e1fb05a4fcf984f71d0a3ab4f40d39e4288d7fb68c2daae2b32c61f3236b5`.
+  Logging-off, logging-on, and frozen B2 trajectories agree; all 20 seeds and
+  1,004,000 rows passed. The compressed dataset SHA-256 is
+  `5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994`.
+- E1 labels: 1,216 <=45 rows, all from calibration seed 18, comprising 413
+  unique 45-comparator candidates accepted by both verifiers. Training seeds
+  1--16 contain zero positives; this frozen limitation must be handled without
+  moving seed 18 or changing the version-1 objective.
 
 ## Gate ledger
 
@@ -60,8 +71,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 |---|---|---|
 | Authority freeze | COMPLETE | Commit `3c876d6`; no preceding scores |
 | E0 experiment freeze | COMPLETE | PASS evidence `e0-20260815T021424Z` |
-| E1 dataset | ACTIVE | Instrumented trajectory unchanged; dataset valid |
-| E2 method v1 | PENDING | Reproducible small model frozen after validation |
+| E1 dataset | COMPLETE | PASS evidence `e1-20260815T022353Z` |
+| E2 method v1 | ACTIVE | Reproducible small model frozen after validation |
 | E3 matched exam | PENDING | Six pass criteria evaluated on sealed 60 seeds |
 | E4 one repair | CONDITIONAL | One major change; one new sealed exam |
 | E5 frontier | CONDITIONAL | Only after pass; 100M eval / seven-day maximum |
@@ -69,6 +80,6 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Commit the accepted E0 evidence, then implement the thinnest E1 instrumentation
-slice. Prove logging consumes no RNG and reproduces the sentinel trajectory
-before running the frozen 20-seed development dataset batch.
+Commit the accepted E1 evidence. Train version 1 exactly as frozen, explicitly
+recording the zero-positive training split, replay the export, and run the one
+permitted validation audit. Do not access E3 seeds or alter the split.

@@ -1,0 +1,15 @@
+{
+  "candidate_path": "e1-20260815T022353Z/successes/candidate-fb2c544ca15bdbab4f3b/candidate.sortnet",
+  "candidate_sha256": "445a8073e507892a0d0937cae79327a45b67d7002a1d389b2de40a974a34f1ff",
+  "comparators": 45,
+  "sequence_sha256": "fb2c544ca15bdbab4f3b63d7ebbe1f1b478c25f08bbfe65e7549d913faba5339",
+  "verification": {
+    "artifact_sha256": "445a8073e507892a0d0937cae79327a45b67d7002a1d389b2de40a974a34f1ff",
+    "candidate_checksum": "f9eaf75c9ef5079cd1fa0bc96ba2083dc7f8d81421a4babeb428be803c23922e",
+    "comparators": 45,
+    "verifier_a": "ACCEPT",
+    "verifier_a_report_sha256": "4791328dc695e1669cf048e88cec0f3f2bcbdf1d33a149e50265d3824bdc133e",
+    "verifier_b": "ACCEPT",
+    "verifier_b_report_sha256": "bb92372164392d5bcad8cd03b6a64bc358b251aa6b53443c2f5ad85c23b15b45"
+  }
+}

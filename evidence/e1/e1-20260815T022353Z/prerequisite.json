@@ -1,0 +1,9 @@
+{
+  "config_sha256": "5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465",
+  "e0_manifest_path": "evidence/e0/e0-20260815T021424Z/manifest.json",
+  "e0_manifest_sha256": "a38832f101d24fbc5430ce8c25b5a343cbbcd8fcedf66c723f8383a588499754",
+  "evidence_replay": "verified 13 immutable evidence inventories and manifests",
+  "instrumented_manifest_sha256": "202c7201ad4389cb46468aa4bf0a07293f6e4faef01103669481c45c420abb4b",
+  "original_manifest_sha256": "24f47b42a966ed1b53553d4a77aca305af5cdd19ed12f44f0a8238210e5078e4",
+  "verifier_b_binary_sha256": "212805ebb2f71bfdc3a470a0e873167c6494fea0cea9829a8db889298368e3a2"
+}

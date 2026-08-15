@@ -1,0 +1,10 @@
+{
+  "instrumentation_off_best_size": 46,
+  "instrumentation_off_evaluations": 50200,
+  "instrumentation_off_sequence_equal": true,
+  "instrumentation_on_best_size": 46,
+  "instrumentation_on_evaluations": 50200,
+  "predecessor_b2_sequence_equal": true,
+  "rng_calls_added_by_instrumentation": 0,
+  "seed": 1
+}

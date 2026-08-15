@@ -1,0 +1,30 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/e1_dataset_gate.py"
+  ],
+  "config_sha256": "5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465",
+  "cpu_seconds": 12.96344,
+  "dirty_at_start": false,
+  "ended_at": "2026-08-15T02:31:27.493004+00:00",
+  "gate": "E1",
+  "host": {
+    "cpu": "Apple M4",
+    "disk_free_bytes_at_start": 36447543296,
+    "hostname": "YUGENs-Mac-mini.local",
+    "logical_cores": 10,
+    "machine": "arm64",
+    "memory_bytes": 17179869184,
+    "model": "Mac16,10",
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "physical_cores": 10
+  },
+  "peak_rss_bytes": 40566784,
+  "run_id": "e1-20260815T022353Z",
+  "schema_version": "s13-method-evidence-manifest/v1",
+  "source_commit": "7d4c13de2328d21c10683242e83a05875978fea5",
+  "started_at": "2026-08-15T02:23:53.466934+00:00",
+  "status": "PASS",
+  "threads": 1,
+  "wall_seconds": 454.024829
+}

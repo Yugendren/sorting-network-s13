@@ -1,0 +1,106 @@
+{
+  "archive_path": ".cache/sources/symmetry-1.1.tar.gz",
+  "archive_sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+  "archive_size_bytes": 22506545,
+  "binary_path": ".build/senso/attempt-20260814T232113Z/bin/sorting",
+  "binary_sha256": "1d6fe20b547fa0e9dd9c899e34b608ac157104f63fd845d858e6e4ae9c0e6cc6",
+  "binary_size_bytes": 2757240,
+  "boost": "boost 1.90.0_1",
+  "build_log_path": ".build/senso/attempt-20260814T232113Z/build.log",
+  "build_log_sha256": "977173e4afe8ded1edd8a8794a094334f583bc82b28658146f4041057f86784c",
+  "commands": [
+    {
+      "command": [
+        "patch",
+        "-p1",
+        "-i",
+        "/Users/yugendren/experiments/sorting_network_s13/tools/patches/symmetry-1.1-macos.patch"
+      ],
+      "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "./configure",
+        "--disable-shared",
+        "--prefix=/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/install"
+      ],
+      "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1/beagle",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "make",
+        "-j1"
+      ],
+      "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1/beagle",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "make",
+        "-j1",
+        "install"
+      ],
+      "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1/beagle",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "clang++",
+        "-O2",
+        "-g",
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/source/symmetry-1.1/experiments/sorting/sorting/main.cpp",
+        "-o",
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/bin/sorting",
+        "-I/opt/homebrew/include",
+        "-I/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/install/include",
+        "-DPACC_ZLIB",
+        "-L/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/install/lib",
+        "-lbeagle-SN",
+        "-lbeagle",
+        "-lz",
+        "-lpacc-math",
+        "-lpacc-xml",
+        "-lpacc-util"
+      ],
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/bin/sorting",
+        "-OBconf=/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf",
+        "-OBec.pop.size=2",
+        "-OBec.rand.seed=1",
+        "-OBec.term.maxgen=1",
+        "-OBsn.init.numinputs=13",
+        "-OBsn.init.filter=0:21",
+        "-OBsn.init.initfuncs=1",
+        "-OBsn.eval.compfit=1",
+        "-OBms.write.interval=0",
+        "-OBms.write.prefix=smoke",
+        "-OBlg.file.name=smoke.log"
+      ],
+      "cwd": ".build/senso/attempt-20260814T232113Z/smoke",
+      "exit_code": 0
+    }
+  ],
+  "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "ended_at": "2026-08-14T23:22:20.017993+00:00",
+  "install_path": ".build/senso/attempt-20260814T232113Z/install",
+  "patch_path": "tools/patches/symmetry-1.1-macos.patch",
+  "patch_sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09",
+  "schema_version": "s13-senso-build/v1",
+  "smoke_milestones": [
+    {
+      "path": ".build/senso/attempt-20260814T232113Z/smoke/smoke_g1.obm.gz",
+      "sha256": "7aacdf2526d277973422ac2de16fecd1ff6b18ab971a1c46c3c146cc2e7f17e2",
+      "size_bytes": 5333
+    }
+  ],
+  "source_path": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1",
+  "started_at": "2026-08-14T23:21:13.152092+00:00",
+  "status": "PASS",
+  "wall_seconds": 66.865515
+}
