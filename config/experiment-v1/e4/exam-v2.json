@@ -1,0 +1,41 @@
+{
+  "schema_version": "s13-method-exam/v2",
+  "frozen_at": "2026-08-15",
+  "method_version": 2,
+  "seed_manifest": "config/experiment-v1/e4/seeds-e4-holdout.json",
+  "paired_seed_count": 60,
+  "methods": ["frozen_senso", "frozen_mericanii_v2"],
+  "candidate_evaluations_per_method_per_seed": 50200,
+  "threads_per_process": 1,
+  "parallel_processes": 1,
+  "channels": 13,
+  "acceptance_comparators": 45,
+  "acceptance": "both frozen independent verifiers accept the exact candidate",
+  "pass_criteria": {
+    "every_claimed_candidate_dual_verified": true,
+    "minimum_mericanii_successes": 12,
+    "minimum_success_ratio_vs_senso": 2.0,
+    "maximum_mericanii_evaluations_per_seed": 50200,
+    "integrity_replay": true,
+    "holdout_used_for_tuning": false
+  },
+  "reporting": {
+    "paired_outcomes": true,
+    "complete_final_size_distributions": true,
+    "wall_and_cpu_time": true,
+    "time_per_evaluation": true,
+    "model_inference_overhead": true,
+    "peak_memory": true,
+    "paired_effect": "Mericanii success minus SENSO success for each seed",
+    "success_uncertainty": "Wilson 95% interval per method",
+    "paired_uncertainty": "paired nonparametric bootstrap, seed 2026081502, 10000 resamples; descriptive only"
+  },
+  "integrity_replay": {
+    "rebuild_from_frozen_inputs": true,
+    "reaggregate_raw_attempts": true,
+    "rerun_both_verifiers_for_every_success": true,
+    "verify_every_inventory": true,
+    "exact_sentinel_ordinals": [1, 60]
+  },
+  "target_44": "forbidden as an objective, reward, model-selection signal, or routine acceptance threshold; unexpected candidate triggers immediate frozen witness audit"
+}

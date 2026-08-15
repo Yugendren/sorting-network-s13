@@ -1,0 +1,73 @@
+{
+  "schema_version": "s13-completion-model/v2",
+  "frozen_at": "2026-08-15",
+  "method_version": 2,
+  "one_major_change": "learning_objective",
+  "role": "rank which truncation point of the current SENSO parent to revisit",
+  "input_dimension": 85,
+  "representation": {
+    "feature_definition_path": "config/experiment-v1/features-v1.json",
+    "feature_definition_sha256": "557efae74621a613b0c7ad2914eb303fe4a279390a4af86d373c81e6833419ab",
+    "feature_normalization_source": "exact mean and scale arrays from the accepted V1 model export",
+    "feature_normalization_export_sha256": "eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7",
+    "change_from_v1": "none"
+  },
+  "architecture": {
+    "type": "MLP regressor",
+    "layers": [85, 64, 32, 1],
+    "hidden_activation": "ReLU",
+    "output_during_training": "unbounded float32 completion-value score",
+    "output_during_ranking": "same float32 score; higher is better",
+    "dropout": 0.0,
+    "trainable_parameters": 7617,
+    "parameter_ceiling": 100000,
+    "dtype": "float32",
+    "topology_change_from_v1": "none"
+  },
+  "objective": {
+    "major_change_from_v1": "binary BCE to continuous completion-quality regression",
+    "raw_target": "negative final_count",
+    "standardization": "subtract float64 training-row mean and divide by float64 population standard deviation, then cast targets to float32; record both derived constants",
+    "loss": "mean squared error",
+    "score_direction": "larger predicted target ranks a lower final comparator count higher",
+    "class_handling": "none",
+    "target_44_reference": "forbidden; target uses only the observed integer final_count without thresholding or special weights"
+  },
+  "data": {
+    "dataset_sha256": "5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994",
+    "training_seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    "calibration_seeds": [17, 18, 19, 20],
+    "version_1_validation_rows_used_for_gradient_training": 0,
+    "e3_rows_used": 0,
+    "e4_rows_used": 0,
+    "change_from_v1": "none"
+  },
+  "training": {
+    "framework": "PyTorch 2.10.0+cu128",
+    "device": "authorized NVIDIA GeForce RTX 3060",
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 4096,
+    "max_epochs": 50,
+    "early_stopping_patience": 5,
+    "minimum_epochs": 3,
+    "shuffle": true,
+    "seed": 2026081501,
+    "deterministic_algorithms": true,
+    "checkpoint_choice": "highest calibration micro within-seed concordance, then lowest calibration MSE, then earliest epoch",
+    "concordance": "pairs with unequal final_count within each seed; exact score ties contribute 0.5",
+    "duplicate_training_replay": "same exported float arrays and SHA-256 required",
+    "hyperparameter_change_from_v1": "none except loss and objective-dependent checkpoint metric"
+  },
+  "integration": {
+    "patch_sha256": "f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132",
+    "baseline_gaussian_draws_per_reconstruction": 1,
+    "proposal_count_maximum": 8,
+    "proposal_construction": ["base", "base-2", "base+2", "base-4", "base+4", "base-8", "base+8", "0"],
+    "duplicates": "keep first occurrence only after clamping",
+    "ranking": "maximum exported-model score",
+    "tie_break": "lowest proposal-list index",
+    "change_from_v1": "none"
+  }
+}

@@ -76,10 +76,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   `cbdfb957ecca9aa67b2effb6b05889ba2bcff7a97099246e36bee9a85a2d34dc`,
   integration-patch SHA-256
   `f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132`.
-  Compiled float32 inference matched all 32 fixture rows exactly. One earlier
-  unscored smoke build crashed in a temporary heuristic replay and is preserved
-  at `.build/senso-mericanii-v1/attempt-20260815T024344Z`; direct function replay
-  fixed it without changing the frozen role or proposal policy.
+  Compiled float32 inference matched all 32 fixture rows exactly.
 - E2 single-use validation materialization completed all 20 seeds and 1,004,000
   rows at `evidence/e2/e2-validation-20260815T030452Z`; aggregate dataset
   SHA-256 is
@@ -95,6 +92,9 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   scores was below 0.5. Integration remained operational at exactly 50,200
   evaluations/rank calls and produced a dual-verified size-46 network. V1 may
   not enter E3.
+- E4 freeze: change learning objective only; 85 features and truncation
+  integration remain fixed. The revealed 60-seed E4 manifest reproduces compact
+  commitment `02436e65...d57c4f` and is disjoint from all earlier partitions.
 
 ## Gate ledger
 
@@ -111,6 +111,5 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Commit `config/experiment-v1/e4/failure-analysis.md` before revealing E4 seeds.
-Then materialize the committed disjoint 60-seed E4 holdout and freeze the
-learning-objective-only repair. Do not access E3 or E4 trajectories yet.
+Commit the E4 seed, model, change, and exam freeze. Then implement and replay
+the regression training twice without accessing E3 or E4 trajectories.

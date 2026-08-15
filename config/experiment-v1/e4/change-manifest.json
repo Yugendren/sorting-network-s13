@@ -1,0 +1,33 @@
+{
+  "schema_version": "s13-method-e4-change/v1",
+  "frozen_at": "2026-08-15",
+  "failure_analysis_path": "config/experiment-v1/e4/failure-analysis.md",
+  "failure_analysis_sha256": "39e6a0e90bc43e542f56d55ce235ec462d0a3f968794da370edb49da65536574",
+  "e4_seed_manifest_path": "config/experiment-v1/e4/seeds-e4-holdout.json",
+  "e4_seed_manifest_sha256": "b408752e404b3cfa2fb55b3fbaac5377e098128ddf3f04bbe43d6821d5a77b82",
+  "model_v2_config_path": "config/experiment-v1/e4/model-v2.json",
+  "model_v2_config_sha256": "16b8aa4371f7cfae4a2ff4902e2b56a61cc9746a8c66f7d9e9c0147c847d8452",
+  "exam_v2_config_path": "config/experiment-v1/e4/exam-v2.json",
+  "exam_v2_config_sha256": "9c180ea2a0b3d3bd6763cabb3aba1130f1f32339c1d405e4664076a0ad7101d9",
+  "selected_major_change": "learning_objective",
+  "new_objective": "standardized negative-final-count MSE regression selected by calibration within-seed concordance",
+  "representation_change_allowed": false,
+  "integration_change_allowed": false,
+  "second_repair_allowed": false,
+  "version_3_allowed": false,
+  "frozen_unchanged": {
+    "feature_definition_sha256": "557efae74621a613b0c7ad2914eb303fe4a279390a4af86d373c81e6833419ab",
+    "v1_feature_normalization_export_sha256": "eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7",
+    "network_layers": [85, 64, 32, 1],
+    "trainable_parameters": 7617,
+    "training_and_calibration_seed_split": "1..16 / 17..20",
+    "integration_patch_sha256": "f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132",
+    "candidate_evaluations_per_method_per_seed": 50200,
+    "senso_binary_sha256": "1d6fe20b547fa0e9dd9c899e34b608ac157104f63fd845d858e6e4ae9c0e6cc6",
+    "python_verifier_sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e",
+    "go_verifier_sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f"
+  },
+  "e3_seed_outcomes_used": 0,
+  "e4_seed_outcomes_used": 0,
+  "target_44_used": false
+}
