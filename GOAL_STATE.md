@@ -111,6 +111,6 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Commit the V1 failure evidence. Before implementation, write and commit the E4
-failure analysis, materialize the committed disjoint 60-seed E4 holdout, and
-freeze exactly one major change. Do not access E3 or E4 trajectories yet.
+Commit `config/experiment-v1/e4/failure-analysis.md` before revealing E4 seeds.
+Then materialize the committed disjoint 60-seed E4 holdout and freeze the
+learning-objective-only repair. Do not access E3 or E4 trajectories yet.
