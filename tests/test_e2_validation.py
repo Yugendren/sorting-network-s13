@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from tools import e2_validation_gate
+from tools import e2_validation_gate, e2_validation_resume
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +77,19 @@ class E2ValidationTests(unittest.TestCase):
         self.assertIn("UNKNOWN: E3 final-holdout performance", report)
         self.assertIn("UNKNOWN: existence of a 44-comparator network", report)
         self.assertNotIn("METHOD_REJECTED", report)
+
+    def test_resume_is_bound_to_failed_aggregate_and_scorer(self) -> None:
+        source = (ROOT / "tools/e2_validation_resume.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn(e2_validation_resume.DATASET_SHA256, source)
+        self.assertIn(e2_validation_resume.SCORER_SHA256, source)
+        self.assertIn("validation_label_trajectories_executed_by_resume\": 0", source)
+        self.assertNotIn("instrumented_binary", source)
+
+    def test_stream_wrapper_accepts_only_repo_descendants(self) -> None:
+        source = (ROOT / "tools/score_validation_stream.py").read_text(encoding="utf-8")
+        self.assertIn("ROOT not in current.parents", source)
+        self.assertNotIn("Path.cwd().resolve() != ROOT", source)
 
 
 if __name__ == "__main__":

@@ -20,8 +20,9 @@ def main() -> int:
     parser.add_argument("--decompress-stderr", type=Path, required=True)
     parser.add_argument("--scorer-stderr", type=Path, required=True)
     args = parser.parse_args()
-    if Path.cwd().resolve() != ROOT:
-        raise RuntimeError(f"run only from {ROOT}")
+    current = Path.cwd().resolve()
+    if current != ROOT and ROOT not in current.parents:
+        raise RuntimeError(f"run only inside {ROOT}")
     for path in (args.dataset, args.scorer):
         if not path.resolve().is_file():
             raise RuntimeError(f"missing input: {path}")
