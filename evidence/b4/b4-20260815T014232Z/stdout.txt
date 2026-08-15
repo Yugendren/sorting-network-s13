@@ -1,0 +1,3 @@
+B4 falsifiable gate: all frozen B0--B3 evidence and report requirements must pass; no novel experiment may run.
+PASS: validated 4 accepted gates and 10 preserved scored runs.
+PASS: generated one complete terminal report with SHA-256 d2cb721147ba442004bb3018db07a3cdf7d2626264f2aabe1a3d2cacae48abb7.

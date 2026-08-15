@@ -1,0 +1,54 @@
+[
+  {
+    "checksums_sha256": "d565262ca77051f81df9b26ac08a098992e554704b84b379adcfc8f51af94e44",
+    "cpu_seconds": 0.032372,
+    "gate": "B0",
+    "manifest_sha256": "c03750bcefdee513e4ef2a91fb8a8c9b209d26be3657075ea644ad80f92d4c9a",
+    "peak_rss_bytes": 26050560,
+    "run_dir": "evidence/b0/b0-20260814T230315Z",
+    "run_id": "b0-20260814T230315Z",
+    "source_commit": "19bd4efadddf75182caa8012981917c0938aa2ed",
+    "status": "PASS",
+    "threads": 1,
+    "wall_seconds": 0.733192
+  },
+  {
+    "checksums_sha256": "00f6a1b9ad99555c39cc9a717f346e10edd83e7c9817cff325e93c24c811a008",
+    "cpu_seconds": 10.864997,
+    "gate": "B1",
+    "manifest_sha256": "51c22ef534a0cce11676b39e05b8c601a9760f075efee0f5a5232a7195a37e44",
+    "peak_rss_bytes": 86065152,
+    "run_dir": "evidence/b1/b1-20260814T231402Z",
+    "run_id": "b1-20260814T231402Z",
+    "source_commit": "48bd3e136545095b807f6d68f7f13b7a27af5524",
+    "status": "PASS",
+    "threads": 1,
+    "wall_seconds": 11.401776
+  },
+  {
+    "checksums_sha256": "bed371c2a5f9d1b6be646939f9dacdc3b67ef98a79f5c244702b17665b65ee18",
+    "cpu_seconds": 385.407711,
+    "gate": "B2",
+    "manifest_sha256": "8d057c43edb1e408d4334783cbb0a615110011bfa2aac121319ca32924888d74",
+    "peak_rss_bytes": 86622208,
+    "run_dir": "evidence/b2/b2-20260814T232833Z",
+    "run_id": "b2-20260814T232833Z",
+    "source_commit": "a91a1710201d4f1c4b1f13e6473930ce8ec13184",
+    "status": "PASS",
+    "threads": 1,
+    "wall_seconds": 399.690669
+  },
+  {
+    "checksums_sha256": "1610609bb2ff4b4c3d0e5b06ffd8188403b9e532366903379d7d640a03990268",
+    "cpu_seconds": 39158.022648,
+    "gate": "B3",
+    "manifest_sha256": "4398642fa4b0811b44d573894c3df4bbfe263486a9344cf44b274c8064266170",
+    "peak_rss_bytes": 4356050944,
+    "run_dir": "evidence/b3/b3-20260815T000708Z",
+    "run_id": "b3-20260815T000708Z",
+    "source_commit": "5d44ca23742cd86b490ba366ad568b5322e4f21f",
+    "status": "PASS",
+    "threads": 10,
+    "wall_seconds": 5169.192063
+  }
+]

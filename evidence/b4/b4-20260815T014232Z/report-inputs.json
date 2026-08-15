@@ -1,0 +1,2030 @@
+{
+  "accepted_prerequisites": [
+    {
+      "checksums_sha256": "d565262ca77051f81df9b26ac08a098992e554704b84b379adcfc8f51af94e44",
+      "cpu_seconds": 0.032372,
+      "gate": "B0",
+      "manifest_sha256": "c03750bcefdee513e4ef2a91fb8a8c9b209d26be3657075ea644ad80f92d4c9a",
+      "peak_rss_bytes": 26050560,
+      "run_dir": "evidence/b0/b0-20260814T230315Z",
+      "run_id": "b0-20260814T230315Z",
+      "source_commit": "19bd4efadddf75182caa8012981917c0938aa2ed",
+      "status": "PASS",
+      "threads": 1,
+      "wall_seconds": 0.733192
+    },
+    {
+      "checksums_sha256": "00f6a1b9ad99555c39cc9a717f346e10edd83e7c9817cff325e93c24c811a008",
+      "cpu_seconds": 10.864997,
+      "gate": "B1",
+      "manifest_sha256": "51c22ef534a0cce11676b39e05b8c601a9760f075efee0f5a5232a7195a37e44",
+      "peak_rss_bytes": 86065152,
+      "run_dir": "evidence/b1/b1-20260814T231402Z",
+      "run_id": "b1-20260814T231402Z",
+      "source_commit": "48bd3e136545095b807f6d68f7f13b7a27af5524",
+      "status": "PASS",
+      "threads": 1,
+      "wall_seconds": 11.401776
+    },
+    {
+      "checksums_sha256": "bed371c2a5f9d1b6be646939f9dacdc3b67ef98a79f5c244702b17665b65ee18",
+      "cpu_seconds": 385.407711,
+      "gate": "B2",
+      "manifest_sha256": "8d057c43edb1e408d4334783cbb0a615110011bfa2aac121319ca32924888d74",
+      "peak_rss_bytes": 86622208,
+      "run_dir": "evidence/b2/b2-20260814T232833Z",
+      "run_id": "b2-20260814T232833Z",
+      "source_commit": "a91a1710201d4f1c4b1f13e6473930ce8ec13184",
+      "status": "PASS",
+      "threads": 1,
+      "wall_seconds": 399.690669
+    },
+    {
+      "checksums_sha256": "1610609bb2ff4b4c3d0e5b06ffd8188403b9e532366903379d7d640a03990268",
+      "cpu_seconds": 39158.022648,
+      "gate": "B3",
+      "manifest_sha256": "4398642fa4b0811b44d573894c3df4bbfe263486a9344cf44b274c8064266170",
+      "peak_rss_bytes": 4356050944,
+      "run_dir": "evidence/b3/b3-20260815T000708Z",
+      "run_id": "b3-20260815T000708Z",
+      "source_commit": "5d44ca23742cd86b490ba366ad568b5322e4f21f",
+      "status": "PASS",
+      "threads": 10,
+      "wall_seconds": 5169.192063
+    }
+  ],
+  "b0": {
+    "authority": [
+      {
+        "path": "PROJECT_CONTRACT.md",
+        "sha256": "6f345adb8c2037c28d4f08bf04cdbba6205de8848768b52c4bc9f09f737e1d61"
+      },
+      {
+        "path": "CODEX_BASELINE_PROMPT.md",
+        "sha256": "f1f99ff05de9baab68ef0056458a3932094f3b0cc2d7fde55db28b3edad52ad9"
+      },
+      {
+        "path": "AGENTS.md",
+        "sha256": "4018c4202c2dedf27b7f3517f90e68482ae38cd284a2dccd6a9e9b7757dfbbaa"
+      }
+    ],
+    "protocol": {
+      "aggregate_sha256": "9efccb2d1b3fcafef9385ddb562a5e202136bc31c64cfc64bdc3c9bdea60b67c",
+      "b2_config_sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff",
+      "b3_config_sha256": "73dfb958c2155ee4f9241c80fc3299d68e4b0ea2ffa2660ea8c8e991d69e4263",
+      "budgets_sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f",
+      "host_policy": {
+        "constructive_threads": 1,
+        "cpu_cores": 10,
+        "gpu_allowed": false,
+        "host": "Apple M4 Mac mini",
+        "memory_bytes": 17179869184,
+        "remote_compute_allowed": false
+      },
+      "required_file_sha256": [
+        {
+          "path": ".gitignore",
+          "sha256": "e3e902f24e6010a2296d340f73d8dc1a682c9f1e276d7db9a8d53521ec6af32b"
+        },
+        {
+          "path": "Makefile",
+          "sha256": "df9cdab2651b3203be0616d5908b3bed10a6a76b0398fd0c1bfb356b37dc4e4d"
+        },
+        {
+          "path": "pyproject.toml",
+          "sha256": "3a924b44abac1fb44d1d237a1f899f1b7a6c8295129c0df3689b544e93df2bce"
+        },
+        {
+          "path": "uv.lock",
+          "sha256": "41161a2abecaf1bc18908a7a795b9e2d79c0d0008acfb8d35a848b9b24162ed0"
+        },
+        {
+          "path": "config/frozen/b0-freeze.json",
+          "sha256": "4616a5148f0ca4a0c0cc3334156a1e9e748a2094b543963ce727d2311aae1238"
+        },
+        {
+          "path": "config/frozen/b2-senso.json",
+          "sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff"
+        },
+        {
+          "path": "config/frozen/b3-exact.json",
+          "sha256": "73dfb958c2155ee4f9241c80fc3299d68e4b0ea2ffa2660ea8c8e991d69e4263"
+        },
+        {
+          "path": "config/frozen/budgets.json",
+          "sha256": "de56a38403f40a5807274996c790b365a7ce3d00492283b19a414c61ffe6d47f"
+        },
+        {
+          "path": "config/frozen/dependencies.lock.json",
+          "sha256": "5dc5c55dda96460428874d9b389049f2550707520779dadb081a0b8da6568d9c"
+        },
+        {
+          "path": "config/frozen/evidence-manifest.schema.json",
+          "sha256": "e158a5994523220cc7656cf97b6900ddd646fd6b43b7b87bbc32a5ab68f6ba6f"
+        },
+        {
+          "path": "config/frozen/seeds.json",
+          "sha256": "dcac67a8eb5b5c14d9629d88fd3240da3aa5d4fa3c77d479d274c901273d7a0b"
+        },
+        {
+          "path": "config/frozen/sources.json",
+          "sha256": "0110d7a5872737bd2629c84e0b09b410ef6628f9fa9826351d45698dbd3a5a76"
+        },
+        {
+          "path": "docs/candidate-format.md",
+          "sha256": "4047c91a379fe88b7d96201d13690ab0b2e98751abd27ba4975d33f1e3664a4a"
+        },
+        {
+          "path": "docs/baseline-protocol.md",
+          "sha256": "42e344b45eed80594f2f312985d4fcbbccb944f7b3aca68a287db697240fbe2f"
+        },
+        {
+          "path": "docs/current-status-audit.md",
+          "sha256": "b2c210a1c52d7cb6bacbf277451b00c8ee5892d63c4ab811923caea24e28e2ae"
+        },
+        {
+          "path": "docs/licensing-audit.md",
+          "sha256": "38efee70fca0d06b291f29e4f74efddf9a3fbaad0632f661ac0af659a9373507"
+        },
+        {
+          "path": "docs/senso-portability.md",
+          "sha256": "3d250fa05f83d254fa4f126c81e23a319231898c93add12964c9ae3d8983e406"
+        },
+        {
+          "path": "docs/source-ledger.md",
+          "sha256": "36d4a28b369168a738fde349585e1f85854530e1ab3d888e6f5d200e9741a057"
+        },
+        {
+          "path": "docs/trust-boundary.md",
+          "sha256": "3403334b6389da9b93dac43d9cbf76f36e18a1f3a923026cde908b84dc54eea2"
+        },
+        {
+          "path": "tests/test_b0_freeze.py",
+          "sha256": "bdbcde144dda389a82fbbb1cfffc27d5f31c7fdec225b8ed2f6c29fbd3d7e71d"
+        },
+        {
+          "path": "tests/test_evidence_check.py",
+          "sha256": "656227cf5b861db0a1c99e26375cd07bf04dbb190648488f82e90bcd4f714ba8"
+        },
+        {
+          "path": "tools/b0_gate.py",
+          "sha256": "436fbd350ba814a1b605d4fda98c2ace8c3ba4a19593a78407ff4c3fd05e69cb"
+        },
+        {
+          "path": "tools/evidence_check.py",
+          "sha256": "8bff45e09b2f78686b280c42d285ddbaa275f0f70b30de7ccb3e19dcad8fe5f8"
+        },
+        {
+          "path": "tools/setup_sources.py",
+          "sha256": "7ac09423a7d137a707cec7a566b683a4dfe89c0ce1e5a14b92440249dc54272b"
+        },
+        {
+          "path": "tools/patches/symmetry-1.1-macos.patch",
+          "sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09"
+        }
+      ],
+      "required_files": [
+        ".gitignore",
+        "Makefile",
+        "pyproject.toml",
+        "uv.lock",
+        "config/frozen/b0-freeze.json",
+        "config/frozen/b2-senso.json",
+        "config/frozen/b3-exact.json",
+        "config/frozen/budgets.json",
+        "config/frozen/dependencies.lock.json",
+        "config/frozen/evidence-manifest.schema.json",
+        "config/frozen/seeds.json",
+        "config/frozen/sources.json",
+        "docs/candidate-format.md",
+        "docs/baseline-protocol.md",
+        "docs/current-status-audit.md",
+        "docs/licensing-audit.md",
+        "docs/senso-portability.md",
+        "docs/source-ledger.md",
+        "docs/trust-boundary.md",
+        "tests/test_b0_freeze.py",
+        "tests/test_evidence_check.py",
+        "tools/b0_gate.py",
+        "tools/evidence_check.py",
+        "tools/setup_sources.py",
+        "tools/patches/symmetry-1.1-macos.patch"
+      ],
+      "resource_limits": {
+        "certificate_n11": {
+          "peak_memory_bytes": 12884901888,
+          "wall_seconds": 14400
+        },
+        "constructive": {
+          "aggregate_wall_seconds": 21600,
+          "peak_memory_bytes": 10737418240,
+          "per_seed_cpu_seconds": 900,
+          "threads_per_seed": 1
+        },
+        "exact_n9": {
+          "peak_memory_bytes": 1073741824,
+          "wall_seconds": 600
+        },
+        "frozen_at": "2026-08-15",
+        "gpu_allowed": false,
+        "schema_version": "s13-budgets/v1",
+        "stop_rules": [
+          "Stop a seed at its CPU cap and preserve TIMEOUT evidence.",
+          "Stop the constructive batch at its aggregate wall or memory cap.",
+          "A timeout or unsuccessful search is MEASURED failure, never a proof.",
+          "If any constructive baseline emits fewer than 45 comparators, freeze it, run only both B1 verifiers, and stop for a new contract."
+        ],
+        "total_after_setup": {
+          "wall_seconds": 43200
+        },
+        "transparent_baselines": {
+          "greedy_aggregate_wall_seconds": 600,
+          "greedy_generations": 0,
+          "greedy_population_per_seed": 20,
+          "random_aggregate_wall_seconds": 300,
+          "random_trials_per_seed": 100
+        }
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ]
+    },
+    "source_verification": [
+      {
+        "id": "dobbelaere-catalog",
+        "path": ".cache/sources/sorting_networks_extended.html",
+        "sha256": "8a2d11c9f2ac66e16ea93a9c4301971b47d3115eaf28d4e12b50079c8238d116",
+        "size_bytes": 302892,
+        "status": "ARTIFACT_VERIFIED"
+      },
+      {
+        "id": "harder-paper-v3",
+        "path": ".cache/sources/harder-v3.pdf",
+        "sha256": "48a54deefef544dce2e1b8b73babb501a3990628d0ddc582333bfb2f925fd203",
+        "size_bytes": 652133,
+        "status": "ARTIFACT_VERIFIED"
+      },
+      {
+        "id": "valsalam-miikkulainen-paper",
+        "path": ".cache/sources/valsalam13a.pdf",
+        "sha256": "59522734f52c0b4927e80eba4971a49ba6cc756ea5d072e382af57648544df3e",
+        "size_bytes": 507961,
+        "status": "ARTIFACT_VERIFIED"
+      },
+      {
+        "id": "symmetry-1.1",
+        "path": ".cache/sources/symmetry-1.1.tar.gz",
+        "sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+        "size_bytes": 22506545,
+        "status": "ARTIFACT_VERIFIED"
+      },
+      {
+        "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+        "id": "sortnetopt",
+        "path": ".cache/third_party/sortnetopt",
+        "status": "ARTIFACT_VERIFIED"
+      },
+      {
+        "commit": "49b355d484aa92c2a661b6ab1a2f981a60b7c0c6",
+        "id": "dobbelaere-catalog",
+        "path": ".cache/third_party/dobbelaere-catalog",
+        "status": "ARTIFACT_VERIFIED"
+      }
+    ]
+  },
+  "b1": {
+    "agreement": {
+      "case_count": 267,
+      "category_counts": {
+        "exhaustive-subset": 40,
+        "malformed": 9,
+        "mutation": 3,
+        "negative": 1,
+        "positive": 6,
+        "random-differential": 200,
+        "reflection": 4,
+        "reflection-base": 4
+      },
+      "exhaustive_accept_count": 6,
+      "exhaustive_candidate_count": 40,
+      "mutation_indices_independently_rejected": [
+        0,
+        22,
+        44
+      ],
+      "public_witness_artifact_sha256": "35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83",
+      "public_witness_candidate_checksum": "9358d2c5e17720df3b5b4d2c2e209b973c8531aa3174eab140bca369a4212403",
+      "public_witness_verifier_agreement": "ACCEPT",
+      "random_case_count": 200,
+      "random_seed": 13004520260815,
+      "status": "PASS",
+      "verdict_counts": {
+        "ACCEPT": 72,
+        "INVALID": 186,
+        "MALFORMED": 9
+      }
+    },
+    "verifier_a": {
+      "artifact_sha256": "35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83",
+      "candidate_checksum": "9358d2c5e17720df3b5b4d2c2e209b973c8531aa3174eab140bca369a4212403",
+      "channels": 13,
+      "comparators": 45,
+      "counterexample": null,
+      "duplicate_comparators": [
+        "1 2 x2",
+        "2 3 x2",
+        "3 4 x2",
+        "5 6 x2",
+        "6 8 x2",
+        "7 8 x2",
+        "9 10 x3"
+      ],
+      "implementation": "verifier-a-python-direct-v1",
+      "verdict": "ACCEPT"
+    },
+    "verifier_b": {
+      "artifact_sha256": "35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83",
+      "candidate_checksum": "9358d2c5e17720df3b5b4d2c2e209b973c8531aa3174eab140bca369a4212403",
+      "channels": 13,
+      "comparators": 45,
+      "counterexample": null,
+      "duplicate_comparators": [
+        "1 2 x2",
+        "2 3 x2",
+        "3 4 x2",
+        "5 6 x2",
+        "6 8 x2",
+        "7 8 x2",
+        "9 10 x3"
+      ],
+      "failing_input_count": 0,
+      "implementation": "verifier-b-go-bitparallel-v1",
+      "verdict": "ACCEPT"
+    }
+  },
+  "b2": {
+    "rows": {
+      "greedy": [
+        {
+          "artifact_sha256": "2c7a919786851865d089b0900037f1e189361879cca4cf54c78dce5aa87f87ae",
+          "best_size": 47,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5111808,
+          "seed": 1,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264627
+        },
+        {
+          "artifact_sha256": "f1ef2bda0483c0f9ff6935abff9c8313c55c539d402a5a78effd959c26273954",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5111808,
+          "seed": 2,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.262288
+        },
+        {
+          "artifact_sha256": "1d5035d5ebf8309a1efc2fb2621b57147607bea743e2a5863b82ce2707fc5150",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5128192,
+          "seed": 3,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266369
+        },
+        {
+          "artifact_sha256": "58a121b8b14a946ab58b6f3eb3e0f5a785bb733aa4fbaa47adaec49ec5db4285",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5079040,
+          "seed": 4,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266186
+        },
+        {
+          "artifact_sha256": "75c9b316a540dc5ac6a962ff8487b83db058b55b508f6f76a6f40a845669afee",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5029888,
+          "seed": 5,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.26675
+        },
+        {
+          "artifact_sha256": "daaee0364cc5205a4f453e3a5923286a928fc40370749cf679c3764e95890503",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5062656,
+          "seed": 6,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264867
+        },
+        {
+          "artifact_sha256": "ce2743535dc63275a4e140fdcc875fec4b9fc17dbefc588a673553a082a21d4c",
+          "best_size": 47,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5062656,
+          "seed": 7,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264183
+        },
+        {
+          "artifact_sha256": "048160142418c091363d5875685453fd6703f55f3adf71e94b4003eb9f47bc05",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5111808,
+          "seed": 8,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.26629
+        },
+        {
+          "artifact_sha256": "21c5a15fa9bef7040d39f21f09dd394b3088108865b6e5705a281f59698fa6a7",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5046272,
+          "seed": 9,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266616
+        },
+        {
+          "artifact_sha256": "68bfc0671c87984a211339d623c206e578edd52784da4b455b596bed2638053c",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5079040,
+          "seed": 10,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266513
+        },
+        {
+          "artifact_sha256": "614b1d0c56012a171a1a1933083832863d256a8aca7746fedb86d0119c60a681",
+          "best_size": 47,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5144576,
+          "seed": 11,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264677
+        },
+        {
+          "artifact_sha256": "745b0ff544afb84b697154ce326e76b6d8cb0fec4f8c95d68513fe8239867dcb",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5062656,
+          "seed": 12,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266466
+        },
+        {
+          "artifact_sha256": "f711815b92df5abed1bd661af59e169638f62052d8094c3b8e9b6a73946623e8",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5128192,
+          "seed": 13,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264858
+        },
+        {
+          "artifact_sha256": "2bd3f5ea106347d69562ff738eaf38a5aa7d1cd9e42f7981dfcae0937b079d76",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5062656,
+          "seed": 14,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266509
+        },
+        {
+          "artifact_sha256": "a2ddaafa15c820e1b997abfb43686c92f5e9fa62ebf3a14bc7b48f0e7a395819",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5095424,
+          "seed": 15,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264623
+        },
+        {
+          "artifact_sha256": "b715e290a3d1967b496ebd5284ef0e049ff380a887748703cfe4836f38e6ef8a",
+          "best_size": 47,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5062656,
+          "seed": 16,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.265035
+        },
+        {
+          "artifact_sha256": "0aef45442d5879e473130f38d875d0f9df114522035d9cef6b8ab6119055330d",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5095424,
+          "seed": 17,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264367
+        },
+        {
+          "artifact_sha256": "72c8935d4add6a8422e4a1343e7aa17c736f0c1f6ac224d51c0f43e359561ba0",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5111808,
+          "seed": 18,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266476
+        },
+        {
+          "artifact_sha256": "109d6cbbe51777ff94f850b591a151f9b9d944efe0447a0a3a3472f134be4a78",
+          "best_size": 48,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5095424,
+          "seed": 19,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264396
+        },
+        {
+          "artifact_sha256": "ab396b28252b2103975eda2ccdd7262862fd23828c7fd87d7295f4297c8a5496",
+          "best_size": 47,
+          "cpu_seconds": 0.03,
+          "evaluations": 20,
+          "peak_rss_bytes": 5128192,
+          "seed": 20,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.263284
+        }
+      ],
+      "random": [
+        {
+          "artifact_sha256": "4c3287790ee0be960e277f74ddc1d972cf631405e51adf6e79dac075b8d2e07f",
+          "best_size": 210,
+          "cpu_seconds": 0.14,
+          "evaluations": 37122,
+          "peak_rss_bytes": 20611072,
+          "seed": 1,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266553
+        },
+        {
+          "artifact_sha256": "f8c69bd477086088113fb3830972e72c3fd6971b3ece18b644f748d3c4aee9f4",
+          "best_size": 222,
+          "cpu_seconds": 0.12,
+          "evaluations": 34692,
+          "peak_rss_bytes": 20496384,
+          "seed": 2,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.2663
+        },
+        {
+          "artifact_sha256": "d47aa047bbf62445be6a53bd98a726f505250f482b17f46dd8c75b8691c1cee8",
+          "best_size": 166,
+          "cpu_seconds": 0.14,
+          "evaluations": 34480,
+          "peak_rss_bytes": 20529152,
+          "seed": 3,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.263554
+        },
+        {
+          "artifact_sha256": "46bb21102093f8d23b9c4c64540c37fd94a70342fac45a091cc306661390ffdf",
+          "best_size": 195,
+          "cpu_seconds": 0.13,
+          "evaluations": 35892,
+          "peak_rss_bytes": 20643840,
+          "seed": 4,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264189
+        },
+        {
+          "artifact_sha256": "e7af57cca9158ee258ea5ce6469df745c89bf1bdfe8fb01891529a1e28911522",
+          "best_size": 202,
+          "cpu_seconds": 0.14,
+          "evaluations": 35604,
+          "peak_rss_bytes": 20480000,
+          "seed": 5,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.263794
+        },
+        {
+          "artifact_sha256": "c85fecf0c6835be1c180675cbe0f77ccc8a9d337607006de49048e97480f944d",
+          "best_size": 202,
+          "cpu_seconds": 0.14,
+          "evaluations": 37113,
+          "peak_rss_bytes": 20463616,
+          "seed": 6,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266259
+        },
+        {
+          "artifact_sha256": "06285b7d84cdcf31afd3c0b5c18cc67d285a72e2bc279efadfeed2b86769a1b1",
+          "best_size": 215,
+          "cpu_seconds": 0.14,
+          "evaluations": 35782,
+          "peak_rss_bytes": 20529152,
+          "seed": 7,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266124
+        },
+        {
+          "artifact_sha256": "21bf8ecad453f3c2d4db2f1228b7adf2be6892c9df4e98fded06db5a1b4ddd08",
+          "best_size": 167,
+          "cpu_seconds": 0.13,
+          "evaluations": 34944,
+          "peak_rss_bytes": 20463616,
+          "seed": 8,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266601
+        },
+        {
+          "artifact_sha256": "7c7ba59e9d6876592c5b189e66840cd55cbda0f21187e9079731bb0121bb00cb",
+          "best_size": 148,
+          "cpu_seconds": 0.14,
+          "evaluations": 35440,
+          "peak_rss_bytes": 20512768,
+          "seed": 9,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266616
+        },
+        {
+          "artifact_sha256": "5a08c8f8439e8d4dba8f82f9fa059d3ffaba47507d1ed570089c82139a46f93b",
+          "best_size": 216,
+          "cpu_seconds": 0.14,
+          "evaluations": 36222,
+          "peak_rss_bytes": 20447232,
+          "seed": 10,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264508
+        },
+        {
+          "artifact_sha256": "f7d9a411c567b9e745d6e4312de965e9e55de0f6fa2a7847f52ba966f215eb5c",
+          "best_size": 231,
+          "cpu_seconds": 0.13,
+          "evaluations": 35740,
+          "peak_rss_bytes": 20561920,
+          "seed": 11,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266364
+        },
+        {
+          "artifact_sha256": "56d3ff089c6b41c990cd407aabb9c2d9734ab32de7c2eddcf6296cb522a814af",
+          "best_size": 177,
+          "cpu_seconds": 0.14,
+          "evaluations": 37110,
+          "peak_rss_bytes": 20447232,
+          "seed": 12,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.262786
+        },
+        {
+          "artifact_sha256": "0b5a6f8ff7cf084580c508d55f390382d2f8572fc67050c50b9aa3f3ecd5a026",
+          "best_size": 208,
+          "cpu_seconds": 0.14,
+          "evaluations": 36657,
+          "peak_rss_bytes": 20643840,
+          "seed": 13,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266189
+        },
+        {
+          "artifact_sha256": "7386505c359e87bee73a42a6ebfedbed47e33bacdf41b054fce4b74623643cd7",
+          "best_size": 182,
+          "cpu_seconds": 0.14,
+          "evaluations": 38088,
+          "peak_rss_bytes": 20529152,
+          "seed": 14,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266337
+        },
+        {
+          "artifact_sha256": "b8b2c01851dd47418dad0bf681be13c592110b701a3fa9163b24e4e4c4ca6763",
+          "best_size": 202,
+          "cpu_seconds": 0.14,
+          "evaluations": 36395,
+          "peak_rss_bytes": 20545536,
+          "seed": 15,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.261717
+        },
+        {
+          "artifact_sha256": "7e05aca3ed357ffd500839014ee65fbc07be5c0f336dacfd329ca94f63fc5e8c",
+          "best_size": 218,
+          "cpu_seconds": 0.14,
+          "evaluations": 37399,
+          "peak_rss_bytes": 20578304,
+          "seed": 16,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266299
+        },
+        {
+          "artifact_sha256": "be74100060f798716eadde897d7897caf52e48e5b9f679d877ee0b3a8504cda9",
+          "best_size": 213,
+          "cpu_seconds": 0.14,
+          "evaluations": 35688,
+          "peak_rss_bytes": 20594688,
+          "seed": 17,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.264938
+        },
+        {
+          "artifact_sha256": "7bbb3ccf8ecbd245f8fab727e349327e09b64cd79c321bab750c2856172355e3",
+          "best_size": 206,
+          "cpu_seconds": 0.13,
+          "evaluations": 34745,
+          "peak_rss_bytes": 20643840,
+          "seed": 18,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266537
+        },
+        {
+          "artifact_sha256": "7e9e33fcc95b0d3b63c9756e10202c67d81c0a8f1bde85f314e41a195fab2178",
+          "best_size": 194,
+          "cpu_seconds": 0.12,
+          "evaluations": 34923,
+          "peak_rss_bytes": 20611072,
+          "seed": 19,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266336
+        },
+        {
+          "artifact_sha256": "27eb98223ac4cbee37ee7267275e322f66967c5cdf609366432e99c9d20e31c6",
+          "best_size": 200,
+          "cpu_seconds": 0.14,
+          "evaluations": 36127,
+          "peak_rss_bytes": 20512768,
+          "seed": 20,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 0.266244
+        }
+      ],
+      "senso": [
+        {
+          "artifact_sha256": "6a0983e3203b755cb36552feaa49ddf14eeefd194ae234eec063e4beb7598934",
+          "best_size": 46,
+          "cpu_seconds": 18.56,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17022976,
+          "seed": 1,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 18.720924
+        },
+        {
+          "artifact_sha256": "d808eb7c0cb36197182b2ea568efa4a6ac544db1d0825c64d0afdda8b86051f7",
+          "best_size": 46,
+          "cpu_seconds": 18.71,
+          "evaluations": 50200,
+          "peak_rss_bytes": 16957440,
+          "seed": 2,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 18.998714
+        },
+        {
+          "artifact_sha256": "a26db40fa082ab96fde0f171342e3093f37db87f696130742b3a8ad91ba74dd6",
+          "best_size": 46,
+          "cpu_seconds": 18.7,
+          "evaluations": 50200,
+          "peak_rss_bytes": 16957440,
+          "seed": 3,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.009466
+        },
+        {
+          "artifact_sha256": "1257d9805e3c5b24355f77a675ce307b7a247a88378fb7d629959ff80ea50e9f",
+          "best_size": 46,
+          "cpu_seconds": 18.75,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17055744,
+          "seed": 4,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.005242
+        },
+        {
+          "artifact_sha256": "fe4a2270fb1a5bd282e97d502788715bdecbd338f1536b74e7227d1706aa5559",
+          "best_size": 46,
+          "cpu_seconds": 18.68,
+          "evaluations": 50200,
+          "peak_rss_bytes": 16990208,
+          "seed": 5,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 18.75877
+        },
+        {
+          "artifact_sha256": "7b9d4c8638ddcc663cddc4a88330ea6caae95d37062f2a5ab5e90f0241c8185a",
+          "best_size": 46,
+          "cpu_seconds": 18.62,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17137664,
+          "seed": 6,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 18.757032
+        },
+        {
+          "artifact_sha256": "acdd2c1f1cb0eebbfcc44ba17219769d17b19422a6cdaa2bb8f1b8e4acf99345",
+          "best_size": 46,
+          "cpu_seconds": 19.07,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17039360,
+          "seed": 7,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.352359
+        },
+        {
+          "artifact_sha256": "97d4d1b6d1317bb4955bcf2a6aab4cf93bab387e3e329c2f97789d86b4d09292",
+          "best_size": 47,
+          "cpu_seconds": 19.86,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17121280,
+          "seed": 8,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 20.451433
+        },
+        {
+          "artifact_sha256": "a9c47cc6c65719b459e0959bace280c15eb79c9869d8ba35fff04429a6012000",
+          "best_size": 46,
+          "cpu_seconds": 18.97,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17055744,
+          "seed": 9,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.045908
+        },
+        {
+          "artifact_sha256": "f77b3975596d48180cb92cf073b1773cdcf57b155f550870286a19c347beebe4",
+          "best_size": 47,
+          "cpu_seconds": 19.25,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17039360,
+          "seed": 10,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.336253
+        },
+        {
+          "artifact_sha256": "390587b5fc4323826d321ffc6e58d1aaa7590c7054824b153dcf3ee2c1e4e454",
+          "best_size": 46,
+          "cpu_seconds": 18.76,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17006592,
+          "seed": 11,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.036907
+        },
+        {
+          "artifact_sha256": "f423edad70557f1a13e3fffcae018b1675e3aab0e3ffef92666e7ccdb0ca98aa",
+          "best_size": 46,
+          "cpu_seconds": 18.76,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17039360,
+          "seed": 12,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.020495
+        },
+        {
+          "artifact_sha256": "19ce707d9abbc88c00adee83a44b77061bddb699ceb4194ca3197611f66fa7ba",
+          "best_size": 46,
+          "cpu_seconds": 18.8,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17137664,
+          "seed": 13,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.041999
+        },
+        {
+          "artifact_sha256": "06873d42229e9a64af0f602b50d60953769c20233ba5d92f7374ddfe8c1a8fa0",
+          "best_size": 46,
+          "cpu_seconds": 18.860000000000003,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17104896,
+          "seed": 14,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.047808
+        },
+        {
+          "artifact_sha256": "a132912fe6683d4cd56e4727be1a13985583c447e7ace931a288d85f4983fb9e",
+          "best_size": 46,
+          "cpu_seconds": 18.97,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17104896,
+          "seed": 15,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.326363
+        },
+        {
+          "artifact_sha256": "8000e446d329741749f9cef7ff1c3ac2e52792669dcaa5576172218fca9147f6",
+          "best_size": 47,
+          "cpu_seconds": 20.060000000000002,
+          "evaluations": 50200,
+          "peak_rss_bytes": 16957440,
+          "seed": 16,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 20.285433
+        },
+        {
+          "artifact_sha256": "6cad2631cb9fcd790ede7c92acff067a66fe006d0c25d8f724f1ecfa0ca41bae",
+          "best_size": 46,
+          "cpu_seconds": 19.060000000000002,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17104896,
+          "seed": 17,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.310065
+        },
+        {
+          "artifact_sha256": "409a5aefc0330d6b09e428e985f49b7b387610c68a5cf635f6146edde5c67244",
+          "best_size": 45,
+          "cpu_seconds": 18.990000000000002,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17022976,
+          "seed": 18,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.289673
+        },
+        {
+          "artifact_sha256": "f1bab0dfbe461b9a31c95d1c6d58f99a2a26e78ceeca3b6e4ada2f50f03e6cea",
+          "best_size": 46,
+          "cpu_seconds": 19.189999999999998,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17022976,
+          "seed": 19,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.28134
+        },
+        {
+          "artifact_sha256": "2ea47d50a39e4bee8b22e8745d8b7d757c34d9f11dc9893131f2a363a4b17c11",
+          "best_size": 46,
+          "cpu_seconds": 19.520000000000003,
+          "evaluations": 50200,
+          "peak_rss_bytes": 17154048,
+          "seed": 20,
+          "status": "PASS",
+          "verifier_a": "ACCEPT",
+          "verifier_b": "ACCEPT",
+          "wall_seconds": 19.798881
+        }
+      ]
+    },
+    "summary": {
+      "acceptance_size": 45,
+      "all_senso_seeds_reported": true,
+      "baselines": {
+        "greedy": {
+          "all_seeds_reported": true,
+          "best_size": 47,
+          "expected_seed_count": 20,
+          "peak_rss_bytes": 5144576,
+          "reported_seed_count": 20,
+          "size_distribution": {
+            "47": 5,
+            "48": 15
+          },
+          "status_counts": {
+            "PASS": 20
+          },
+          "total_cpu_seconds": 0.6,
+          "total_evaluations": 400,
+          "total_wall_seconds": 5.30538,
+          "verified_candidate_count": 20
+        },
+        "random": {
+          "all_seeds_reported": true,
+          "best_size": 148,
+          "expected_seed_count": 20,
+          "peak_rss_bytes": 20643840,
+          "reported_seed_count": 20,
+          "size_distribution": {
+            "148": 1,
+            "166": 1,
+            "167": 1,
+            "177": 1,
+            "182": 1,
+            "194": 1,
+            "195": 1,
+            "200": 1,
+            "202": 3,
+            "206": 1,
+            "208": 1,
+            "210": 1,
+            "213": 1,
+            "215": 1,
+            "216": 1,
+            "218": 1,
+            "222": 1,
+            "231": 1
+          },
+          "status_counts": {
+            "PASS": 20
+          },
+          "total_cpu_seconds": 2.72,
+          "total_evaluations": 720163,
+          "total_wall_seconds": 5.308245,
+          "verified_candidate_count": 20
+        },
+        "senso": {
+          "all_seeds_reported": true,
+          "best_size": 45,
+          "expected_seed_count": 20,
+          "peak_rss_bytes": 17154048,
+          "reported_seed_count": 20,
+          "size_distribution": {
+            "45": 1,
+            "46": 16,
+            "47": 3
+          },
+          "status_counts": {
+            "PASS": 20
+          },
+          "total_cpu_seconds": 380.14,
+          "total_evaluations": 1004000,
+          "total_wall_seconds": 384.875065,
+          "verified_candidate_count": 20
+        }
+      },
+      "senso_acceptance_count": 1,
+      "status": "PASS",
+      "truth_labels": {
+        "accepted_candidates": "LOCALLY_REPRODUCED",
+        "frozen_seeds": "ASSUMED",
+        "local_runs": "MEASURED",
+        "paper_parameters": "PUBLISHED",
+        "variant_2_probability_mapping": "ASSUMED"
+      }
+    }
+  },
+  "b3": {
+    "certificate_cache": {
+      "commands": [
+        {
+          "command": [
+            "/usr/bin/curl",
+            "--location",
+            "--fail",
+            "--retry",
+            "5",
+            "--retry-delay",
+            "5",
+            "--continue-at",
+            "-",
+            "--output",
+            "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.zst.partial",
+            "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content"
+          ],
+          "cwd": "/Users/yugendren/experiments/sorting_network_s13",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "/opt/homebrew/bin/zstd",
+            "--decompress",
+            "--force",
+            "--no-progress",
+            "-o",
+            "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.partial",
+            "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.zst"
+          ],
+          "cwd": "/Users/yugendren/experiments/sorting_network_s13",
+          "exit_code": 0
+        }
+      ],
+      "compressed_md5": "2847374c6bab1260c9771d6fafe65f44",
+      "compressed_path": ".cache/certificates/proof_cert_11.bin.zst",
+      "compressed_size_bytes": 1247864564,
+      "doi": "10.5281/zenodo.4108365",
+      "ended_at": "2026-08-14T23:49:17.143705+00:00",
+      "fetch_log_sha256": "76e62a4c88cf18859da7be6b5a0335f4aaf9288043814882acbdb68bababac97",
+      "schema_version": "s13-harder-certificate-cache/v1",
+      "started_at": "2026-08-14T23:44:34.568542+00:00",
+      "status": "PASS",
+      "uncompressed_path": ".cache/certificates/proof_cert_11.bin",
+      "uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+      "uncompressed_size_bytes": 3068651498,
+      "url": "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content",
+      "wall_seconds": 282.576548
+    },
+    "corruption": {
+      "checker_output_line": "Nothing",
+      "checker_result": null,
+      "safe_rejection": true,
+      "status": "PASS",
+      "truth_label": "LOCALLY_REPRODUCED"
+    },
+    "corruption_resource": {
+      "cpu_seconds": 12.37,
+      "exit_code": 0,
+      "memory_limit_bytes": 1073741824,
+      "peak_rss_bytes": 26099712,
+      "status": "PASS",
+      "stderr_sha256": "7fa1230cd5715c85a28612d3b137b72f9f9646cfd722e100e95a6e7da66e70b8",
+      "stdout_sha256": "50edf29cf546c08c8efc6c88f6495608bd92ab8dee94fca180f48ea8695f910a",
+      "system_seconds": 1.78,
+      "time_peak_rss_bytes": 22867968,
+      "time_real_seconds": 2.27,
+      "user_seconds": 10.59,
+      "wall_limit_seconds": 120,
+      "wall_seconds": 2.391103
+    },
+    "n11": {
+      "certificate_sha256_after": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+      "certificate_sha256_before": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+      "certificate_size_bytes": 3068651498,
+      "checker_output_line": "Just (11,35)",
+      "checker_result": [
+        11,
+        35
+      ],
+      "local_statement": "The published certificate replay establishes the size lower bound S(11) >= 35.",
+      "status": "PASS",
+      "truth_label": "LOCALLY_REPRODUCED"
+    },
+    "n11_resource": {
+      "cpu_seconds": 39106.380000000005,
+      "exit_code": 0,
+      "memory_limit_bytes": 12884901888,
+      "peak_rss_bytes": 4356050944,
+      "status": "PASS",
+      "stderr_sha256": "d146d59203f75798f7ebb660927d6a38e43ecaf53f274421584b54a6740933b9",
+      "stdout_sha256": "7f771da3dc6c692f652aad94d2c905104a1ad501cba809f0de92e5ad8a566653",
+      "system_seconds": 6060.3,
+      "time_peak_rss_bytes": 4355158016,
+      "time_real_seconds": 5148.18,
+      "user_seconds": 33046.08,
+      "wall_limit_seconds": 14400,
+      "wall_seconds": 5148.689796
+    },
+    "n9": {
+      "checker_output_line": "Just (9,25)",
+      "checker_result": [
+        9,
+        25
+      ],
+      "generated_artifact_count": 150,
+      "local_statement": "The replayed generated certificate establishes the size lower bound S(9) >= 25.",
+      "proof_sha256": "26eb7b47e6b7902e17357e861a8166ceeb056de5b2cdf35401c4f3446916da9b",
+      "proof_size_bytes": 1559129,
+      "status": "PASS",
+      "truth_label": "LOCALLY_REPRODUCED"
+    },
+    "n9_resource": {
+      "cpu_seconds": 27.89,
+      "exit_code": 0,
+      "memory_limit_bytes": 1073741824,
+      "peak_rss_bytes": 100012032,
+      "status": "PASS",
+      "stderr_sha256": "e4899d0225b235f7cad170286c621da8ab9f7622803025447c8767a3f2bd93e8",
+      "stdout_sha256": "9d354f4c214533913f10b98f3e34048484d2ddff942fb0f4477a9695ffdd523b",
+      "system_seconds": 3.28,
+      "time_peak_rss_bytes": 51462144,
+      "time_real_seconds": 15.26,
+      "user_seconds": 24.61,
+      "wall_limit_seconds": 600,
+      "wall_seconds": 15.392936
+    },
+    "summary": {
+      "corruption_rejection": {
+        "checker_output_line": "Nothing",
+        "checker_result": null,
+        "safe_rejection": true,
+        "truth_label": "LOCALLY_REPRODUCED"
+      },
+      "n11": {
+        "checker_output_line": "Just (11,35)",
+        "checker_result": [
+          11,
+          35
+        ],
+        "establishes": "S(11) >= 35",
+        "truth_label": "LOCALLY_REPRODUCED"
+      },
+      "n9": {
+        "checker_output_line": "Just (9,25)",
+        "checker_result": [
+          9,
+          25
+        ],
+        "establishes": "S(9) >= 25",
+        "truth_label": "LOCALLY_REPRODUCED"
+      },
+      "prior_scored_wall_seconds": 449.255771,
+      "s11_exact_equality": {
+        "note": "The local replay establishes the lower bound; the matching construction was not separately replayed in B3.",
+        "statement": "S(11)=35",
+        "truth_label": "PUBLISHED"
+      },
+      "s12": {
+        "note": "Paper-derived consequence; no separate n=12 certificate was replayed.",
+        "statement": "S(12)=39",
+        "truth_label": "PUBLISHED"
+      },
+      "status": "PASS",
+      "total_scored_wall_seconds_through_b3": 5618.423088,
+      "total_wall_limit_seconds": 43200
+    },
+    "toolchain": {
+      "build_log_sha256": "8ac675d3076ade550f264b8dffd11dbf2770d3b148117d5ff25418b2fab4ed46",
+      "cargo_version": "cargo 1.95.0 (f2d3ce0bd 2026-03-21) (Homebrew)",
+      "checker_binary": {
+        "file_type": "Mach-O 64-bit executable x86_64",
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/bin/snocheck",
+        "sha256": "4cd30511f73e7d7f6f3f7bc4083d84b37c0678f2156f85fcbfa186546218a84c",
+        "size_bytes": 1359360
+      },
+      "commands": [
+        {
+          "command": [
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/source",
+            "0b5d09c47446096f9e3a0812b35afc72b7f2a718"
+          ],
+          "cwd": ".cache/third_party/sortnetopt",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "patch",
+            "-V",
+            "none",
+            "-p1",
+            "-i",
+            "/Users/yugendren/experiments/sorting_network_s13/tools/patches/sortnetopt-macos-proc.patch"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "patch",
+            "-V",
+            "none",
+            "-p1",
+            "-i",
+            "/Users/yugendren/experiments/sorting_network_s13/tools/patches/sortnetopt-macos-large-read.patch"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "git",
+            "diff",
+            "--check"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "cargo",
+            "build",
+            "--release"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "stack",
+            "setup"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source/checker/snocheck",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "stack",
+            "build",
+            "--copy-bins",
+            "--local-bin-path",
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/bin"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source/checker/snocheck",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/source/target/release/sortnetopt",
+            "--help"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/bin/snocheck"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        }
+      ],
+      "ended_at": "2026-08-15T00:06:01.108356+00:00",
+      "generated_cargo_lock": {
+        "note": "upstream omits Cargo.lock; this records the setup-time resolution",
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/source/Cargo.lock",
+        "sha256": "a999aa381b5436ff2a85565fc5985fe53fe134d4d0baebb6e57880ee807747f9",
+        "size_bytes": 36680
+      },
+      "host_machine": "arm64",
+      "portability_mode": "aarch64 Stack host selecting x86_64 GHC under Rosetta",
+      "portability_patches": [
+        {
+          "algorithm_effect": "diagnostic logging only",
+          "patched_file": "src/logging.rs",
+          "patched_file_sha256": "a4b1a04306f999196f8d3138f7fd698cde978dccbd67c842e46e026344e1962e",
+          "path": "tools/patches/sortnetopt-macos-proc.patch",
+          "purpose": "return unavailable metrics when Linux /proc/self/status is absent",
+          "sha256": "49ce5d772ce6dfcb986b7185ec0e7c14d27681126d4dd703bb4ae259cafcdc42"
+        },
+        {
+          "algorithm_effect": "unverified file I/O only; parser and verified checker unchanged",
+          "patched_file": "checker/snocheck/src/Main.hs",
+          "patched_file_sha256": "5b5eac41da01cd9e8bb53ce38bf1ec5419a9b5216a97ab44e5ff1c54e426e425",
+          "path": "tools/patches/sortnetopt-macos-large-read.patch",
+          "purpose": "read files in bounded lazy chunks before constructing the strict parser input",
+          "sha256": "57b5a0989f937100c71225d34fc609bcb66f409784bd3bee79481c74c68cd848"
+        }
+      ],
+      "runtime_source_path": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+      "rust_binary": {
+        "file_type": "Mach-O 64-bit executable arm64",
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/source/target/release/sortnetopt",
+        "sha256": "ffb04c8e8951ef399d58da911daa7be01c6266fdb4e03089aa4d2bd86f42756b",
+        "size_bytes": 5216120
+      },
+      "rustc_version": "rustc 1.95.0 (59807616e 2026-04-14) (Homebrew)",
+      "schema_version": "s13-harder-toolchain-build/v1",
+      "stack_root": ".cache/toolchains/b3-stack-root",
+      "stack_version": "Version 3.11.1 aarch64",
+      "stack_wrapper": {
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/bin/stack",
+        "sha256": "a9601711ed279991bf19cd906b3ee7d09e2d0eb2a030959a9913d5aaf51b7ca6",
+        "size_bytes": 78
+      },
+      "started_at": "2026-08-15T00:05:26.245807+00:00",
+      "status": "PASS",
+      "upstream": {
+        "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+        "repository": "https://github.com/jix/sortnetopt.git",
+        "stack_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc",
+        "strict_and_parallel_patch_sha256": "df374fe21c9aa07ee91da700dc2642581c999b61defdacc1ee201a87225435e0",
+        "tracked_file_count": 44,
+        "tracked_source_aggregate_sha256": "56b18efa19f3727f1945696f53bb597aec9b13ec210680578b1dc0b0b253a474"
+      },
+      "wall_seconds": 34.862314,
+      "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+    }
+  },
+  "scored_runs": [
+    {
+      "cpu_seconds": 0.015548,
+      "error": "[Errno 2] No such file or directory: '/Users/yugendren/experiments/sorting_network_s13/.cache/third_party/sortnetopt/stack.yaml'",
+      "gate": "B0",
+      "manifest_path": "evidence/b0/b0-20260814T230033Z/manifest.json",
+      "peak_rss_bytes": 25509888,
+      "run_id": "b0-20260814T230033Z",
+      "source_commit": "744826ddff0884e53ba3d94db05773fcb669b86f",
+      "status": "FAIL",
+      "threads": 1,
+      "wall_seconds": 0.054307
+    },
+    {
+      "cpu_seconds": 0.031756,
+      "error": null,
+      "gate": "B0",
+      "manifest_path": "evidence/b0/b0-20260814T230128Z/manifest.json",
+      "peak_rss_bytes": 26017792,
+      "run_id": "b0-20260814T230128Z",
+      "source_commit": "33788306a259b64a770b773196f9530da8a1237f",
+      "status": "PASS",
+      "threads": 1,
+      "wall_seconds": 0.816708
+    },
+    {
+      "cpu_seconds": 0.032372,
+      "error": null,
+      "gate": "B0",
+      "manifest_path": "evidence/b0/b0-20260814T230315Z/manifest.json",
+      "peak_rss_bytes": 26050560,
+      "run_id": "b0-20260814T230315Z",
+      "source_commit": "19bd4efadddf75182caa8012981917c0938aa2ed",
+      "status": "PASS",
+      "threads": 1,
+      "wall_seconds": 0.733192
+    },
+    {
+      "cpu_seconds": 10.864997,
+      "error": null,
+      "gate": "B1",
+      "manifest_path": "evidence/b1/b1-20260814T231402Z/manifest.json",
+      "peak_rss_bytes": 86065152,
+      "run_id": "b1-20260814T231402Z",
+      "source_commit": "48bd3e136545095b807f6d68f7f13b7a27af5524",
+      "status": "PASS",
+      "threads": 1,
+      "wall_seconds": 11.401776
+    },
+    {
+      "cpu_seconds": 385.407711,
+      "error": null,
+      "gate": "B2",
+      "manifest_path": "evidence/b2/b2-20260814T232833Z/manifest.json",
+      "peak_rss_bytes": 86622208,
+      "run_id": "b2-20260814T232833Z",
+      "source_commit": "a91a1710201d4f1c4b1f13e6473930ce8ec13184",
+      "status": "PASS",
+      "threads": 1,
+      "wall_seconds": 399.690669
+    },
+    {
+      "cpu_seconds": 0.005742,
+      "error": "n=9 official command ended as REJECTED",
+      "gate": "B3",
+      "manifest_path": "evidence/b3/b3-20260814T235403Z/manifest.json",
+      "peak_rss_bytes": 35160064,
+      "run_id": "b3-20260814T235403Z",
+      "source_commit": "02255f147f90e983f6b09ae35d3aec91890ef3cd",
+      "status": "FAIL",
+      "threads": 10,
+      "wall_seconds": 0.289428
+    },
+    {
+      "cpu_seconds": 0.127663,
+      "error": "n=9 official command ended as REJECTED",
+      "gate": "B3",
+      "manifest_path": "evidence/b3/b3-20260814T235503Z/manifest.json",
+      "peak_rss_bytes": 51380224,
+      "run_id": "b3-20260814T235503Z",
+      "source_commit": "7da2daec5c94b632df8c6698e8325d9328fcc5d5",
+      "status": "FAIL",
+      "threads": 10,
+      "wall_seconds": 0.80749
+    },
+    {
+      "cpu_seconds": 27.425146,
+      "error": "expected exactly one checker result line, found 0",
+      "gate": "B3",
+      "manifest_path": "evidence/b3/b3-20260815T000143Z/manifest.json",
+      "peak_rss_bytes": 84668416,
+      "run_id": "b3-20260815T000143Z",
+      "source_commit": "4cb743c0398981415bd5fe938642946f91a6d25c",
+      "status": "FAIL",
+      "threads": 10,
+      "wall_seconds": 16.187146
+    },
+    {
+      "cpu_seconds": 41.812694,
+      "error": "n=11 official command ended as REJECTED",
+      "gate": "B3",
+      "manifest_path": "evidence/b3/b3-20260815T000326Z/manifest.json",
+      "peak_rss_bytes": 85618688,
+      "run_id": "b3-20260815T000326Z",
+      "source_commit": "d624738e8830ad29c5071c4c0aae43d680c9c5b4",
+      "status": "FAIL",
+      "threads": 10,
+      "wall_seconds": 20.879262
+    },
+    {
+      "cpu_seconds": 39158.022648,
+      "error": null,
+      "gate": "B3",
+      "manifest_path": "evidence/b3/b3-20260815T000708Z/manifest.json",
+      "peak_rss_bytes": 4356050944,
+      "run_id": "b3-20260815T000708Z",
+      "source_commit": "5d44ca23742cd86b490ba366ad568b5322e4f21f",
+      "status": "PASS",
+      "threads": 10,
+      "wall_seconds": 5169.192063
+    }
+  ],
+  "setup": {
+    "certificate": {
+      "commands": [
+        {
+          "command": [
+            "/usr/bin/curl",
+            "--location",
+            "--fail",
+            "--retry",
+            "5",
+            "--retry-delay",
+            "5",
+            "--continue-at",
+            "-",
+            "--output",
+            "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.zst.partial",
+            "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content"
+          ],
+          "cwd": "/Users/yugendren/experiments/sorting_network_s13",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "/opt/homebrew/bin/zstd",
+            "--decompress",
+            "--force",
+            "--no-progress",
+            "-o",
+            "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.partial",
+            "/Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin.zst"
+          ],
+          "cwd": "/Users/yugendren/experiments/sorting_network_s13",
+          "exit_code": 0
+        }
+      ],
+      "compressed_md5": "2847374c6bab1260c9771d6fafe65f44",
+      "compressed_path": ".cache/certificates/proof_cert_11.bin.zst",
+      "compressed_size_bytes": 1247864564,
+      "doi": "10.5281/zenodo.4108365",
+      "ended_at": "2026-08-14T23:49:17.143705+00:00",
+      "fetch_log_sha256": "76e62a4c88cf18859da7be6b5a0335f4aaf9288043814882acbdb68bababac97",
+      "schema_version": "s13-harder-certificate-cache/v1",
+      "started_at": "2026-08-14T23:44:34.568542+00:00",
+      "status": "PASS",
+      "uncompressed_path": ".cache/certificates/proof_cert_11.bin",
+      "uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+      "uncompressed_size_bytes": 3068651498,
+      "url": "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content",
+      "wall_seconds": 282.576548
+    },
+    "harder": {
+      "build_log_sha256": "8ac675d3076ade550f264b8dffd11dbf2770d3b148117d5ff25418b2fab4ed46",
+      "cargo_version": "cargo 1.95.0 (f2d3ce0bd 2026-03-21) (Homebrew)",
+      "checker_binary": {
+        "file_type": "Mach-O 64-bit executable x86_64",
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/bin/snocheck",
+        "sha256": "4cd30511f73e7d7f6f3f7bc4083d84b37c0678f2156f85fcbfa186546218a84c",
+        "size_bytes": 1359360
+      },
+      "commands": [
+        {
+          "command": [
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/source",
+            "0b5d09c47446096f9e3a0812b35afc72b7f2a718"
+          ],
+          "cwd": ".cache/third_party/sortnetopt",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "patch",
+            "-V",
+            "none",
+            "-p1",
+            "-i",
+            "/Users/yugendren/experiments/sorting_network_s13/tools/patches/sortnetopt-macos-proc.patch"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "patch",
+            "-V",
+            "none",
+            "-p1",
+            "-i",
+            "/Users/yugendren/experiments/sorting_network_s13/tools/patches/sortnetopt-macos-large-read.patch"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "git",
+            "diff",
+            "--check"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "cargo",
+            "build",
+            "--release"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "stack",
+            "setup"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source/checker/snocheck",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "stack",
+            "build",
+            "--copy-bins",
+            "--local-bin-path",
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/bin"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source/checker/snocheck",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/source/target/release/sortnetopt",
+            "--help"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "/Users/yugendren/experiments/sorting_network_s13/.build/b3-toolchain/attempt-20260815T000526Z/bin/snocheck"
+          ],
+          "cwd": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+          "exit_code": 0
+        }
+      ],
+      "ended_at": "2026-08-15T00:06:01.108356+00:00",
+      "generated_cargo_lock": {
+        "note": "upstream omits Cargo.lock; this records the setup-time resolution",
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/source/Cargo.lock",
+        "sha256": "a999aa381b5436ff2a85565fc5985fe53fe134d4d0baebb6e57880ee807747f9",
+        "size_bytes": 36680
+      },
+      "host_machine": "arm64",
+      "portability_mode": "aarch64 Stack host selecting x86_64 GHC under Rosetta",
+      "portability_patches": [
+        {
+          "algorithm_effect": "diagnostic logging only",
+          "patched_file": "src/logging.rs",
+          "patched_file_sha256": "a4b1a04306f999196f8d3138f7fd698cde978dccbd67c842e46e026344e1962e",
+          "path": "tools/patches/sortnetopt-macos-proc.patch",
+          "purpose": "return unavailable metrics when Linux /proc/self/status is absent",
+          "sha256": "49ce5d772ce6dfcb986b7185ec0e7c14d27681126d4dd703bb4ae259cafcdc42"
+        },
+        {
+          "algorithm_effect": "unverified file I/O only; parser and verified checker unchanged",
+          "patched_file": "checker/snocheck/src/Main.hs",
+          "patched_file_sha256": "5b5eac41da01cd9e8bb53ce38bf1ec5419a9b5216a97ab44e5ff1c54e426e425",
+          "path": "tools/patches/sortnetopt-macos-large-read.patch",
+          "purpose": "read files in bounded lazy chunks before constructing the strict parser input",
+          "sha256": "57b5a0989f937100c71225d34fc609bcb66f409784bd3bee79481c74c68cd848"
+        }
+      ],
+      "runtime_source_path": ".build/b3-toolchain/attempt-20260815T000526Z/source",
+      "rust_binary": {
+        "file_type": "Mach-O 64-bit executable arm64",
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/source/target/release/sortnetopt",
+        "sha256": "ffb04c8e8951ef399d58da911daa7be01c6266fdb4e03089aa4d2bd86f42756b",
+        "size_bytes": 5216120
+      },
+      "rustc_version": "rustc 1.95.0 (59807616e 2026-04-14) (Homebrew)",
+      "schema_version": "s13-harder-toolchain-build/v1",
+      "stack_root": ".cache/toolchains/b3-stack-root",
+      "stack_version": "Version 3.11.1 aarch64",
+      "stack_wrapper": {
+        "path": ".build/b3-toolchain/attempt-20260815T000526Z/bin/stack",
+        "sha256": "a9601711ed279991bf19cd906b3ee7d09e2d0eb2a030959a9913d5aaf51b7ca6",
+        "size_bytes": 78
+      },
+      "started_at": "2026-08-15T00:05:26.245807+00:00",
+      "status": "PASS",
+      "upstream": {
+        "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+        "repository": "https://github.com/jix/sortnetopt.git",
+        "stack_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc",
+        "strict_and_parallel_patch_sha256": "df374fe21c9aa07ee91da700dc2642581c999b61defdacc1ee201a87225435e0",
+        "tracked_file_count": 44,
+        "tracked_source_aggregate_sha256": "56b18efa19f3727f1945696f53bb597aec9b13ec210680578b1dc0b0b253a474"
+      },
+      "wall_seconds": 34.862314,
+      "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+    },
+    "senso": {
+      "archive_path": ".cache/sources/symmetry-1.1.tar.gz",
+      "archive_sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+      "archive_size_bytes": 22506545,
+      "binary_path": ".build/senso/attempt-20260814T232113Z/bin/sorting",
+      "binary_sha256": "1d6fe20b547fa0e9dd9c899e34b608ac157104f63fd845d858e6e4ae9c0e6cc6",
+      "binary_size_bytes": 2757240,
+      "boost": "boost 1.90.0_1",
+      "build_log_path": ".build/senso/attempt-20260814T232113Z/build.log",
+      "build_log_sha256": "977173e4afe8ded1edd8a8794a094334f583bc82b28658146f4041057f86784c",
+      "commands": [
+        {
+          "command": [
+            "patch",
+            "-p1",
+            "-i",
+            "/Users/yugendren/experiments/sorting_network_s13/tools/patches/symmetry-1.1-macos.patch"
+          ],
+          "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "./configure",
+            "--disable-shared",
+            "--prefix=/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/install"
+          ],
+          "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1/beagle",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "make",
+            "-j1"
+          ],
+          "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1/beagle",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "make",
+            "-j1",
+            "install"
+          ],
+          "cwd": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1/beagle",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "clang++",
+            "-O2",
+            "-g",
+            "/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/source/symmetry-1.1/experiments/sorting/sorting/main.cpp",
+            "-o",
+            "/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/bin/sorting",
+            "-I/opt/homebrew/include",
+            "-I/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/install/include",
+            "-DPACC_ZLIB",
+            "-L/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/install/lib",
+            "-lbeagle-SN",
+            "-lbeagle",
+            "-lz",
+            "-lpacc-math",
+            "-lpacc-xml",
+            "-lpacc-util"
+          ],
+          "cwd": ".",
+          "exit_code": 0
+        },
+        {
+          "command": [
+            "/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/bin/sorting",
+            "-OBconf=/Users/yugendren/experiments/sorting_network_s13/.build/senso/attempt-20260814T232113Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf",
+            "-OBec.pop.size=2",
+            "-OBec.rand.seed=1",
+            "-OBec.term.maxgen=1",
+            "-OBsn.init.numinputs=13",
+            "-OBsn.init.filter=0:21",
+            "-OBsn.init.initfuncs=1",
+            "-OBsn.eval.compfit=1",
+            "-OBms.write.interval=0",
+            "-OBms.write.prefix=smoke",
+            "-OBlg.file.name=smoke.log"
+          ],
+          "cwd": ".build/senso/attempt-20260814T232113Z/smoke",
+          "exit_code": 0
+        }
+      ],
+      "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+      "ended_at": "2026-08-14T23:22:20.017993+00:00",
+      "install_path": ".build/senso/attempt-20260814T232113Z/install",
+      "patch_path": "tools/patches/symmetry-1.1-macos.patch",
+      "patch_sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09",
+      "schema_version": "s13-senso-build/v1",
+      "smoke_milestones": [
+        {
+          "path": ".build/senso/attempt-20260814T232113Z/smoke/smoke_g1.obm.gz",
+          "sha256": "7aacdf2526d277973422ac2de16fecd1ff6b18ab971a1c46c3c146cc2e7f17e2",
+          "size_bytes": 5333
+        }
+      ],
+      "source_path": ".build/senso/attempt-20260814T232113Z/source/symmetry-1.1",
+      "started_at": "2026-08-14T23:21:13.152092+00:00",
+      "status": "PASS",
+      "wall_seconds": 66.865515
+    }
+  },
+  "sources": [
+    {
+      "cache_file": "sorting_networks_extended.html",
+      "commit": "49b355d484aa92c2a661b6ab1a2f981a60b7c0c6",
+      "id": "dobbelaere-catalog",
+      "license": "UNKNOWN",
+      "repository": "https://github.com/BertDobbelaere/bertdobbelaere.github.io.git",
+      "role": "current bound and public 45-comparator witness",
+      "sha256": "8a2d11c9f2ac66e16ea93a9c4301971b47d3115eaf28d4e12b50079c8238d116",
+      "size_bytes": 302892,
+      "url": "https://bertdobbelaere.github.io/sorting_networks_extended.html"
+    },
+    {
+      "cache_file": "harder-v3.pdf",
+      "id": "harder-paper-v3",
+      "license": "arXiv page links a Creative Commons license",
+      "role": "certified lower-bound method and statements",
+      "sha256": "48a54deefef544dce2e1b8b73babb501a3990628d0ddc582333bfb2f925fd203",
+      "size_bytes": 652133,
+      "url": "https://arxiv.org/pdf/2012.04400v3"
+    },
+    {
+      "cargo_toml_path": "Cargo.toml",
+      "cargo_toml_sha256": "6da3df5328a3c833bb96cfb392bc664851b4249fd1298192a13b259063b4bfc4",
+      "commit": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+      "id": "sortnetopt",
+      "license": "UNKNOWN (repository contains no LICENSE or COPYING file)",
+      "role": "official search, certificate generator, and checked pipeline",
+      "stack_lock_path": "checker/snocheck/stack.yaml.lock",
+      "stack_lock_sha256": "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc",
+      "stack_yaml_path": "checker/snocheck/stack.yaml",
+      "stack_yaml_sha256": "9d1478994f676a6b33b5dd33a2325fbbd4aa0e1d255ee0dc609e02704a5f262c",
+      "url": "https://github.com/jix/sortnetopt.git"
+    },
+    {
+      "compressed_md5": "2847374c6bab1260c9771d6fafe65f44",
+      "compressed_size_bytes": 1247864564,
+      "doi": "10.5281/zenodo.4108365",
+      "id": "harder-n11-certificate",
+      "license": "CC-BY-4.0",
+      "role": "published certificate to replay, never commit",
+      "uncompressed_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e",
+      "url": "https://zenodo.org/api/records/4108365/files/proof_cert_11.bin.zst/content"
+    },
+    {
+      "cache_file": "valsalam13a.pdf",
+      "id": "valsalam-miikkulainen-paper",
+      "license": "PUBLISHED JMLR article; redistribution terms not inferred",
+      "role": "SENSO algorithm and published parameters",
+      "sha256": "59522734f52c0b4927e80eba4971a49ba6cc756ea5d072e382af57648544df3e",
+      "size_bytes": 507961,
+      "url": "https://www.jmlr.org/papers/volume14/valsalam13a/valsalam13a.pdf"
+    },
+    {
+      "cache_file": "symmetry-1.1.tar.gz",
+      "id": "symmetry-1.1",
+      "license": "mixed; experiments/COPYING BSD-3-Clause, OpenBEAGLE/SN LGPL-2.1-or-later, bundled components retain their own terms",
+      "role": "author-hosted SENSO implementation",
+      "sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+      "size_bytes": 22506545,
+      "url": "https://www.cs.utexas.edu/users/nn/downloads/software/symmetry-1.1.tar.gz"
+    },
+    {
+      "commit": "41950ab137671c6573b6e65a00ba2e52c159fea8",
+      "id": "wang-n28d13-context",
+      "license": "MIT",
+      "role": "optional construction context only",
+      "url": "https://github.com/wcgbg/sorting-network-n28d13.git"
+    }
+  ],
+  "total_scored_manifest_wall_seconds": 5620.052041,
+  "wall_limit_seconds": 43200
+}

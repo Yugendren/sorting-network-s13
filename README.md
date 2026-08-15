@@ -33,13 +33,16 @@ status must be re-audited when execution begins.
 
 ## Baseline execution status
 
-B0 through B3 passed on 2026-08-15. The current-status audit did not trigger
-`STALE_TARGET`; two independent verifiers accepted the public witness; seed 18
+B0 through B4 passed on 2026-08-15. The current-status audit did not find the
+target stale; two independent verifiers accepted the public witness; seed 18
 of the frozen 20-seed SENSO batch locally reproduced a verified 45-comparator
 network; the official n=9 workflow returned `Just (9,25)`; and the exact
-published n=11 certificate replay returned `Just (11,35)`. B4 aggregation is
-active. The terminal baseline verdict remains pending, and no novel
-44-comparator experiment is authorized.
+published n=11 certificate replay returned `Just (11,35)`. The canonical
+terminal decision and complete evidence ledger are in
+`evidence/b4/b4-20260815T014232Z/baseline-report.md`.
+
+The baseline contract is complete. No novel 44-comparator experiment or later
+Mericanii method is authorized without a new user-approved, frozen contract.
 
 The frozen interface begins with `make setup`, `make verify`, and the serial
 `make baseline-b0` through `make baseline-b4` gates. `make evidence-check`

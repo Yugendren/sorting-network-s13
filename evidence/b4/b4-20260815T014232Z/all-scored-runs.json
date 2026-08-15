@@ -1,0 +1,122 @@
+[
+  {
+    "cpu_seconds": 0.015548,
+    "error": "[Errno 2] No such file or directory: '/Users/yugendren/experiments/sorting_network_s13/.cache/third_party/sortnetopt/stack.yaml'",
+    "gate": "B0",
+    "manifest_path": "evidence/b0/b0-20260814T230033Z/manifest.json",
+    "peak_rss_bytes": 25509888,
+    "run_id": "b0-20260814T230033Z",
+    "source_commit": "744826ddff0884e53ba3d94db05773fcb669b86f",
+    "status": "FAIL",
+    "threads": 1,
+    "wall_seconds": 0.054307
+  },
+  {
+    "cpu_seconds": 0.031756,
+    "error": null,
+    "gate": "B0",
+    "manifest_path": "evidence/b0/b0-20260814T230128Z/manifest.json",
+    "peak_rss_bytes": 26017792,
+    "run_id": "b0-20260814T230128Z",
+    "source_commit": "33788306a259b64a770b773196f9530da8a1237f",
+    "status": "PASS",
+    "threads": 1,
+    "wall_seconds": 0.816708
+  },
+  {
+    "cpu_seconds": 0.032372,
+    "error": null,
+    "gate": "B0",
+    "manifest_path": "evidence/b0/b0-20260814T230315Z/manifest.json",
+    "peak_rss_bytes": 26050560,
+    "run_id": "b0-20260814T230315Z",
+    "source_commit": "19bd4efadddf75182caa8012981917c0938aa2ed",
+    "status": "PASS",
+    "threads": 1,
+    "wall_seconds": 0.733192
+  },
+  {
+    "cpu_seconds": 10.864997,
+    "error": null,
+    "gate": "B1",
+    "manifest_path": "evidence/b1/b1-20260814T231402Z/manifest.json",
+    "peak_rss_bytes": 86065152,
+    "run_id": "b1-20260814T231402Z",
+    "source_commit": "48bd3e136545095b807f6d68f7f13b7a27af5524",
+    "status": "PASS",
+    "threads": 1,
+    "wall_seconds": 11.401776
+  },
+  {
+    "cpu_seconds": 385.407711,
+    "error": null,
+    "gate": "B2",
+    "manifest_path": "evidence/b2/b2-20260814T232833Z/manifest.json",
+    "peak_rss_bytes": 86622208,
+    "run_id": "b2-20260814T232833Z",
+    "source_commit": "a91a1710201d4f1c4b1f13e6473930ce8ec13184",
+    "status": "PASS",
+    "threads": 1,
+    "wall_seconds": 399.690669
+  },
+  {
+    "cpu_seconds": 0.005742,
+    "error": "n=9 official command ended as REJECTED",
+    "gate": "B3",
+    "manifest_path": "evidence/b3/b3-20260814T235403Z/manifest.json",
+    "peak_rss_bytes": 35160064,
+    "run_id": "b3-20260814T235403Z",
+    "source_commit": "02255f147f90e983f6b09ae35d3aec91890ef3cd",
+    "status": "FAIL",
+    "threads": 10,
+    "wall_seconds": 0.289428
+  },
+  {
+    "cpu_seconds": 0.127663,
+    "error": "n=9 official command ended as REJECTED",
+    "gate": "B3",
+    "manifest_path": "evidence/b3/b3-20260814T235503Z/manifest.json",
+    "peak_rss_bytes": 51380224,
+    "run_id": "b3-20260814T235503Z",
+    "source_commit": "7da2daec5c94b632df8c6698e8325d9328fcc5d5",
+    "status": "FAIL",
+    "threads": 10,
+    "wall_seconds": 0.80749
+  },
+  {
+    "cpu_seconds": 27.425146,
+    "error": "expected exactly one checker result line, found 0",
+    "gate": "B3",
+    "manifest_path": "evidence/b3/b3-20260815T000143Z/manifest.json",
+    "peak_rss_bytes": 84668416,
+    "run_id": "b3-20260815T000143Z",
+    "source_commit": "4cb743c0398981415bd5fe938642946f91a6d25c",
+    "status": "FAIL",
+    "threads": 10,
+    "wall_seconds": 16.187146
+  },
+  {
+    "cpu_seconds": 41.812694,
+    "error": "n=11 official command ended as REJECTED",
+    "gate": "B3",
+    "manifest_path": "evidence/b3/b3-20260815T000326Z/manifest.json",
+    "peak_rss_bytes": 85618688,
+    "run_id": "b3-20260815T000326Z",
+    "source_commit": "d624738e8830ad29c5071c4c0aae43d680c9c5b4",
+    "status": "FAIL",
+    "threads": 10,
+    "wall_seconds": 20.879262
+  },
+  {
+    "cpu_seconds": 39158.022648,
+    "error": null,
+    "gate": "B3",
+    "manifest_path": "evidence/b3/b3-20260815T000708Z/manifest.json",
+    "peak_rss_bytes": 4356050944,
+    "run_id": "b3-20260815T000708Z",
+    "source_commit": "5d44ca23742cd86b490ba366ad568b5322e4f21f",
+    "status": "PASS",
+    "threads": 10,
+    "wall_seconds": 5169.192063
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "accepted_prerequisite_count": 4,
+  "novel_experiment_started": false,
+  "preserved_scored_run_count_through_b3": 10,
+  "report_path": "baseline-report.md",
+  "report_sha256": "d2cb721147ba442004bb3018db07a3cdf7d2626264f2aabe1a3d2cacae48abb7",
+  "required_section_count": 12,
+  "status": "PASS",
+  "terminal_verdict_token_count": 1,
+  "truth_labels_present": [
+    "PUBLISHED",
+    "ARTIFACT_VERIFIED",
+    "LOCALLY_REPRODUCED",
+    "MEASURED",
+    "ASSUMED",
+    "UNKNOWN"
+  ]
+}

@@ -17,14 +17,15 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Current truth
 
-- State: `ACTIVE`.
-- Current milestone: B4 -- aggregate evidence, issue one verdict, and stop.
+- State: `COMPLETE`.
+- Current milestone: B4 complete -- stopped before any novel experiment.
 - Repository state: branch `goal/s13-baseline`; supplied snapshot commit
   `fa0fc41e0bc2841a38aed55418602db6049c89b8`; final B0 gate source commit
   `19bd4efadddf75182caa8012981917c0938aa2ed`; B1 gate source commit
   `48bd3e136545095b807f6d68f7f13b7a27af5524`; B2 gate source commit
   `a91a1710201d4f1c4b1f13e6473930ce8ec13184`; B3 gate source commit
-  `5d44ca23742cd86b490ba366ad568b5322e4f21f`.
+  `5d44ca23742cd86b490ba366ad568b5322e4f21f`; B4 gate source commit
+  `307198dceb6a832e65725f8e84ef9423f1abb451`.
 - Research snapshot: live audit on 2026-08-15 found maintained bounds
   `44 <= S(13) <= 45`; no primary/current source in the audit settled S(13).
 - Known construction: public 45-comparator, 10-layer network.
@@ -51,7 +52,12 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   `7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e`
   before and after the 5,148.689796-second replay. Total scored wall time
   through B3 is 5,618.423088 seconds.
-- Terminal verdict: `PENDING`.
+- Aggregate and stop: B4 PASS. It validated four accepted gate identities and
+  all ten preserved B0--B3 scored attempts, generated the 12-section report,
+  and confirmed that no novel experiment started. The report SHA-256 is
+  `d2cb721147ba442004bb3018db07a3cdf7d2626264f2aabe1a3d2cacae48abb7`.
+- Terminal verdict: issued once in
+  `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 
 ## Baseline acceptance gates
 
@@ -61,10 +67,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | B1 independent construction truth | PASS | `evidence/b1/b1-20260814T231402Z` |
 | B2 20-seed constructive baseline | PASS | `evidence/b2/b2-20260814T232833Z` |
 | B3 exact/certificate baseline | PASS | `evidence/b3/b3-20260815T000708Z` |
-| B4 aggregate report and verdict | NOT RUN | -- |
+| B4 aggregate report and verdict | PASS | `evidence/b4/b4-20260815T014232Z` |
 
-## Next smallest action
+## Stop condition
 
-1. Aggregate the immutable B0--B3 evidence into the required baseline report.
-2. Validate the report and evidence, issue exactly one terminal verdict, and
-   stop without implementing the later experimental method.
+No further action is authorized by this contract. Before any later experiment,
+the user must approve and freeze a new versioned contract that begins with a
+fresh S(13) status audit. Do not draft or execute it implicitly.
