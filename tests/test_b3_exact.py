@@ -89,10 +89,12 @@ class B3ExactTests(unittest.TestCase):
         self.assertEqual(manifest["uncompressed_sha256"], fetch_harder_certificate.UNCOMPRESSED_SHA256)
 
     def test_checker_result_parser_is_exact(self) -> None:
+        self.assertEqual(b3_gate.parse_checker_output("Just (9,25)\n"), ("Just (9,25)", (9, 25)))
+        self.assertEqual(b3_gate.parse_checker_output("Nothing\n"), ("Nothing", None))
         self.assertEqual(b3_gate.parse_checker_result("Some (9,25)\n"), (9, 25))
         self.assertIsNone(b3_gate.parse_checker_result("build text\nNone\n"))
         with self.assertRaises(ValueError):
-            b3_gate.parse_checker_result("Some (9,25)\nSome (9,25)\n")
+            b3_gate.parse_checker_result("Just (9,25)\nSome (9,25)\n")
         with self.assertRaises(ValueError):
             b3_gate.parse_checker_result("Some (9,24) trailing\n")
 

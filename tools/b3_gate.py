@@ -229,14 +229,21 @@ def run_limited(
     return result
 
 
-def parse_checker_result(text: str) -> tuple[int, int] | None:
-    matches = re.findall(r"(?m)^\s*(None|Some \((-?\d+),(-?\d+)\))\s*$", text)
+def parse_checker_output(text: str) -> tuple[str, tuple[int, int] | None]:
+    matches = re.findall(
+        r"(?m)^\s*(Nothing|None|(?:Just|Some) \((-?\d+),(-?\d+)\))\s*$",
+        text,
+    )
     if len(matches) != 1:
         raise ValueError(f"expected exactly one checker result line, found {len(matches)}")
     whole, width, bound = matches[0]
-    if whole == "None":
-        return None
-    return int(width), int(bound)
+    if whole in ("Nothing", "None"):
+        return whole, None
+    return whole, (int(width), int(bound))
+
+
+def parse_checker_result(text: str) -> tuple[int, int] | None:
+    return parse_checker_output(text)[1]
 
 
 def require_successful_replay(stage: Path, resource_record: dict[str, Any], channels: int) -> tuple[int, int]:
@@ -446,6 +453,9 @@ def main() -> int:
         )
         resources.append(n9_resource)
         n9_result = require_successful_replay(n9_stage, n9_resource, 9)
+        n9_output_line = parse_checker_output(
+            (n9_stage / "stdout.txt").read_text(encoding="utf-8", errors="replace")
+        )[0]
         proof = n9_data / "_search_9/proof.bin"
         if not proof.is_file():
             raise GateFailure("official n=9 workflow produced no proof.bin", "INVALID")
@@ -458,6 +468,7 @@ def main() -> int:
             {
                 "status": "PASS",
                 "checker_result": list(n9_result),
+                "checker_output_line": n9_output_line,
                 "local_statement": "The replayed generated certificate establishes the size lower bound S(9) >= 25.",
                 "truth_label": "LOCALLY_REPRODUCED",
                 "proof_sha256": sha256(n9_proof),
@@ -465,7 +476,9 @@ def main() -> int:
                 "generated_artifact_count": len(n9_artifacts),
             },
         )
-        log_lines.append(f"PASS: official n=9 workflow returned Some (9,25) in {n9_resource['wall_seconds']} seconds.")
+        log_lines.append(
+            f"PASS: official n=9 workflow returned {n9_output_line} in {n9_resource['wall_seconds']} seconds."
+        )
 
         negative_stage = out / "corruption-rejection"
         negative_stage.mkdir()
@@ -489,7 +502,7 @@ def main() -> int:
                 f"corrupted certificate checker did not reject cleanly: {negative_resource['status']}",
                 "INVALID",
             )
-        negative_result = parse_checker_result(
+        negative_output_line, negative_result = parse_checker_output(
             (negative_run / "stdout.txt").read_text(encoding="utf-8", errors="replace")
         )
         if negative_result is not None:
@@ -499,11 +512,14 @@ def main() -> int:
             {
                 "status": "PASS",
                 "checker_result": None,
+                "checker_output_line": negative_output_line,
                 "safe_rejection": True,
                 "truth_label": "LOCALLY_REPRODUCED",
             },
         )
-        log_lines.append("PASS: well-formed n=9 certificate corruption returned None.")
+        log_lines.append(
+            f"PASS: well-formed n=9 certificate corruption returned {negative_output_line}."
+        )
 
         certificate_path = ROOT / certificate_cache["uncompressed_path"]
         before_sha = sha256(certificate_path)
@@ -522,6 +538,9 @@ def main() -> int:
         )
         resources.append(n11_resource)
         n11_result = require_successful_replay(n11_stage, n11_resource, 11)
+        n11_output_line = parse_checker_output(
+            (n11_stage / "stdout.txt").read_text(encoding="utf-8", errors="replace")
+        )[0]
         after_sha = sha256(certificate_path)
         if after_sha != before_sha:
             raise GateFailure("n=11 certificate changed during replay", "INVALID")
@@ -530,6 +549,7 @@ def main() -> int:
             {
                 "status": "PASS",
                 "checker_result": list(n11_result),
+                "checker_output_line": n11_output_line,
                 "certificate_sha256_before": before_sha,
                 "certificate_sha256_after": after_sha,
                 "certificate_size_bytes": certificate_path.stat().st_size,
@@ -537,7 +557,9 @@ def main() -> int:
                 "truth_label": "LOCALLY_REPRODUCED",
             },
         )
-        log_lines.append(f"PASS: exact published n=11 certificate returned Some (11,35) in {n11_resource['wall_seconds']} seconds.")
+        log_lines.append(
+            f"PASS: exact published n=11 certificate returned {n11_output_line} in {n11_resource['wall_seconds']} seconds."
+        )
 
         elapsed = time.perf_counter() - started_perf
         prior_wall = prior_scored_wall_seconds()
@@ -551,16 +573,19 @@ def main() -> int:
             "status": "PASS",
             "n9": {
                 "checker_result": list(n9_result),
+                "checker_output_line": n9_output_line,
                 "truth_label": "LOCALLY_REPRODUCED",
                 "establishes": "S(9) >= 25",
             },
             "corruption_rejection": {
                 "checker_result": None,
+                "checker_output_line": negative_output_line,
                 "safe_rejection": True,
                 "truth_label": "LOCALLY_REPRODUCED",
             },
             "n11": {
                 "checker_result": list(n11_result),
+                "checker_output_line": n11_output_line,
                 "truth_label": "LOCALLY_REPRODUCED",
                 "establishes": "S(11) >= 35",
             },

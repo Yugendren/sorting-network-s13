@@ -82,3 +82,11 @@ executable, which then panicked in the Linux-only `/proc/self/status`
 diagnostic logger before calling the search. Their fixes pre-create only the
 unique external data directory and make missing diagnostic metrics return the
 logger's existing unavailable value. Neither alters the search or checker.
+
+Run `b3-20260815T000143Z` then completed the official n=9 workflow and captured
+`Just (9,25)`, but the strict parser expected the README's `Some` spelling and
+failed rather than inferring equivalence. The preserved raw output establishes
+the representation mismatch. The corrected parser accepts Haskell
+`Just`/`Nothing` and documented `Some`/`None`, requires exactly one result line,
+normalizes only the constructor, and records the raw line in subsequent
+results.

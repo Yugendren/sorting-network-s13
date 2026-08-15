@@ -1,9 +1,11 @@
 # B3 exact and certificate execution protocol
 
 Falsifiable outcome: B3 passes only when the pinned official
-`search_and_verify.sh 9 DATADIR` workflow returns `Some (9,25)`, a deliberately
-corrupted but parseable copy of its small certificate returns `None`, and the
-exact published n=11 certificate returns `Some (11,35)`. Missing dependencies,
+`search_and_verify.sh 9 DATADIR` workflow returns `Just (9,25)`, a deliberately
+corrupted but parseable copy of its small certificate returns `Nothing`, and
+the exact published n=11 certificate returns `Just (11,35)`. The upstream
+README describes these logical results as `Some`/`None`; the Haskell
+executable's actual constructors are recorded verbatim. Missing dependencies,
 timeouts, memory-cap violations, parse failures, checksum mismatches, or any
 different checker result fail the gate. No unsuccessful search is interpreted
 as a lower-bound proof.
@@ -55,7 +57,7 @@ their default parallelism, so the host's ten logical cores are recorded.
 
 The generated n=9 `proof.bin` is small enough to retain in evidence. Its root
 proof-step bound byte is changed to an impossible high value without damaging
-the container format; clean `None` output is required. The local n=9 result
+the container format; clean `Nothing` output is required. The local n=9 result
 establishes `S(9) >= 25`, and the published n=11 certificate replay establishes
 `S(11) >= 35`. The equality `S(11)=35` and the derived `S(12)=39` remain labeled
 `PUBLISHED` because B3 does not separately replay their matching constructions
