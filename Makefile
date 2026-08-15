@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 PYTHON ?= python3
 
-.PHONY: setup verify baseline-b0 baseline-b1 baseline-b2 baseline-b3 baseline-b4 baseline method-e0 evidence-check report clean
+.PHONY: setup verify baseline-b0 baseline-b1 baseline-b2 baseline-b3 baseline-b4 baseline setup-method-instrumented method-e0 method-e1 evidence-check report clean
 
 setup:
 	$(PYTHON) tools/setup_sources.py
@@ -31,6 +31,12 @@ baseline: baseline-b0 baseline-b1 baseline-b2 baseline-b3 baseline-b4
 
 method-e0:
 	$(PYTHON) tools/e0_method_gate.py
+
+setup-method-instrumented:
+	$(PYTHON) tools/setup_senso_instrumented.py
+
+method-e1:
+	$(PYTHON) tools/e1_dataset_gate.py
 
 evidence-check:
 	$(PYTHON) tools/evidence_check.py

@@ -1,0 +1,215 @@
+diff --git a/beagle/beagle/SN/src/EstimateReconstructOp.cpp b/beagle/beagle/SN/src/EstimateReconstructOp.cpp
+index 37a5b4b..e1dataset 100644
+--- a/beagle/beagle/SN/src/EstimateReconstructOp.cpp
++++ b/beagle/beagle/SN/src/EstimateReconstructOp.cpp
+@@ -12,8 +12,177 @@
+ 
+ #include "beagle/SN.hpp"
+ 
++#include <algorithm>
++#include <cerrno>
++#include <cstdlib>
++#include <fstream>
++#include <iomanip>
++#include <stdexcept>
++#include <sstream>
++
+ using namespace Beagle;
+ 
++namespace {
++
++const unsigned int kMericaniiFeatureCount = 85;
++
++class MericaniiDatasetWriter {
++public:
++    MericaniiDatasetWriter() :
++        mInitialized(false),
++        mEnabled(false),
++        mSeed(0),
++        mSampleIndex(0),
++        mStream()
++    { }
++
++    bool enabled()
++    {
++        initialize();
++        return mEnabled;
++    }
++
++    void write(const std::vector<float>& inFeatures,
++               unsigned int inGeneration,
++               unsigned int inParentCount,
++               unsigned int inPrefixCount,
++               const SN::Network& inFinalNetwork)
++    {
++        initialize();
++        if (!mEnabled) return;
++        if (inFeatures.size() != kMericaniiFeatureCount) {
++            throw std::runtime_error("Mericanii feature dimension mismatch");
++        }
++
++        const unsigned int lFinalCount = inFinalNetwork.getNumComparators();
++        mStream << "s13-completion-row-v1" << '\t'
++                << mSeed << '\t'
++                << inGeneration << '\t'
++                << mSampleIndex++ << '\t'
++                << inParentCount << '\t'
++                << inPrefixCount;
++        mStream << std::setprecision(9);
++        for (unsigned int i = 0; i < inFeatures.size(); ++i) {
++            mStream << '\t' << inFeatures[i];
++        }
++        mStream << '\t' << lFinalCount << '\t' << (lFinalCount <= 45 ? 1 : 0) << '\t';
++        if (lFinalCount <= 45) {
++            for (unsigned int i = 0; i < lFinalCount; ++i) {
++                if (i > 0) mStream << ';';
++                mStream << inFinalNetwork[2*i] << '-' << inFinalNetwork[2*i+1];
++            }
++        }
++        mStream << '\n';
++        if (!mStream.good()) {
++            throw std::runtime_error("failed to write Mericanii dataset row");
++        }
++        if (lFinalCount < 45) {
++            mStream.flush();
++            throw std::runtime_error("MERICANII_UNEXPECTED_44_STOP");
++        }
++    }
++
++private:
++    void initialize()
++    {
++        if (mInitialized) return;
++        mInitialized = true;
++        const char* lPath = std::getenv("MERICANII_DATASET_PATH");
++        const char* lSeed = std::getenv("MERICANII_DATASET_SEED");
++        if (lPath == NULL && lSeed == NULL) return;
++        if (lPath == NULL || lSeed == NULL || lPath[0] != '/') {
++            throw std::runtime_error("both Mericanii dataset variables and an absolute path are required");
++        }
++        errno = 0;
++        char* lEnd = NULL;
++        unsigned long lValue = std::strtoul(lSeed, &lEnd, 10);
++        if (errno != 0 || lEnd == lSeed || *lEnd != '\0' || lValue == 0 || lValue > 0x7fffffffUL) {
++            throw std::runtime_error("invalid MERICANII_DATASET_SEED");
++        }
++        std::ifstream lExisting(lPath);
++        if (lExisting.good()) {
++            throw std::runtime_error("Mericanii dataset path already exists");
++        }
++        lExisting.close();
++        mStream.open(lPath, std::ios::out | std::ios::trunc);
++        if (!mStream.is_open()) {
++            throw std::runtime_error("could not open Mericanii dataset path");
++        }
++        mSeed = (unsigned int)lValue;
++        mStream << "schema\tseed\tgeneration\tsample_index\tparent_count\tprefix_count";
++        for (unsigned int i = 0; i < kMericaniiFeatureCount; ++i) {
++            mStream << "\tf" << std::setw(3) << std::setfill('0') << i;
++        }
++        mStream << std::setfill(' ') << "\tfinal_count\tsuccess45\tcandidate_sequence_if_success45\n";
++        mEnabled = true;
++    }
++
++    bool mInitialized;
++    bool mEnabled;
++    unsigned int mSeed;
++    unsigned long mSampleIndex;
++    std::ofstream mStream;
++};
++
++MericaniiDatasetWriter& mericaniiDatasetWriter()
++{
++    static MericaniiDatasetWriter lWriter;
++    return lWriter;
++}
++
++std::vector<float> mericaniiFeatures(SN::Network& inNetwork,
++                                     unsigned int inParentCount,
++                                     unsigned int inGeneration)
++{
++    std::vector<float> lFeatures(kMericaniiFeatureCount, 0.0f);
++    const unsigned int lPrefixCount = inNetwork.getNumComparators();
++    const std::vector<SN::Function>& lFunctions = inNetwork.getFunctions();
++    lFeatures[0] = ((float)lPrefixCount) / 45.0f;
++    lFeatures[1] = ((float)(45 - (int)lPrefixCount)) / 45.0f;
++    lFeatures[2] = ((float)inParentCount) / 64.0f;
++    lFeatures[3] = ((float)lPrefixCount) / ((float)std::max(inParentCount, 1u));
++    lFeatures[4] = ((float)inGeneration) / 500.0f;
++    lFeatures[5] = ((float)inNetwork.getCurrentLine()) / 12.0f;
++    lFeatures[6] = ((float)inNetwork.findNumLinesCompleted()) / 13.0f;
++    lFeatures[7] = ((float)inNetwork.findNumFullLevels()) / 182.0f;
++    lFeatures[8] = ((float)inNetwork.findNumSets()) / 8191.0f;
++
++    unsigned int lTotalSets = 0;
++    unsigned int lTotalNonEmpty = 0;
++    unsigned int lTotalFullBoth = 0;
++    for (unsigned int i = 0; i < 13; ++i) {
++        const SN::Function& lFunction = lFunctions[i];
++        lTotalSets += lFunction.getNumSets();
++        lTotalNonEmpty += lFunction.getNumNonEmptyLevels();
++        lTotalFullBoth += lFunction.getNumFullLevelsBoth();
++        lFeatures[12+i] = ((float)lFunction.getNumSets()) / 8192.0f;
++        lFeatures[25+i] = ((float)lFunction.getFirstNonEmptyLevel()) / 13.0f;
++        lFeatures[38+i] = ((float)lFunction.getNumNonEmptyLevels()) / 14.0f;
++        lFeatures[51+i] = ((float)lFunction.getNumFullLevelsBoth()) / 14.0f;
++    }
++    lFeatures[9] = ((float)lTotalSets) / 106496.0f;
++    lFeatures[10] = ((float)lTotalNonEmpty) / 182.0f;
++    lFeatures[11] = ((float)lTotalFullBoth) / 182.0f;
++
++    const unsigned int lActivityStart = lPrefixCount > 8 ? lPrefixCount - 8 : 0;
++    for (unsigned int i = lActivityStart; i < lPrefixCount; ++i) {
++        lFeatures[64 + inNetwork[2*i]] += 0.125f;
++        lFeatures[64 + inNetwork[2*i+1]] += 0.125f;
++    }
++
++    for (unsigned int i = 77; i < 85; ++i) lFeatures[i] = -1.0f;
++    const unsigned int lRecentCount = std::min(lPrefixCount, 4u);
++    const unsigned int lDestination = 4 - lRecentCount;
++    for (unsigned int i = 0; i < lRecentCount; ++i) {
++        const unsigned int lComparatorIndex = lPrefixCount - lRecentCount + i;
++        lFeatures[77 + 2*(lDestination+i)] = ((float)inNetwork[2*lComparatorIndex]) / 12.0f;
++        lFeatures[78 + 2*(lDestination+i)] = ((float)inNetwork[2*lComparatorIndex+1]) / 12.0f;
++    }
++    return lFeatures;
++}
++
++} // anonymous namespace
++
+ 
+ /*!
+  *  \brief Default constructor of SN estimate reconstruct operator.
+@@ -230,8 +399,8 @@ void SN::EstimateReconstructOp::reconstruct(Beagle::Individual& ioIndividual, co
+ 	const SN::Individual& lParent = castObjectT<const SN::Individual&>(inParent);
+ 	const SN::Network& lParentNetwork = *lParent[0];
+ 
+     // Find the index to truncate the parent network.
+-    unsigned int lNumOldComparators = lParentNetwork.size()/2;
++    const unsigned int lNumOldComparators = lParentNetwork.size()/2;
+     int lTruncateIndex = mGaussianTruncate->getWrappedValue() ? 
+         lRandomizer.rollGaussian(lNumOldComparators/2, lNumOldComparators/4) : lRandomizer.rollInteger(0, lNumOldComparators);
+     if (lTruncateIndex < 0) lTruncateIndex = 0;  // all comparators removed
+@@ -287,6 +456,11 @@ void SN::EstimateReconstructOp::reconstruct(Beagle::Individual& ioIndividual, co
+         lState[2*lMeet+1] = lLineStates[4*i+3];
+     }
+ 
++    std::vector<float> lDatasetFeatures;
++    if (mericaniiDatasetWriter().enabled()) {
++        lDatasetFeatures = mericaniiFeatures(lNetwork, lNumOldComparators, ioContext.getGeneration());
++    }
++
+     while (lNetwork.isSorted() == false) {
+         unsigned int lOldNetworkSize = lNetwork.size();
+         std::vector<unsigned int> lIndexPairs;
+@@ -322,6 +496,10 @@ void SN::EstimateReconstructOp::reconstruct(Beagle::Individual& ioIndividual, co
+         }
+     }
+ 
++    if (mericaniiDatasetWriter().enabled()) {
++        mericaniiDatasetWriter().write(lDatasetFeatures, ioContext.getGeneration(), lNumOldComparators, lTruncateIndex, lNetwork);
++    }
++
+     // Since we don't need the functions anymore, invalidate them to free memory.
+     for (unsigned int i = 0; i < lNumInputs; i++) {
+         lFunctions[i].invalidate();
