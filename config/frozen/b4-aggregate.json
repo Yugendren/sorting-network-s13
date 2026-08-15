@@ -1,0 +1,90 @@
+{
+  "schema_version": "s13-b4-aggregate/v1",
+  "frozen_at": "2026-08-15",
+  "prerequisites": [
+    {
+      "gate": "B0",
+      "run_dir": "evidence/b0/b0-20260814T230315Z",
+      "manifest_sha256": "c03750bcefdee513e4ef2a91fb8a8c9b209d26be3657075ea644ad80f92d4c9a",
+      "checksums_sha256": "d565262ca77051f81df9b26ac08a098992e554704b84b379adcfc8f51af94e44"
+    },
+    {
+      "gate": "B1",
+      "run_dir": "evidence/b1/b1-20260814T231402Z",
+      "manifest_sha256": "51c22ef534a0cce11676b39e05b8c601a9760f075efee0f5a5232a7195a37e44",
+      "checksums_sha256": "00f6a1b9ad99555c39cc9a717f346e10edd83e7c9817cff325e93c24c811a008"
+    },
+    {
+      "gate": "B2",
+      "run_dir": "evidence/b2/b2-20260814T232833Z",
+      "manifest_sha256": "8d057c43edb1e408d4334783cbb0a615110011bfa2aac121319ca32924888d74",
+      "checksums_sha256": "bed371c2a5f9d1b6be646939f9dacdc3b67ef98a79f5c244702b17665b65ee18"
+    },
+    {
+      "gate": "B3",
+      "run_dir": "evidence/b3/b3-20260815T000708Z",
+      "manifest_sha256": "4398642fa4b0811b44d573894c3df4bbfe263486a9344cf44b274c8064266170",
+      "checksums_sha256": "1610609bb2ff4b4c3d0e5b06ffd8188403b9e532366903379d7d640a03990268"
+    }
+  ],
+  "expected": {
+    "scored_run_count_through_b3": 10,
+    "b0_protocol_aggregate_sha256": "9efccb2d1b3fcafef9385ddb562a5e202136bc31c64cfc64bdc3c9bdea60b67c",
+    "contract_sha256": "6f345adb8c2037c28d4f08bf04cdbba6205de8848768b52c4bc9f09f737e1d61",
+    "research_bounds": {
+      "channels": 13,
+      "metric": "comparator_count",
+      "lower": 44,
+      "upper": 45,
+      "minimum_depth_context": 9
+    },
+    "b1": {
+      "case_count": 267,
+      "public_witness_artifact_sha256": "35ddd10b0869a8d589559cdca71fc2d3bd619411988017167e4e40e71992bb83",
+      "comparators": 45,
+      "channels": 13,
+      "mutation_indices": [0, 22, 44]
+    },
+    "b2": {
+      "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+      "senso_best_size": 45,
+      "senso_acceptance_count": 1,
+      "senso_size_distribution": {"45": 1, "46": 16, "47": 3},
+      "greedy_best_size": 47,
+      "random_best_size": 148,
+      "expected_senso_evaluations_per_seed": 50200
+    },
+    "b3": {
+      "n9_result": [9, 25],
+      "n9_proof_sha256": "26eb7b47e6b7902e17357e861a8166ceeb056de5b2cdf35401c4f3446916da9b",
+      "corruption_result": null,
+      "n11_result": [11, 35],
+      "certificate_size_bytes": 3068651498,
+      "certificate_sha256": "7fe9f5cd694714bf83da0bcab162a290eb076ad4257265507a74cea8fab85b7e"
+    }
+  },
+  "required_report_sections": [
+    "Scope and result",
+    "Truth-label key",
+    "Source and artifact ledger",
+    "Gate traceability and preserved attempts",
+    "B1 independent witness verification",
+    "B2 constructive and transparent baselines",
+    "B3 exact workflow and certificate replay",
+    "Hardware and resource accounting",
+    "Unreproduced claims and limits",
+    "Strongest baseline to beat later",
+    "Exact next prerequisite",
+    "Terminal verdict"
+  ],
+  "required_truth_labels": [
+    "PUBLISHED",
+    "ARTIFACT_VERIFIED",
+    "LOCALLY_REPRODUCED",
+    "MEASURED",
+    "ASSUMED",
+    "UNKNOWN"
+  ],
+  "terminal_verdict": "BASELINE_READY",
+  "next_prerequisite": "Obtain user approval for and freeze a new versioned experimental contract that re-audits S(13), specifies the later method and budgets, preserves both B1 verifiers, and defines candidate and stop handling before any novel run."
+}

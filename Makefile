@@ -25,8 +25,7 @@ baseline-b3:
 	$(PYTHON) tools/b3_gate.py
 
 baseline-b4:
-	@echo "B4 is not established yet; run only after the B3 checkpoint." >&2
-	@exit 2
+	$(PYTHON) tools/b4_gate.py
 
 baseline: baseline-b0 baseline-b1 baseline-b2 baseline-b3 baseline-b4
 
@@ -34,8 +33,9 @@ evidence-check:
 	$(PYTHON) tools/evidence_check.py
 
 report:
-	@test -f evidence/reports/baseline-report.md || { echo "No B4 baseline report exists." >&2; exit 2; }
-	@sed -n '1,240p' evidence/reports/baseline-report.md
+	@report="$$(find evidence/b4 -mindepth 2 -maxdepth 2 -type f -name baseline-report.md 2>/dev/null | sort | tail -n 1)"; \
+	  test -n "$$report" || { echo "No B4 baseline report exists." >&2; exit 2; }; \
+	  sed -n '1,400p' "$$report"
 
 clean:
 	@echo "Scored evidence and external caches are intentionally never removed by make." >&2

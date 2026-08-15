@@ -80,8 +80,10 @@ The upstream repository remained detached and clean at
 aggregate SHA-256
 `56b18efa19f3727f1945696f53bb597aec9b13ec210680578b1dc0b0b253a474`.
 The original clone is unmodified. The active ignored worktree changes only
-`src/logging.rs` through the recorded diagnostic portability patch. No checked
-extraction, proof artifact, or sibling repository was modified.
+`src/logging.rs` through the recorded diagnostic portability patch and
+`checker/snocheck/src/Main.hs` through the recorded bounded-read portability
+patch. The parser and checked extraction are unchanged; no proof artifact or
+sibling repository was modified.
 
 The first `make baseline-b3` launch from source commit
 `4364aaa585fd24d451cdaaa11030c57c6c7b4c04` failed before gate initialization:
