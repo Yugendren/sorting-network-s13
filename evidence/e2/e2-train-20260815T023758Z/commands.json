@@ -1,0 +1,87 @@
+[
+  {
+    "command": [
+      "ssh",
+      "ollama",
+      "mkdir -p /data/mericanii_s13_method_v1/e2-train-20260815T023758Z"
+    ],
+    "exit_code": 0,
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "wall_seconds": 0.016155
+  },
+  {
+    "command": [
+      "rsync",
+      "--archive",
+      "--checksum",
+      "/Users/yugendren/experiments/sorting_network_s13/.cache/method-v1/datasets/e1-20260815T022353Z/development-dataset.tsv.zst",
+      "ollama:/data/mericanii_s13_method_v1/e2-train-20260815T023758Z/development-dataset.tsv.zst"
+    ],
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "",
+    "wall_seconds": 0.374767
+  },
+  {
+    "command": [
+      "rsync",
+      "--archive",
+      "--checksum",
+      "/Users/yugendren/experiments/sorting_network_s13/tools/train_completion_model.py",
+      "ollama:/data/mericanii_s13_method_v1/e2-train-20260815T023758Z/train_completion_model.py"
+    ],
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "",
+    "wall_seconds": 0.048767
+  },
+  {
+    "command": [
+      "ssh",
+      "ollama",
+      "cd /data/mericanii_s13_method_v1/e2-train-20260815T023758Z && CUDA_VISIBLE_DEVICES=0 /usr/bin/time -v python3 train_completion_model.py --dataset development-dataset.tsv.zst --dataset-sha256 5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994 --output replay-1 --replay 1"
+    ],
+    "exit_code": 0,
+    "stderr_sha256": "f2c91dbc0046c69117c9c9ad268c88e0a0c9dd315a781ea5f9bcfa1699fc7237",
+    "stdout_sha256": "9353f9325d686af6b7661dc2562aaa30e3b6780e661eb2a9a1f15c3ad37e9a98",
+    "wall_seconds": 16.79887
+  },
+  {
+    "command": [
+      "rsync",
+      "--archive",
+      "--checksum",
+      "ollama:/data/mericanii_s13_method_v1/e2-train-20260815T023758Z/replay-1/",
+      "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-train-20260815T023758Z/replay-1/artifacts/"
+    ],
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "",
+    "wall_seconds": 0.114892
+  },
+  {
+    "command": [
+      "ssh",
+      "ollama",
+      "cd /data/mericanii_s13_method_v1/e2-train-20260815T023758Z && CUDA_VISIBLE_DEVICES=0 /usr/bin/time -v python3 train_completion_model.py --dataset development-dataset.tsv.zst --dataset-sha256 5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994 --output replay-2 --replay 2"
+    ],
+    "exit_code": 0,
+    "stderr_sha256": "9dead874aa88f56fe25b861ea39ae6577acb9bcc3a54a9cff52606cdcf3adbbf",
+    "stdout_sha256": "4d613dabd3eea23faa65de727b25f3b6c9418894bd6e0b260a261f2b0f6fb9f7",
+    "wall_seconds": 16.066053
+  },
+  {
+    "command": [
+      "rsync",
+      "--archive",
+      "--checksum",
+      "ollama:/data/mericanii_s13_method_v1/e2-train-20260815T023758Z/replay-2/",
+      "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-train-20260815T023758Z/replay-2/artifacts/"
+    ],
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "",
+    "wall_seconds": 0.096287
+  }
+]

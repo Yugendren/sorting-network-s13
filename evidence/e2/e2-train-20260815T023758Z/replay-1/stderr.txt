@@ -1,0 +1,23 @@
+	Command being timed: "python3 train_completion_model.py --dataset development-dataset.tsv.zst --dataset-sha256 5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994 --output replay-1 --replay 1"
+	User time (seconds): 15.80
+	System time (seconds): 1.49
+	Percent of CPU this job got: 103%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:16.77
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 2205096
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 798
+	Minor (reclaiming a frame) page faults: 356462
+	Voluntary context switches: 40515
+	Involuntary context switches: 118
+	Swaps: 0
+	File system inputs: 275728
+	File system outputs: 976
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

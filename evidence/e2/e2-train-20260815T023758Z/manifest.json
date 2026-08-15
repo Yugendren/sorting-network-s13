@@ -1,0 +1,42 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/e2_train_gate.py"
+  ],
+  "config_sha256": "5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465",
+  "cpu_seconds": 0.010693,
+  "dirty_at_start": false,
+  "ended_at": "2026-08-15T02:38:33.051342+00:00",
+  "gate": "E2",
+  "host": {
+    "local": {
+      "hostname": "YUGENs-Mac-mini.local",
+      "machine": "arm64",
+      "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O"
+    },
+    "training": {
+      "capability": [
+        8,
+        6
+      ],
+      "cuda": "12.8",
+      "cudnn": 91002,
+      "gpu": "NVIDIA GeForce RTX 3060",
+      "hostname": "ollama",
+      "numpy": "2.3.5",
+      "nvidia_smi": "NVIDIA GeForce RTX 3060, GPU-554fad60-25da-be4d-2f37-6fd0e37209b4, 12288, 535.309.01",
+      "pandas": "3.0.1",
+      "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.39",
+      "python": "3.12.3",
+      "torch": "2.10.0+cu128"
+    }
+  },
+  "peak_rss_bytes": 26427392,
+  "run_id": "e2-train-20260815T023758Z",
+  "schema_version": "s13-method-evidence-manifest/v1",
+  "source_commit": "a6d531b7d89a6353d9920f1c3d2bd8bd3262f6a0",
+  "started_at": "2026-08-15T02:37:58.043492+00:00",
+  "status": "PASS",
+  "threads": 1,
+  "wall_seconds": 35.007258
+}

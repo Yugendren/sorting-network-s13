@@ -64,6 +64,13 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   unique 45-comparator candidates accepted by both verifiers. Training seeds
   1--16 contain zero positives; this frozen limitation must be handled without
   moving seed 18 or changing the version-1 objective.
+- E2 training subgate PASS: `evidence/e2/e2-train-20260815T023758Z`, tested
+  source commit `a6d531b7d89a6353d9920f1c3d2bd8bd3262f6a0`, manifest SHA-256
+  `2ff8fc719428d62b87aa3c50b785f4a2b42581be780f93fd675065ff3f893074`.
+  Both RTX replays selected epoch 26 and exported byte-identical weights. The
+  model export SHA-256 is
+  `eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7`;
+  calibration AP was 0.003119165. E2 is not yet accepted.
 
 ## Gate ledger
 
@@ -80,6 +87,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Commit the accepted E1 evidence. Train version 1 exactly as frozen, explicitly
-recording the zero-positive training split, replay the export, and run the one
-permitted validation audit. Do not access E3 seeds or alter the split.
+Commit the reproducible training evidence. Compile its selected weights into
+the frozen truncation integration, verify CPU inference against the fixture,
+then run the one permitted validation audit. Do not access E3 seeds or alter
+the representation, objective, or integration role.

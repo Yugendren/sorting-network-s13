@@ -1,0 +1,5 @@
+E2 training falsifiable gate: two frozen RTX replays export byte-identical float arrays despite the zero-positive training split.
+PASS: both RTX replays consumed the frozen 1004000-row dataset and the fixed seed/configuration.
+PASS: training seeds contain zero positives; the limiting configured positive weight 100.0 was used without changing labels or split.
+PASS: selected epoch 26 calibration AP 0.003119165; model export eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7.
+PASS: exported float arrays, C++ header, and inference fixture are byte-identical across replays.

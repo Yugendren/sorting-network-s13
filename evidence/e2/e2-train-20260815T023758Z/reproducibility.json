@@ -1,0 +1,17 @@
+{
+  "MericaniiModelV1Weights.hpp": {
+    "equal": true,
+    "replay_1_sha256": "f7533479d67d44ff5b5da7e9dd3cad9909785e7a912997b8c2b2edfc8fd69864",
+    "replay_2_sha256": "f7533479d67d44ff5b5da7e9dd3cad9909785e7a912997b8c2b2edfc8fd69864"
+  },
+  "model-export.json": {
+    "equal": true,
+    "replay_1_sha256": "eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7",
+    "replay_2_sha256": "eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7"
+  },
+  "model-inference-fixture.json": {
+    "equal": true,
+    "replay_1_sha256": "428ef8f0b67c2f05f923501d23f85ad4690f79e310fbe77039b44294c71c15bc",
+    "replay_2_sha256": "428ef8f0b67c2f05f923501d23f85ad4690f79e310fbe77039b44294c71c15bc"
+  }
+}

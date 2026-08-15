@@ -1,0 +1,11 @@
+{
+  "command": [
+    "ssh",
+    "ollama",
+    "cd /data/mericanii_s13_method_v1/e2-train-20260815T023758Z && CUDA_VISIBLE_DEVICES=0 /usr/bin/time -v python3 train_completion_model.py --dataset development-dataset.tsv.zst --dataset-sha256 5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994 --output replay-2 --replay 2"
+  ],
+  "exit_code": 0,
+  "stderr_sha256": "9dead874aa88f56fe25b861ea39ae6577acb9bcc3a54a9cff52606cdcf3adbbf",
+  "stdout_sha256": "4d613dabd3eea23faa65de727b25f3b6c9418894bd6e0b260a261f2b0f6fb9f7",
+  "wall_seconds": 16.066053
+}
