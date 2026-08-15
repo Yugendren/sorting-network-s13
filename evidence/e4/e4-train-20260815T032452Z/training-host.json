@@ -1,0 +1,16 @@
+{
+  "capability": [
+    8,
+    6
+  ],
+  "cuda": "12.8",
+  "cudnn": 91002,
+  "gpu": "NVIDIA GeForce RTX 3060",
+  "hostname": "ollama",
+  "numpy": "2.3.5",
+  "nvidia_smi": "NVIDIA GeForce RTX 3060, GPU-554fad60-25da-be4d-2f37-6fd0e37209b4, 12288, 535.309.01",
+  "pandas": "3.0.1",
+  "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128"
+}

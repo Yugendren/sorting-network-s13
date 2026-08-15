@@ -1,0 +1,23 @@
+	Command being timed: "timeout --signal=TERM 1800s python3 train_completion_model_v2.py --dataset development-dataset.tsv.zst --dataset-sha256 5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994 --v1-export v1-model-export.json --v1-export-sha256 eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7 --output replay-1 --replay 1"
+	User time (seconds): 28.83
+	System time (seconds): 0.99
+	Percent of CPU this job got: 103%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:28.72
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1873008
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 28
+	Minor (reclaiming a frame) page faults: 308889
+	Voluntary context switches: 29922
+	Involuntary context switches: 217
+	Swaps: 0
+	File system inputs: 11872
+	File system outputs: 968
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

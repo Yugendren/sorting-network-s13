@@ -1,0 +1,72 @@
+[
+  {
+    "calibration_macro_concordance": 0.8003607115236631,
+    "calibration_micro_concordance": 0.8009272579846866,
+    "calibration_mse": 0.5249696373939514,
+    "epoch": 1,
+    "training_mse": 0.5390586865613185
+  },
+  {
+    "calibration_macro_concordance": 0.8034666931505329,
+    "calibration_micro_concordance": 0.8040557358444157,
+    "calibration_mse": 0.5089457631111145,
+    "epoch": 2,
+    "training_mse": 0.48583385329797446
+  },
+  {
+    "calibration_macro_concordance": 0.8042040954433958,
+    "calibration_micro_concordance": 0.8047619120699052,
+    "calibration_mse": 0.5033937692642212,
+    "epoch": 3,
+    "training_mse": 0.47956342465374097
+  },
+  {
+    "calibration_macro_concordance": 0.8039814281043189,
+    "calibration_micro_concordance": 0.8045495633626242,
+    "calibration_mse": 0.49979615211486816,
+    "epoch": 4,
+    "training_mse": 0.47791681197534996
+  },
+  {
+    "calibration_macro_concordance": 0.8049989770519668,
+    "calibration_micro_concordance": 0.8055500417396748,
+    "calibration_mse": 0.4988531470298767,
+    "epoch": 5,
+    "training_mse": 0.4767835790037634
+  },
+  {
+    "calibration_macro_concordance": 0.8047284565102433,
+    "calibration_micro_concordance": 0.8052803221658438,
+    "calibration_mse": 0.5017942786216736,
+    "epoch": 6,
+    "training_mse": 0.476207020315991
+  },
+  {
+    "calibration_macro_concordance": 0.8048177796711148,
+    "calibration_micro_concordance": 0.8053674560937524,
+    "calibration_mse": 0.49936187267303467,
+    "epoch": 7,
+    "training_mse": 0.4754868683017108
+  },
+  {
+    "calibration_macro_concordance": 0.8045253019795835,
+    "calibration_micro_concordance": 0.8050786481435254,
+    "calibration_mse": 0.4995737373828888,
+    "epoch": 8,
+    "training_mse": 0.4755025572035892
+  },
+  {
+    "calibration_macro_concordance": 0.8041228205893935,
+    "calibration_micro_concordance": 0.8046860123160849,
+    "calibration_mse": 0.5012531280517578,
+    "epoch": 9,
+    "training_mse": 0.475054213468772
+  },
+  {
+    "calibration_macro_concordance": 0.8043431938854875,
+    "calibration_micro_concordance": 0.8048784255832809,
+    "calibration_mse": 0.5020831227302551,
+    "epoch": 10,
+    "training_mse": 0.4744651460457608
+  }
+]

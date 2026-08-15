@@ -1,0 +1,18 @@
+{
+  "base_config_sha256": "5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465",
+  "change_manifest_sha256": "06ae75520aefde309e7a60a60cb0af84b20f23b3727b8c781b8cd7a5788bb3ac",
+  "config_sha256": "8cfe3a2cdc2095a8477a39a196407861473fcf7530d75d0570bf9fe38ebda3fc",
+  "dataset_manifest_sha256": "59dfe8c85b389d3f08568155638b1900808a03d9502670900208b8ac1441ce2d",
+  "dataset_path": ".cache/method-v1/datasets/e1-20260815T022353Z/development-dataset.tsv.zst",
+  "dataset_sha256": "5628fd5187772bd66ff630bc3889f1973ca8cfefae468b189e586cc83f6be994",
+  "e1_manifest_sha256": "af6e1fb05a4fcf984f71d0a3ab4f40d39e4288d7fb68c2daae2b32c61f3236b5",
+  "e3_rows_used": 0,
+  "e4_rows_used": 0,
+  "evidence_replay": "verified 17 immutable evidence inventories and manifests",
+  "failure_analysis_sha256": "39e6a0e90bc43e542f56d55ce235ec462d0a3f968794da370edb49da65536574",
+  "remote_path": "/data/mericanii_s13_method_v2/e4-train-20260815T032452Z",
+  "seed_manifest_sha256": "b408752e404b3cfa2fb55b3fbaac5377e098128ddf3f04bbe43d6821d5a77b82",
+  "training_script_sha256": "f5e3969360de9b493b8ae73839fe927b3adee613ad76c5fe45b899226f206e95",
+  "v1_normalization_export_path": "evidence/e2/e2-train-20260815T023758Z/replay-1/artifacts/model-export.json",
+  "v1_normalization_export_sha256": "eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7"
+}

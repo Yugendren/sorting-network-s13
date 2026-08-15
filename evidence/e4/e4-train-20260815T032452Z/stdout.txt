@@ -1,0 +1,5 @@
+E4 V2 training gate: two RTX replays must export identical regression-score arrays while representation and integration remain frozen.
+PASS: both RTX replays consumed only the frozen E1 development dataset and exact V1 feature normalization.
+PASS: the only major change is MSE regression on standardized negative final_count; E3/E4 rows and target 44 were unused.
+PASS: selected epoch 5 calibration concordance 0.805550042; export 7c7ec61f499e37c290a8e1040374daceac3df29fe6f11354472b896c847e9e6a.
+PASS: exported float arrays, C++ ABI header, and inference fixture are byte-identical across replays.

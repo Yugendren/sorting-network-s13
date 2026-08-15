@@ -21,8 +21,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: E4 failure analysis and one-change repair freeze. Version 1
-  failed E2 validation; no final holdout seed has been run.
+- Active milestone: E4 version-2 integration freeze. Version 1 failed E2
+  validation; neither frozen matched-exam holdout has been run.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -95,6 +95,11 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 - E4 freeze: change learning objective only; 85 features and truncation
   integration remain fixed. The revealed 60-seed E4 manifest reproduces compact
   commitment `02436e65...d57c4f` and is disjoint from all earlier partitions.
+- E4 V2 training PASS: `evidence/e4/e4-train-20260815T032452Z`, source commit
+  `a2da1a4`, manifest `0128da00...b1f95f`. Both deterministic RTX
+  replays selected epoch 5 and exported byte-identical weights; calibration
+  micro concordance was 0.805550041740. The model export SHA-256 is
+  `7c7ec61f...79e9e6a`; compiled CPU parity passed 32 fixture rows.
 
 ## Gate ledger
 
@@ -105,11 +110,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | E1 dataset | COMPLETE | PASS evidence `e1-20260815T022353Z` |
 | E2 method v1 | COMPLETE / FAIL | Concordance 0.446355505360 < 0.5 |
 | E3 matched exam | NOT RUN FOR V1 | E2 prerequisite failed; seeds remain sealed |
-| E4 one repair | ACTIVE | Freeze analysis, new holdout, and one major change |
+| E4 one repair | ACTIVE | Freeze unchanged integration, then run E4 exam once |
 | E5 frontier | CONDITIONAL | Only after pass; 100M eval / seven-day maximum |
 | Terminal report | PENDING | One allowed verdict, then stop |
 
 ## Immediate next action
 
-Commit the E4 seed, model, change, and exam freeze. Then implement and replay
-the regression training twice without accessing E3 or E4 trajectories.
+Freeze the unchanged V2 integration, then run the single paired E4 exam once.

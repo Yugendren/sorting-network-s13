@@ -1,0 +1,13 @@
+{
+  "artifacts_path": "evidence/e4/e4-train-20260815T032452Z/replay-1/artifacts",
+  "checkpoint_sha256": "60af80b18701f0c93276134b95e8f7ce554c20163020b03ec2d32d8ffe53383f",
+  "cpp_header_sha256": "b2caca36602a0fb86ff1f3cb6310ebdd2f3e1b1c420667c426034161334fc984",
+  "inference_fixture_sha256": "0b63002e366c3e55cb9bd1715510de726293b05fa4f9c38cf78314ff7895c95a",
+  "model_export_sha256": "7c7ec61f499e37c290a8e1040374daceac3df29fe6f11354472b896c847e9e6a",
+  "replay": 1,
+  "selected_calibration_micro_concordance": 0.8055500417396748,
+  "selected_calibration_mse": 0.4988531470298767,
+  "selected_epoch": 5,
+  "target_mean": -48.4966297310757,
+  "target_scale": 1.2216571984849462
+}
