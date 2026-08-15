@@ -54,6 +54,12 @@ The frozen interface begins with `make setup`, `make verify`, and the serial
 `make baseline-b0` through `make baseline-b4` gates. `make evidence-check`
 validates every preserved scored run.
 
+The active method interface is serial: `make method-e0`,
+`make setup-method-instrumented`, `make method-e1`, `make method-e2-train`,
+`make setup-method-v1`, and then the single-use `make method-e2-validate`.
+Later gates are intentionally unavailable until the validation decision has
+been frozen and committed.
+
 ## Repository boundary
 
 This project is independent of:
