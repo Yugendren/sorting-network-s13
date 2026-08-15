@@ -1,0 +1,30 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/b3_gate.py"
+  ],
+  "config_sha256": "70bc4970ecee30b7b5da547e77e04f2daadc4f25c214e687f2fa087193da7b38",
+  "cpu_seconds": 41.812694,
+  "dirty_at_start": false,
+  "ended_at": "2026-08-15T00:03:47.017093+00:00",
+  "error": "n=11 official command ended as REJECTED",
+  "gate": "B3",
+  "host": {
+    "cpu": "Apple M4",
+    "disk_free_bytes_at_start": 39529459712,
+    "logical_cores": 10,
+    "machine": "arm64",
+    "memory_bytes": 17179869184,
+    "model": "Mac16,10",
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "physical_cores": 10
+  },
+  "peak_rss_bytes": 85618688,
+  "run_id": "b3-20260815T000326Z",
+  "schema_version": "s13-evidence-manifest/v1",
+  "source_commit": "d624738e8830ad29c5071c4c0aae43d680c9c5b4",
+  "started_at": "2026-08-15T00:03:26.285365+00:00",
+  "status": "FAIL",
+  "threads": 10,
+  "wall_seconds": 20.879262
+}

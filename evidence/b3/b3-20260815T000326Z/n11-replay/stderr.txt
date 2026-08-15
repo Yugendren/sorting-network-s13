@@ -1,0 +1,19 @@
+snocheck: /Users/yugendren/experiments/sorting_network_s13/.cache/certificates/proof_cert_11.bin: hGetBuf: invalid argument (Invalid argument)
+        0.30 real         0.10 user         0.02 sys
+             6172672  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                8309  page reclaims
+                  22  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  12  voluntary context switches
+                 439  involuntary context switches
+            19376604  instructions retired
+             9012452  cycles elapsed
+             1343800  peak memory footprint

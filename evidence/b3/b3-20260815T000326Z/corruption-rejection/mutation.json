@@ -1,0 +1,12 @@
+{
+  "changed_file_offset": 1564544,
+  "corrupted_sha256": "47fcf43ae320cd924db83e276089b20ce9857ffd92ac41393431ee47c6f02cc0",
+  "method": "replace root proof-step bound byte with an impossible high value",
+  "original_byte": 25,
+  "replacement_byte": 255,
+  "root_step_length": 571,
+  "root_step_offset": 1564543,
+  "size_bytes": 1565114,
+  "source_sha256": "92e37816dc6e5ccc9d1004f86cd7cd432e529c557a00d13da72db746443da151",
+  "step_count": 12236
+}

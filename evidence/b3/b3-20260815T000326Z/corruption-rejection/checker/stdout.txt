@@ -1,0 +1,7 @@
+Running verified proof certificate checker...
+
+An output of `None` indicates verification failure.
+An output of `Some (w,b)` indicates successful verification of the
+lower bound b for w channels.
+
+Nothing
