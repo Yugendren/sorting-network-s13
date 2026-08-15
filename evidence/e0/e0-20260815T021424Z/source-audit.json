@@ -1,0 +1,36 @@
+{
+  "conclusion": "No audited primary or maintained source settles comparator-count S(13); experiment target is not stale.",
+  "remote_heads": {
+    "dobbelaere-maintained-catalog": [
+      "49b355d484aa92c2a661b6ab1a2f981a60b7c0c6"
+    ],
+    "sortnetopt-context": [
+      "0b5d09c47446096f9e3a0812b35afc72b7f2a718"
+    ]
+  },
+  "research_status": {
+    "channels": 13,
+    "label": "PUBLISHED",
+    "lower_bound": 44,
+    "metric": "minimum comparator count",
+    "settled": false,
+    "upper_bound": 45
+  },
+  "verified_caches": [
+    {
+      "id": "dobbelaere-maintained-catalog",
+      "path": ".cache/sources/sorting_networks_extended.html",
+      "sha256": "8a2d11c9f2ac66e16ea93a9c4301971b47d3115eaf28d4e12b50079c8238d116"
+    },
+    {
+      "id": "valsalam-miikkulainen-senso",
+      "path": ".cache/sources/valsalam13a.pdf",
+      "sha256": "59522734f52c0b4927e80eba4971a49ba6cc756ea5d072e382af57648544df3e"
+    },
+    {
+      "id": "symmetry-1.1",
+      "path": ".cache/sources/symmetry-1.1.tar.gz",
+      "sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c"
+    }
+  ]
+}

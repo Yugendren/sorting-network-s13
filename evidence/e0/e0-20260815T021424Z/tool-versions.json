@@ -1,0 +1,9 @@
+{
+  "clang": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "cmake": "cmake version 4.3.3",
+  "git": "git version 2.50.1 (Apple Git-155)",
+  "go": "go version go1.26.4 darwin/arm64",
+  "make": "GNU Make 3.81",
+  "python": "Python 3.14.4",
+  "zstd": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+}

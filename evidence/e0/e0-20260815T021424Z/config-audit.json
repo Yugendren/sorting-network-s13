@@ -1,0 +1,55 @@
+{
+  "aggregate_sha256": "5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465",
+  "feature_dimension": 85,
+  "files": [
+    {
+      "path": "config/experiment-v1/budgets-v1.json",
+      "sha256": "6a33ebab176b04990d1c2ad75ad0f8b5bffb0aea2734be04584a3aa2c030a919"
+    },
+    {
+      "path": "config/experiment-v1/dataset-v1.json",
+      "sha256": "51ec094954e4c6e1ec064c9128b4d0198b7ba91150854e50b734c7ebda2cb303"
+    },
+    {
+      "path": "config/experiment-v1/environment-v1.json",
+      "sha256": "ce50985a07f980b9bc3123c4824cc000155da2a038ca4a90b71027d7402c537c"
+    },
+    {
+      "path": "config/experiment-v1/evidence-manifest.schema.json",
+      "sha256": "228952c0c52207e4efe9daef3ed294f201cac978747e169dfa08a960c447473b"
+    },
+    {
+      "path": "config/experiment-v1/exam-v1.json",
+      "sha256": "9421b741a9d626f940075210de5985010954e053b29a0588667a637211e069f1"
+    },
+    {
+      "path": "config/experiment-v1/features-v1.json",
+      "sha256": "557efae74621a613b0c7ad2914eb303fe4a279390a4af86d373c81e6833419ab"
+    },
+    {
+      "path": "config/experiment-v1/model-v1.json",
+      "sha256": "58ef8dc53b56389d00119ecb7bdd06ad2b3c1541caf205a89f29c4a4c7606571"
+    },
+    {
+      "path": "config/experiment-v1/seed-policy.json",
+      "sha256": "528b09a8a7c8d780709596b03e736d91569b160cf8087e376fa1d537970b452a"
+    },
+    {
+      "path": "config/experiment-v1/seeds-development.json",
+      "sha256": "bedd4d38dcb8f6118ef0b64d7c4e0ac5591a2f4e8a6e4c716363a7e06901e7fe"
+    },
+    {
+      "path": "config/experiment-v1/seeds-e3-holdout.json",
+      "sha256": "39350043f435e646958cab8c462c7599904b3e15fdb4ff69ef9511770ee6f644"
+    },
+    {
+      "path": "config/experiment-v1/seeds-validation.json",
+      "sha256": "0d0737167dfc749ed5b444a939a454fd1e16ed9ea6871d5dbb1d83f4b36ace77"
+    },
+    {
+      "path": "config/experiment-v1/sources-v1.json",
+      "sha256": "cab0101988772f83a1dd19fc9e7082705124dcefe392d99de8e8b431b0df8190"
+    }
+  ],
+  "model_parameters": 7617
+}

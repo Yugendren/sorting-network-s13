@@ -1,0 +1,17 @@
+{
+  "materialized_partition_hashes": {
+    "development": "bedd4d38dcb8f6118ef0b64d7c4e0ac5591a2f4e8a6e4c716363a7e06901e7fe",
+    "e3_final_holdout": "39350043f435e646958cab8c462c7599904b3e15fdb4ff69ef9511770ee6f644",
+    "validation": "0d0737167dfc749ed5b444a939a454fd1e16ed9ea6871d5dbb1d83f4b36ace77"
+  },
+  "reproduction": {
+    "e4_compact_seed_array_sha256": "02436e65dea7b00a1b65cb20d427fd45d5c3f7d2779cdaae6be34f4fc6d57c4f",
+    "partition_counts": {
+      "development": 20,
+      "e3_final_holdout": 60,
+      "e4_future_holdout": 60,
+      "validation": 20
+    },
+    "status": "PASS"
+  }
+}

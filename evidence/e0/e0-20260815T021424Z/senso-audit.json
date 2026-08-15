@@ -1,0 +1,25 @@
+{
+  "artifacts": [
+    {
+      "path": ".cache/sources/symmetry-1.1.tar.gz",
+      "sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+      "size_bytes": 22506545
+    },
+    {
+      "path": "tools/patches/symmetry-1.1-macos.patch",
+      "sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09",
+      "size_bytes": 995
+    },
+    {
+      "path": ".build/senso/attempt-20260814T232113Z/build-manifest.json",
+      "sha256": "24f47b42a966ed1b53553d4a77aca305af5cdd19ed12f44f0a8238210e5078e4",
+      "size_bytes": 3852
+    },
+    {
+      "path": ".build/senso/attempt-20260814T232113Z/bin/sorting",
+      "sha256": "1d6fe20b547fa0e9dd9c899e34b608ac157104f63fd845d858e6e4ae9c0e6cc6",
+      "size_bytes": 2757240
+    }
+  ],
+  "candidate_accounting": "population + generations * (population * (1 - estimate_fraction)) = 200 + 500 * 100 = 50200"
+}

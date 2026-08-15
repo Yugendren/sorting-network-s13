@@ -1,0 +1,17 @@
+{
+  "branch": "goal/s13-method-v1",
+  "head": "da9301bf1c41378bdb6930388d8ac36f86f5d89c",
+  "recent_commits": [
+    "da9301b fix(e0): isolate baseline inventory preflight",
+    "52402ac feat(e0): freeze learned-method experiment",
+    "3c876d6 docs(method): freeze learned-search authority",
+    "f482976 evidence(b4): close baseline and stop",
+    "307198d feat(b4): aggregate baseline evidence and stop"
+  ],
+  "status_porcelain": "",
+  "worktrees_porcelain": [
+    "worktree /Users/yugendren/experiments/sorting_network_s13",
+    "HEAD da9301bf1c41378bdb6930388d8ac36f86f5d89c",
+    "branch refs/heads/goal/s13-method-v1"
+  ]
+}

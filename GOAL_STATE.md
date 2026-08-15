@@ -21,7 +21,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: E0 experiment freeze, before any dataset or model score.
+- Active milestone: E1 dataset; no training or holdout access has begun.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -46,14 +46,21 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 - Local host: Apple M4, 10 logical cores, 16 GiB RAM; CPU search and inference.
 - Training host: authorized GeForce RTX 3060, 12 GiB; no paid compute.
 - No training, model score, matched exam, or 44-comparator search has begun.
+- E0 PASS: `evidence/e0/e0-20260815T021424Z`, tested source commit
+  `da9301bf1c41378bdb6930388d8ac36f86f5d89c`, manifest SHA-256
+  `a38832f101d24fbc5430ce8c25b5a343cbbcd8fcedf66c723f8383a588499754`,
+  and frozen-config aggregate
+  `5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465`.
+- E0 preserved one prior tooling FAIL at `evidence/e0/e0-20260815T021347Z`;
+  it created no score and motivated the baseline-only inventory preflight.
 
 ## Gate ledger
 
 | Gate | State | Next falsifiable outcome |
 |---|---|---|
 | Authority freeze | COMPLETE | Commit `3c876d6`; no preceding scores |
-| E0 experiment freeze | ACTIVE | All pins, partitions, configs, and budgets pass |
-| E1 dataset | PENDING | Instrumented trajectory unchanged; dataset valid |
+| E0 experiment freeze | COMPLETE | PASS evidence `e0-20260815T021424Z` |
+| E1 dataset | ACTIVE | Instrumented trajectory unchanged; dataset valid |
 | E2 method v1 | PENDING | Reproducible small model frozen after validation |
 | E3 matched exam | PENDING | Six pass criteria evaluated on sealed 60 seeds |
 | E4 one repair | CONDITIONAL | One major change; one new sealed exam |
@@ -62,6 +69,6 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Commit the tested E0 configuration and gate implementation, run `make
-method-e0` from the clean commit, inventory the immutable evidence, and commit
-the verified E0 checkpoint. Do not begin E1 before E0 PASS.
+Commit the accepted E0 evidence, then implement the thinnest E1 instrumentation
+slice. Prove logging consumes no RNG and reproduces the sentinel trajectory
+before running the frozen 20-seed development dataset batch.

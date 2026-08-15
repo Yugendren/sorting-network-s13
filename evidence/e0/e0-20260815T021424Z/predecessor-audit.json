@@ -1,0 +1,31 @@
+{
+  "evidence_diff": "",
+  "evidence_status": "",
+  "inventory_replay": "verified 11 immutable evidence inventories and manifests",
+  "verified_pins": [
+    {
+      "path": "evidence/b4/b4-20260815T014232Z/baseline-report.md",
+      "sha256": "d2cb721147ba442004bb3018db07a3cdf7d2626264f2aabe1a3d2cacae48abb7"
+    },
+    {
+      "path": "src/verifier_a.py",
+      "sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e"
+    },
+    {
+      "path": "src/verifier_b.go",
+      "sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f"
+    },
+    {
+      "path": "config/frozen/b2-execution.json",
+      "sha256": "71ebce6ae9b803ae4121421d796223c4a2f08b5b2c976e2f45d00ebb675cba78"
+    },
+    {
+      "path": "config/frozen/b2-senso.json",
+      "sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff"
+    },
+    {
+      "path": "config/frozen/seeds.json",
+      "sha256": "dcac67a8eb5b5c14d9629d88fd3240da3aa5d4fa3c77d479d274c901273d7a0b"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+E0 falsifiable gate: predecessor, status, partitions, method, budgets, and evidence rules are frozen before scores.
+PASS: maintained source heads and snapshot retain comparator-count 44..45 status.
+PASS: B0--B4 evidence and both frozen verifiers byte-match the baseline.
+PASS: 20 development, 20 validation, and 60 sealed E3 seeds are reproducible and disjoint.
+PASS: target-45 dataset, 7617-parameter truncation ranker, matched exam, repair, and conditional frontier budgets are frozen.
