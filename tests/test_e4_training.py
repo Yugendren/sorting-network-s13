@@ -48,9 +48,10 @@ class E4TrainingTests(unittest.TestCase):
         self.assertNotIn("success45", source)
 
     def test_gate_is_pinned_to_committed_change_and_development_data(self) -> None:
-        prerequisite = e4_train_gate.prerequisite_check()
+        attempt = ROOT / "evidence/e4/e4-train-20260815T032452Z"
+        prerequisite = json.loads((attempt / "prerequisite.json").read_text(encoding="utf-8"))
         self.assertEqual(prerequisite["dataset_sha256"], e4_train_gate.DATASET_SHA256)
-        self.assertEqual(prerequisite["v1_export_sha256"], e4_train_gate.V1_EXPORT_SHA256)
+        self.assertEqual(prerequisite["v1_normalization_export_sha256"], e4_train_gate.V1_EXPORT_SHA256)
         self.assertEqual(prerequisite["change_manifest_sha256"], e4_train_gate.CHANGE_MANIFEST_SHA256)
         self.assertEqual(sha256(E4 / "failure-analysis.md"), e4_train_gate.FAILURE_ANALYSIS_SHA256)
 

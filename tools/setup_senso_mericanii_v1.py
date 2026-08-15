@@ -27,6 +27,10 @@ MODEL_HEADER = MODEL_ROOT / "MericaniiModelV1Weights.hpp"
 MODEL_FIXTURE = MODEL_ROOT / "model-inference-fixture.json"
 BUILD_ROOT = ROOT / ".build/senso-mericanii-v1"
 ACTIVE = BUILD_ROOT / "active.json"
+METHOD_LABEL = "Mericanii V1"
+METHOD_PROFILE = "mericanii-v1"
+BUILD_SCHEMA = "s13-senso-mericanii-build/v1"
+FAILURE_SCHEMA = "s13-senso-mericanii-build-failure/v1"
 ARCHIVE_SHA256 = "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c"
 MODEL_HEADER_SHA256 = "f7533479d67d44ff5b5da7e9dd3cad9909785e7a912997b8c2b2edfc8fd69864"
 MODEL_FIXTURE_SHA256 = "428ef8f0b67c2f05f923501d23f85ad4690f79e310fbe77039b44294c71c15bc"
@@ -98,7 +102,7 @@ def main() -> int:
     BUILD_ROOT.mkdir(parents=True, exist_ok=True)
     active = verify_active()
     if active is not None:
-        print(f"verified Mericanii V1 build {active['binary_path']} ({active['binary_sha256']})")
+        print(f"verified {METHOD_LABEL} build {active['binary_path']} ({active['binary_sha256']})")
         return 0
 
     started = datetime.now(timezone.utc)
@@ -148,7 +152,7 @@ def main() -> int:
         for patch, role in (
             (PORTABILITY_PATCH, "portability"),
             (INSTRUMENTATION_PATCH, "instrumentation"),
-            (METHOD_PATCH, "mericanii-v1"),
+            (METHOD_PATCH, METHOD_PROFILE),
         ):
             invoke(["patch", "-p1", "-i", str(patch)], source, env, label=role)
         installed_header = source / "beagle/beagle/SN/include/beagle/SN/MericaniiModelV1Weights.hpp"
@@ -207,7 +211,7 @@ def main() -> int:
             "-OBsn.estimate.gtrun=1", "-OBsn.mutation.mksym=1", "-OBms.write.interval=0",
             "-OBms.write.prefix=smoke", "-OBlg.file.name=smoke.log",
         ]
-        invoke(smoke_command, smoke_dir, smoke_env, label="mericanii-v1-smoke-seed-1")
+        invoke(smoke_command, smoke_dir, smoke_env, label=f"{METHOD_PROFILE}-smoke-seed-1")
         milestones = sorted(smoke_dir.glob("smoke_g*.obm.gz"))
         if len(milestones) != 1:
             raise RuntimeError(f"expected one smoke milestone, found {len(milestones)}")
@@ -219,7 +223,7 @@ def main() -> int:
 
         ended = datetime.now(timezone.utc)
         manifest = {
-            "schema_version": "s13-senso-mericanii-build/v1",
+            "schema_version": BUILD_SCHEMA,
             "status": "PASS",
             "started_at": started.isoformat(),
             "ended_at": ended.isoformat(),
@@ -249,7 +253,7 @@ def main() -> int:
         manifest_path = attempt / "build-manifest.json"
         write_json(manifest_path, manifest)
         write_json(ACTIVE, {"manifest_path": manifest_path.relative_to(ROOT).as_posix(), "manifest_sha256": sha256(manifest_path)})
-        print(f"built and smoke-tested Mericanii V1: {binary.relative_to(ROOT)}")
+        print(f"built and smoke-tested {METHOD_LABEL}: {binary.relative_to(ROOT)}")
         return 0
     except Exception as exc:
         with log_path.open("a", encoding="utf-8") as log:
@@ -257,7 +261,7 @@ def main() -> int:
         write_json(
             attempt / "failure.json",
             {
-                "schema_version": "s13-senso-mericanii-build-failure/v1",
+                "schema_version": FAILURE_SCHEMA,
                 "status": "FAIL",
                 "started_at": started.isoformat(),
                 "ended_at": datetime.now(timezone.utc).isoformat(),
@@ -274,5 +278,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"Mericanii V1 build failed: {exc}", file=sys.stderr)
+        print(f"{METHOD_LABEL} build failed: {exc}", file=sys.stderr)
         raise SystemExit(1)

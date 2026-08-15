@@ -95,11 +95,11 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 - E4 freeze: change learning objective only; 85 features and truncation
   integration remain fixed. The revealed 60-seed E4 manifest reproduces compact
   commitment `02436e65...d57c4f` and is disjoint from all earlier partitions.
-- E4 V2 training PASS: `evidence/e4/e4-train-20260815T032452Z`, source commit
-  `a2da1a4`, manifest `0128da00...b1f95f`. Both deterministic RTX
-  replays selected epoch 5 and exported byte-identical weights; calibration
-  micro concordance was 0.805550041740. The model export SHA-256 is
-  `7c7ec61f...79e9e6a`; compiled CPU parity passed 32 fixture rows.
+- E4 V2 training PASS: `evidence/e4/e4-train-20260815T032452Z`, source
+  `a2da1a4`, manifest `0128da00...b1f95f`. Both RTX replays selected epoch 5;
+  calibration concordance was 0.805550041740 and byte-identical model export
+  SHA-256 was `7c7ec61f...79e9e6a`.
+- Frozen V2 integration PASS: patch `f2d8fd25...1a132`; binary `382e4a29...7fdf`.
 
 ## Gate ledger
 
