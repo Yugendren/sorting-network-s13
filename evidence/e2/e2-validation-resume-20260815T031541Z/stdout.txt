@@ -1,0 +1,5 @@
+E2 validation resume: use only the exact frozen 7bca7b... aggregate and f16262... scorer; no label trajectory may run.
+PASS: exact frozen validation aggregate 7bca7bec0cfda5573d4640eb6f9a3af697025dbedf3342242c330eb70dfbbfd9 scored with exact frozen binary f16262aabb60ac178a3b558795dff8c7efc038725fd3ea624cddc9ec7bd9f0b3.
+MEASURED: 19499483815 comparable pairs; micro concordance=0.446355505360; reference=0.5.
+PASS: integration audit used exactly 50200 evaluations and 50200 rank calls.
+E2_FAIL: V1 did not strictly beat the constant-score ranker; E3 is forbidden for V1.

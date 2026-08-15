@@ -1,0 +1,30 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/e2_validation_resume.py"
+  ],
+  "config_sha256": "5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465",
+  "cpu_seconds": 0.369256,
+  "dirty_at_start": false,
+  "ended_at": "2026-08-15T03:17:06.400783+00:00",
+  "gate": "E2",
+  "host": {
+    "cpu": "Apple M4",
+    "disk_free_bytes_at_start": 34953142272,
+    "hostname": "YUGENs-Mac-mini.local",
+    "logical_cores": 10,
+    "machine": "arm64",
+    "memory_bytes": 17179869184,
+    "model": "Mac16,10",
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "physical_cores": 10
+  },
+  "peak_rss_bytes": 27721728,
+  "run_id": "e2-validation-resume-20260815T031541Z",
+  "schema_version": "s13-method-evidence-manifest/v1",
+  "source_commit": "2fd9c5155479a3227d0ec05abc26b55c9ddbd812",
+  "started_at": "2026-08-15T03:15:41.196289+00:00",
+  "status": "FAIL",
+  "threads": 1,
+  "wall_seconds": 85.205548
+}

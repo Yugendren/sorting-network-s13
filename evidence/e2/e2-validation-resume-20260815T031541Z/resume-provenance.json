@@ -1,0 +1,17 @@
+{
+  "dataset_manifest_sha256": "2f8aed3b4e7dc10263b03aadb98f098f96347ea2e0570eb94203e5811a4764c0",
+  "dataset_sha256": "7bca7bec0cfda5573d4640eb6f9a3af697025dbedf3342242c330eb70dfbbfd9",
+  "e3_seed_trajectories_executed": 0,
+  "evidence_replay": "verified 16 immutable evidence inventories and manifests",
+  "failed_inventory_sha256": "5c825f4eb18ea26e820c2d1349347ac6b594e4e3ec63f783f4940df64dd03d15",
+  "failed_manifest_sha256": "6c71bfac465c496d19be05d1ee674a47ffa19a1cbec80c0c35cf80d4db8e62e2",
+  "failed_run_path": "evidence/e2/e2-validation-20260815T030452Z",
+  "method_manifest_sha256": "33593c58e98dfe925806051b5f5e683d1ec1f41f035d23616d3e5d748b5e013d",
+  "method_patch_sha256": "f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132",
+  "model_header_sha256": "f7533479d67d44ff5b5da7e9dd3cad9909785e7a912997b8c2b2edfc8fd69864",
+  "repair": "allow execution from a subdirectory inside ROOT; no metric, data, model, or integration change",
+  "scorer_sha256": "f16262aabb60ac178a3b558795dff8c7efc038725fd3ea624cddc9ec7bd9f0b3",
+  "scorer_source_sha256": "d6576e34d82e2d5619e04a4bb1d53220631ed85326c4a7d8264492029f0efc03",
+  "validation_label_trajectories_executed_by_resume": 0,
+  "wrapper_sha256": "d2383347c0da07ab2a9a7b81cfb2e20020578debde8f81b63ce9b0dbfdf164d7"
+}

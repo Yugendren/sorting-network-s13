@@ -21,9 +21,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: E2 method version 1; all validation label trajectories are
-  frozen, the mechanical scoring replay is pending, and no final holdout seed
-  has been run.
+- Active milestone: E4 failure analysis and one-change repair freeze. Version 1
+  failed E2 validation; no final holdout seed has been run.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -47,7 +46,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   otherwise frozen.
 - Local host: Apple M4, 10 logical cores, 16 GiB RAM; CPU search and inference.
 - Training host: authorized GeForce RTX 3060, 12 GiB; no paid compute.
-- No validation score, matched exam, or 44-comparator search has begun.
+- No matched exam or 44-comparator search has begun.
 - E0 PASS: `evidence/e0/e0-20260815T021424Z`, tested source commit
   `da9301bf1c41378bdb6930388d8ac36f86f5d89c`, manifest SHA-256
   `a38832f101d24fbc5430ce8c25b5a343cbbcd8fcedf66c723f8383a588499754`,
@@ -71,7 +70,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   Both RTX replays selected epoch 26 and exported byte-identical weights. The
   model export SHA-256 is
   `eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7`;
-  calibration AP was 0.003119165. E2 is not yet accepted.
+  calibration AP was 0.003119165.
 - Frozen V1 integration build PASS:
   `.build/senso-mericanii-v1/attempt-20260815T024633Z`, binary SHA-256
   `cbdfb957ecca9aa67b2effb6b05889ba2bcff7a97099246e36bee9a85a2d34dc`,
@@ -85,10 +84,17 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   rows at `evidence/e2/e2-validation-20260815T030452Z`; aggregate dataset
   SHA-256 is
   `7bca7bec0cfda5573d4640eb6f9a3af697025dbedf3342242c330eb70dfbbfd9`.
-  It contains 2,079 <=45 rows and no <=44 row. The preserved gate is FAIL only
-  because the scoring wrapper rejected the evidence subdirectory as its CWD
-  before reading the aggregate. No metric or integration-audit outcome exists;
-  no seed trajectory may be rerun or replaced.
+  It contains 2,079 <=45 rows and no <=44 row. The preserved gate failed
+  mechanically before scoring because its wrapper rejected the evidence CWD;
+  no seed trajectory was rerun or replaced.
+- E2 V1 valid FAIL: `evidence/e2/e2-validation-resume-20260815T031541Z`,
+  manifest SHA-256
+  `d7a06923e0fea0ef1dadca0fcfb72436fd0f26f313eea24e976a7e4a86cc406e`.
+  The exact frozen model scored micro concordance 0.446355505360 and macro
+  0.446364583942 over 19,499,483,815 within-seed pairs; every one of 20 seed
+  scores was below 0.5. Integration remained operational at exactly 50,200
+  evaluations/rank calls and produced a dual-verified size-46 network. V1 may
+  not enter E3.
 
 ## Gate ledger
 
@@ -97,15 +103,14 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | Authority freeze | COMPLETE | Commit `3c876d6`; no preceding scores |
 | E0 experiment freeze | COMPLETE | PASS evidence `e0-20260815T021424Z` |
 | E1 dataset | COMPLETE | PASS evidence `e1-20260815T022353Z` |
-| E2 method v1 | ACTIVE | Reproducible small model frozen after validation |
-| E3 matched exam | PENDING | Six pass criteria evaluated on sealed 60 seeds |
-| E4 one repair | CONDITIONAL | One major change; one new sealed exam |
+| E2 method v1 | COMPLETE / FAIL | Concordance 0.446355505360 < 0.5 |
+| E3 matched exam | NOT RUN FOR V1 | E2 prerequisite failed; seeds remain sealed |
+| E4 one repair | ACTIVE | Freeze analysis, new holdout, and one major change |
 | E5 frontier | CONDITIONAL | Only after pass; 100M eval / seven-day maximum |
 | Terminal report | PENDING | One allowed verdict, then stop |
 
 ## Immediate next action
 
-Commit the preserved validation-tooling failure. Repair only the scoring
-wrapper's CWD handling, then resume against the exact frozen aggregate hash and
-run the already-frozen integration audit. Do not rerun a validation trajectory,
-access E3 seeds, or alter representation, objective, metric, or integration.
+Commit the V1 failure evidence. Before implementation, write and commit the E4
+failure analysis, materialize the committed disjoint 60-seed E4 holdout, and
+freeze exactly one major change. Do not access E3 or E4 trajectories yet.
