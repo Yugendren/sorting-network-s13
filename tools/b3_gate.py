@@ -344,7 +344,7 @@ def prepare_official_datadir(path: Path) -> Path:
 
 def prior_scored_wall_seconds() -> float:
     total = 0.0
-    for gate in ("b1", "b2"):
+    for gate in ("b1", "b2", "b3"):
         for path in (ROOT / "evidence" / gate).glob("*/manifest.json"):
             manifest = json.loads(path.read_text(encoding="utf-8"))
             total += float(manifest["wall_seconds"])
