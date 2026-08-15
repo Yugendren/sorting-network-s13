@@ -46,7 +46,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   otherwise frozen.
 - Local host: Apple M4, 10 logical cores, 16 GiB RAM; CPU search and inference.
 - Training host: authorized GeForce RTX 3060, 12 GiB; no paid compute.
-- No training, model score, matched exam, or 44-comparator search has begun.
+- No validation score, matched exam, or 44-comparator search has begun.
 - E0 PASS: `evidence/e0/e0-20260815T021424Z`, tested source commit
   `da9301bf1c41378bdb6930388d8ac36f86f5d89c`, manifest SHA-256
   `a38832f101d24fbc5430ce8c25b5a343cbbcd8fcedf66c723f8383a588499754`,
@@ -71,6 +71,15 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   model export SHA-256 is
   `eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7`;
   calibration AP was 0.003119165. E2 is not yet accepted.
+- Frozen V1 integration build PASS:
+  `.build/senso-mericanii-v1/attempt-20260815T024633Z`, binary SHA-256
+  `cbdfb957ecca9aa67b2effb6b05889ba2bcff7a97099246e36bee9a85a2d34dc`,
+  integration-patch SHA-256
+  `f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132`.
+  Compiled float32 inference matched all 32 fixture rows exactly. One earlier
+  unscored smoke build crashed in a temporary heuristic replay and is preserved
+  at `.build/senso-mericanii-v1/attempt-20260815T024344Z`; direct function replay
+  fixed it without changing the frozen role or proposal policy.
 
 ## Gate ledger
 
@@ -87,7 +96,6 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Commit the reproducible training evidence. Compile its selected weights into
-the frozen truncation integration, verify CPU inference against the fixture,
-then run the one permitted validation audit. Do not access E3 seeds or alter
-the representation, objective, or integration role.
+Commit the frozen truncation integration, then run the one permitted validation
+audit. Do not access E3 seeds or alter the representation, objective, or
+integration role after the validation result.

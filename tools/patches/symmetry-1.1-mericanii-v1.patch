@@ -1,0 +1,193 @@
+diff --git a/beagle/beagle/SN/src/EstimateReconstructOp.cpp b/beagle/beagle/SN/src/EstimateReconstructOp.cpp
+index e1dataset..mericanii1 100644
+--- a/beagle/beagle/SN/src/EstimateReconstructOp.cpp
++++ b/beagle/beagle/SN/src/EstimateReconstructOp.cpp
+@@ -10,9 +10,12 @@
+  */
+ 
+ #include "beagle/SN.hpp"
++#include "beagle/SN/MericaniiModelV1Weights.hpp"
+ 
+ #include <algorithm>
+ #include <cerrno>
++#include <chrono>
++#include <cmath>
+ #include <cstdlib>
+ #include <fstream>
+ #include <iomanip>
+@@ -175,6 +178,160 @@ std::vector<float> mericaniiFeatures(SN::Network& inNetwork,
+     return lFeatures;
+ }
+ 
++void addMericaniiProposal(std::vector<unsigned int>& outProposals,
++                          int inProposal,
++                          unsigned int inParentCount)
++{
++    if (inProposal < 0) inProposal = 0;
++    if (inProposal > (int)inParentCount) inProposal = (int)inParentCount;
++    const unsigned int lProposal = (unsigned int)inProposal;
++    if (std::find(outProposals.begin(), outProposals.end(), lProposal) == outProposals.end()) {
++        outProposals.push_back(lProposal);
++    }
++}
++
++class MericaniiInferenceStats {
++public:
++    MericaniiInferenceStats() :
++        mInitialized(false),
++        mEnabled(false),
++        mPath(),
++        mRankCalls(0),
++        mScoreCalls(0),
++        mRankNanoseconds(0),
++        mScoreNanoseconds(0),
++        mSelectedProposal(8, 0)
++    { }
++
++    ~MericaniiInferenceStats()
++    {
++        if (!mEnabled) return;
++        std::ofstream lStream(mPath.c_str(), std::ios::out | std::ios::trunc);
++        if (!lStream.is_open()) return;
++        lStream << "{\n"
++                << "  \"schema_version\": \"s13-mericanii-inference-stats/v1\",\n"
++                << "  \"rank_calls\": " << mRankCalls << ",\n"
++                << "  \"score_calls\": " << mScoreCalls << ",\n"
++                << "  \"rank_nanoseconds\": " << mRankNanoseconds << ",\n"
++                << "  \"score_nanoseconds\": " << mScoreNanoseconds << ",\n"
++                << "  \"selected_proposal_histogram\": [";
++        for (unsigned int i = 0; i < mSelectedProposal.size(); ++i) {
++            if (i > 0) lStream << ", ";
++            lStream << mSelectedProposal[i];
++        }
++        lStream << "]\n}\n";
++    }
++
++    void initialize()
++    {
++        if (mInitialized) return;
++        mInitialized = true;
++        const char* lPath = std::getenv("MERICANII_INFERENCE_STATS_PATH");
++        if (lPath == NULL) return;
++        if (lPath[0] != '/') {
++            throw std::runtime_error("Mericanii inference stats path must be absolute");
++        }
++        std::ifstream lExisting(lPath);
++        if (lExisting.good()) {
++            throw std::runtime_error("Mericanii inference stats path already exists");
++        }
++        lExisting.close();
++        mPath = lPath;
++        mEnabled = true;
++    }
++
++    void observe(unsigned int inProposalIndex,
++                 unsigned int inScoreCalls,
++                 unsigned long long inRankNanoseconds,
++                 unsigned long long inScoreNanoseconds)
++    {
++        initialize();
++        mRankCalls++;
++        mScoreCalls += inScoreCalls;
++        mRankNanoseconds += inRankNanoseconds;
++        mScoreNanoseconds += inScoreNanoseconds;
++        if (inProposalIndex >= mSelectedProposal.size()) {
++            throw std::runtime_error("Mericanii selected proposal index out of range");
++        }
++        mSelectedProposal[inProposalIndex]++;
++    }
++
++private:
++    bool mInitialized;
++    bool mEnabled;
++    std::string mPath;
++    unsigned long long mRankCalls;
++    unsigned long long mScoreCalls;
++    unsigned long long mRankNanoseconds;
++    unsigned long long mScoreNanoseconds;
++    std::vector<unsigned long long> mSelectedProposal;
++};
++
++MericaniiInferenceStats& mericaniiInferenceStats()
++{
++    static MericaniiInferenceStats lStats;
++    return lStats;
++}
++
++unsigned int selectMericaniiTruncation(const SN::Network& inParent,
++                                       int inBaseProposal,
++                                       unsigned int inGeneration)
++{
++    typedef std::chrono::steady_clock Clock;
++    const Clock::time_point lRankStarted = Clock::now();
++    const unsigned int lParentCount = inParent.getNumComparators();
++    std::vector<unsigned int> lProposals;
++    addMericaniiProposal(lProposals, inBaseProposal, lParentCount);
++    addMericaniiProposal(lProposals, inBaseProposal-2, lParentCount);
++    addMericaniiProposal(lProposals, inBaseProposal+2, lParentCount);
++    addMericaniiProposal(lProposals, inBaseProposal-4, lParentCount);
++    addMericaniiProposal(lProposals, inBaseProposal+4, lParentCount);
++    addMericaniiProposal(lProposals, inBaseProposal-8, lParentCount);
++    addMericaniiProposal(lProposals, inBaseProposal+8, lParentCount);
++    addMericaniiProposal(lProposals, 0, lParentCount);
++
++    SN::Network lScoringNetwork;
++    lScoringNetwork.setNumInputs(inParent.getNumInputs());
++    lScoringNetwork.allocateDataStructures();
++    std::vector<SN::Function>& lFunctions = lScoringNetwork.getFunctions();
++    for (unsigned int i = 0; i < inParent.getNumInputs(); ++i) lFunctions[i].setInput(i);
++
++    std::vector<float> lScores(lProposals.size(), 0.0f);
++    unsigned int lMaximumPrefix = 0;
++    for (unsigned int i = 0; i < lProposals.size(); ++i) {
++        lMaximumPrefix = std::max(lMaximumPrefix, lProposals[i]);
++    }
++    unsigned long long lScoreNanoseconds = 0;
++    for (unsigned int lPrefix = 0; lPrefix <= lMaximumPrefix; ++lPrefix) {
++        for (unsigned int i = 0; i < lProposals.size(); ++i) {
++            if (lProposals[i] == lPrefix) {
++                const std::vector<float> lFeatures = mericaniiFeatures(lScoringNetwork, lParentCount, inGeneration);
++                const Clock::time_point lScoreStarted = Clock::now();
++                lScores[i] = MericaniiModelV1::score(&lFeatures[0]);
++                lScoreNanoseconds += (unsigned long long)std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now()-lScoreStarted).count();
++                if (!std::isfinite(lScores[i])) throw std::runtime_error("Mericanii model produced non-finite score");
++            }
++        }
++        if (lPrefix < lMaximumPrefix) {
++            const unsigned int lJoin = inParent[2*lPrefix];
++            const unsigned int lMeet = inParent[2*lPrefix+1];
++            SN::Function lTemporary = lFunctions[lJoin];
++            SN::join(lFunctions[lJoin], lFunctions[lMeet]);
++            SN::meet(lFunctions[lMeet], lTemporary);
++            lScoringNetwork.push_back(lJoin);
++            lScoringNetwork.push_back(lMeet);
++        }
++    }
++
++    unsigned int lSelected = 0;
++    for (unsigned int i = 1; i < lScores.size(); ++i) {
++        if (lScores[i] > lScores[lSelected]) lSelected = i;
++    }
++    const unsigned long long lRankNanoseconds = (unsigned long long)std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now()-lRankStarted).count();
++    mericaniiInferenceStats().observe(lSelected, lProposals.size(), lRankNanoseconds, lScoreNanoseconds);
++    return lProposals[lSelected];
++}
++
+ } // anonymous namespace
+ 
+ 
+@@ -399,10 +556,11 @@ void SN::EstimateReconstructOp::reconstruct(Beagle::Individual& ioIndividual, co
+ 
+     // Find the index to truncate the parent network.
+     const unsigned int lNumOldComparators = lParentNetwork.size()/2;
+-    int lTruncateIndex = mGaussianTruncate->getWrappedValue() ? 
++    int lBaseTruncateIndex = mGaussianTruncate->getWrappedValue() ?
+         lRandomizer.rollGaussian(lNumOldComparators/2, lNumOldComparators/4) : lRandomizer.rollInteger(0, lNumOldComparators);
+-    if (lTruncateIndex < 0) lTruncateIndex = 0;  // all comparators removed
+-    if (lTruncateIndex > lNumOldComparators) lTruncateIndex = lNumOldComparators;  // no comparators removed
++    if (lBaseTruncateIndex < 0) lBaseTruncateIndex = 0;
++    if (lBaseTruncateIndex > (int)lNumOldComparators) lBaseTruncateIndex = lNumOldComparators;
++    const unsigned int lTruncateIndex = selectMericaniiTruncation(lParentNetwork, lBaseTruncateIndex, ioContext.getGeneration());
+     std::vector<unsigned int> lKeepComparators(lTruncateIndex*2);
+     for (unsigned int i = 0; i < lKeepComparators.size(); ++i) {
+         lKeepComparators[i] = lParentNetwork[i];
