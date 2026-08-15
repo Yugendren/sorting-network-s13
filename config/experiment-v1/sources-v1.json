@@ -1,0 +1,52 @@
+{
+  "schema_version": "s13-method-sources/v1",
+  "audited_at": "2026-08-15",
+  "research_status": {
+    "metric": "minimum comparator count",
+    "channels": 13,
+    "lower_bound": 44,
+    "upper_bound": 45,
+    "settled": false,
+    "label": "PUBLISHED"
+  },
+  "sources": [
+    {
+      "id": "dobbelaere-maintained-catalog",
+      "url": "https://bertdobbelaere.github.io/sorting_networks_extended.html",
+      "repository": "https://github.com/BertDobbelaere/bertdobbelaere.github.io.git",
+      "remote_head": "49b355d484aa92c2a661b6ab1a2f981a60b7c0c6",
+      "local_checkout_head": "49b355d484aa92c2a661b6ab1a2f981a60b7c0c6",
+      "cache_path": ".cache/sources/sorting_networks_extended.html",
+      "cache_sha256": "8a2d11c9f2ac66e16ea93a9c4301971b47d3115eaf28d4e12b50079c8238d116",
+      "observations": ["size bound 44...45", "13-input 45-comparator construction present", "depth-9 construction is contextual only"],
+      "label": "ARTIFACT_VERIFIED"
+    },
+    {
+      "id": "valsalam-miikkulainen-senso",
+      "url": "https://www.jmlr.org/papers/volume14/valsalam13a/valsalam13a.pdf",
+      "cache_path": ".cache/sources/valsalam13a.pdf",
+      "cache_sha256": "59522734f52c0b4927e80eba4971a49ba6cc756ea5d072e382af57648544df3e",
+      "label": "ARTIFACT_VERIFIED"
+    },
+    {
+      "id": "symmetry-1.1",
+      "url": "https://www.cs.utexas.edu/users/nn/downloads/software/symmetry-1.1.tar.gz",
+      "cache_path": ".cache/sources/symmetry-1.1.tar.gz",
+      "cache_sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+      "cache_size_bytes": 22506545,
+      "portability_patch": "tools/patches/symmetry-1.1-macos.patch",
+      "portability_patch_sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09",
+      "frozen_binary_sha256": "1d6fe20b547fa0e9dd9c899e34b608ac157104f63fd845d858e6e4ae9c0e6cc6",
+      "label": "ARTIFACT_VERIFIED"
+    },
+    {
+      "id": "sortnetopt-context",
+      "url": "https://github.com/jix/sortnetopt.git",
+      "remote_head": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+      "local_checkout_head": "0b5d09c47446096f9e3a0812b35afc72b7f2a718",
+      "role": "predecessor exact-workflow context only; no lower-bound search in this goal",
+      "label": "ARTIFACT_VERIFIED"
+    }
+  ],
+  "audit_conclusion": "No audited primary or maintained source settles comparator-count S(13); experiment target is not stale."
+}

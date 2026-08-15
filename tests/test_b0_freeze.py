@@ -3,23 +3,34 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN = ROOT / "config/frozen"
+BASELINE_COMMIT = "f4829768b9de2db170e4234d6c3d774b312eb318"
 
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def historical_sha256(relative: str) -> str:
+    blob = subprocess.check_output(
+        ["git", "show", f"{BASELINE_COMMIT}:{relative}"], cwd=ROOT
+    )
+    return hashlib.sha256(blob).hexdigest()
+
+
 class B0FreezeTests(unittest.TestCase):
-    def test_authority_hashes_match_supplied_files(self) -> None:
+    def test_baseline_authority_hashes_match_frozen_commit(self) -> None:
         freeze = json.loads((FROZEN / "b0-freeze.json").read_text())
         for key in ("contract", "prompt", "agents"):
-            path = ROOT / freeze["authority"][f"{key}_path"]
-            self.assertEqual(sha256(path), freeze["authority"][f"{key}_sha256"])
+            relative = freeze["authority"][f"{key}_path"]
+            self.assertEqual(
+                historical_sha256(relative), freeze["authority"][f"{key}_sha256"]
+            )
 
     def test_seed_freeze_is_exactly_twenty_unique_nonzero_values(self) -> None:
         seeds = json.loads((FROZEN / "seeds.json").read_text())["seeds"]

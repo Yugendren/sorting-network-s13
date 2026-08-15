@@ -1,0 +1,46 @@
+{
+  "schema_version": "s13-method-environment/v1",
+  "frozen_at": "2026-08-15",
+  "local": {
+    "model": "Mac16,10",
+    "cpu": "Apple M4",
+    "logical_cores": 10,
+    "memory_bytes": 17179869184,
+    "machine": "arm64",
+    "os_observed": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.4",
+    "go": "1.26.4",
+    "clang": "Apple clang 21.0.0",
+    "cmake": "4.3.3",
+    "roles": ["coding", "orchestration", "verification", "CPU search", "compiled model inference"]
+  },
+  "training": {
+    "ssh_alias": "ollama",
+    "hostname_observed": "ollama",
+    "os_observed": "Linux 6.8.0-124-generic x86_64",
+    "gpu": "NVIDIA GeForce RTX 3060",
+    "gpu_uuid": "GPU-554fad60-25da-be4d-2f37-6fd0e37209b4",
+    "gpu_memory_mib": 12288,
+    "driver": "535.309.01",
+    "python": "3.12.3",
+    "torch": "2.10.0+cu128",
+    "numpy": "2.3.5",
+    "cuda_runtime_reported_by_torch": "12.8",
+    "cudnn": 91002,
+    "compute_capability": [8, 6],
+    "roles": ["training", "batched offline validation"],
+    "scored_search_allowed": false
+  },
+  "scored_environment": {
+    "set": {
+      "GOMAXPROCS": "1",
+      "OMP_NUM_THREADS": "1",
+      "VECLIB_MAXIMUM_THREADS": "1",
+      "LC_ALL": "C",
+      "TZ": "UTC"
+    },
+    "allow_from_parent": ["PATH", "TMPDIR", "USER", "LOGNAME", "SHELL"],
+    "forbid_proxy_or_network_service_in_inner_loop": true
+  },
+  "paid_compute_allowed": false
+}

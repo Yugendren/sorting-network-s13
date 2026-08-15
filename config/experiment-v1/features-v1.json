@@ -1,0 +1,48 @@
+{
+  "schema_version": "s13-completion-features/v1",
+  "frozen_at": "2026-08-15",
+  "channels": 13,
+  "learning_target_comparators": 45,
+  "input_dimension": 85,
+  "numeric_type": "IEEE-754 float32",
+  "extraction_point": "after the SENSO parent prefix is reconstructed and before unchanged continuation",
+  "scalar_features": [
+    {"index": 0, "name": "prefix_comparators", "formula": "prefix_count / 45"},
+    {"index": 1, "name": "remaining_to_45", "formula": "(45 - prefix_count) / 45"},
+    {"index": 2, "name": "parent_comparators", "formula": "parent_count / 64"},
+    {"index": 3, "name": "truncation_fraction", "formula": "prefix_count / max(parent_count, 1)"},
+    {"index": 4, "name": "generation", "formula": "generation / 500"},
+    {"index": 5, "name": "current_line", "formula": "network.current_line / 12"},
+    {"index": 6, "name": "lines_completed", "formula": "network.lines_completed / 13"},
+    {"index": 7, "name": "full_levels", "formula": "network.full_levels / 182"},
+    {"index": 8, "name": "target_level_sets", "formula": "network.findNumSets / 8191"},
+    {"index": 9, "name": "total_function_sets", "formula": "sum(channel.total_sets) / 106496"},
+    {"index": 10, "name": "mean_nonempty_levels", "formula": "sum(channel.nonempty_levels) / 182"},
+    {"index": 11, "name": "mean_full_levels_both", "formula": "sum(channel.full_levels_both) / 182"}
+  ],
+  "channel_blocks": [
+    {"start": 12, "length": 13, "name": "channel_total_sets", "formula": "channel[i].total_sets / 8192", "channel_order": "0..12"},
+    {"start": 25, "length": 13, "name": "channel_first_nonempty_level", "formula": "channel[i].first_nonempty_level / 13", "channel_order": "0..12"},
+    {"start": 38, "length": 13, "name": "channel_nonempty_levels", "formula": "channel[i].nonempty_levels / 14", "channel_order": "0..12"},
+    {"start": 51, "length": 13, "name": "channel_full_levels_both", "formula": "channel[i].full_levels_both / 14", "channel_order": "0..12"},
+    {"start": 64, "length": 13, "name": "recent_channel_activity", "formula": "endpoint occurrences in last min(8,prefix_count) comparators / 8", "channel_order": "0..12"}
+  ],
+  "recent_comparator_block": {
+    "start": 77,
+    "length": 8,
+    "name": "last_four_comparator_endpoints",
+    "order": "oldest available comparator to newest, lower then upper",
+    "formula": "endpoint / 12",
+    "left_padding": -1.0
+  },
+  "post_extraction_standardization": {
+    "fit_on": "development training seeds 1..16 only",
+    "formula": "(x - training_mean) / max(training_population_stddev, 1e-6)",
+    "export": "one mean and one scale per feature in checkpoint"
+  },
+  "explicit_omissions": [
+    "No exact unsorted-input or counterexample enumeration: recomputing all 8192 inputs for every dataset row would materially change throughput.",
+    "No 44-comparator budget, indicator, label, reward, or feature.",
+    "No seed identifier, candidate identity, verifier result, wall time, or holdout metadata is a model input."
+  ]
+}

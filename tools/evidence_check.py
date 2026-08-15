@@ -13,7 +13,7 @@ from typing import Any
 
 
 ROOT = Path("/Users/yugendren/experiments/sorting_network_s13")
-GATES = tuple(f"b{number}" for number in range(5))
+GATES = tuple(f"b{number}" for number in range(5)) + tuple(f"e{number}" for number in range(6))
 STATUSES = {"PASS", "FAIL", "TIMEOUT", "CRASH", "INVALID", "BLOCKED"}
 REQUIRED_MANIFEST_KEYS = {
     "schema_version",
@@ -66,7 +66,12 @@ def validate_manifest(run_dir: Path) -> list[str]:
     if missing:
         return errors
 
-    if manifest["schema_version"] != "s13-evidence-manifest/v1":
+    expected_schema = (
+        "s13-method-evidence-manifest/v1"
+        if run_dir.parent.name.startswith("e")
+        else "s13-evidence-manifest/v1"
+    )
+    if manifest["schema_version"] != expected_schema:
         errors.append(f"{path}: wrong schema_version")
     if manifest["run_id"] != run_dir.name:
         errors.append(f"{path}: run_id does not match directory")

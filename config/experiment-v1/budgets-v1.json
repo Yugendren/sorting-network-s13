@@ -1,0 +1,51 @@
+{
+  "schema_version": "s13-method-budgets/v1",
+  "frozen_at": "2026-08-15",
+  "local_search": {
+    "host": "Apple M4 Mac mini",
+    "threads_per_process": 1,
+    "parallel_processes": 1,
+    "per_seed_cpu_seconds": 1800,
+    "per_seed_wall_seconds": 1800,
+    "peak_rss_bytes": 4294967296
+  },
+  "e0": {"aggregate_wall_seconds": 900},
+  "e1": {
+    "seed_count": 20,
+    "evaluations_per_seed": 50200,
+    "aggregate_wall_seconds": 21600,
+    "maximum_raw_dataset_bytes": 8589934592
+  },
+  "e2": {
+    "training_host": "authorized RTX 3060 server only",
+    "gpu_count": 1,
+    "gpu_memory_bytes": 12884901888,
+    "training_wall_seconds_per_replay": 1800,
+    "training_replays": 2,
+    "validation_seed_count": 20,
+    "validation_aggregate_wall_seconds": 21600
+  },
+  "e3": {
+    "paired_seed_count": 60,
+    "methods_per_seed": 2,
+    "evaluations_per_method_per_seed": 50200,
+    "aggregate_wall_seconds": 172800
+  },
+  "e4": {
+    "maximum_method_repairs": 1,
+    "paired_seed_count": 60,
+    "methods_per_seed": 2,
+    "evaluations_per_method_per_seed": 50200,
+    "aggregate_wall_seconds": 172800
+  },
+  "e5": {
+    "enabled_only_after_method_pass": true,
+    "target_comparators": 44,
+    "aggregate_candidate_evaluations": 100000000,
+    "calendar_seconds": 604800,
+    "stop_on_first_verified_witness": true,
+    "paid_compute": false
+  },
+  "resource_failure": "preserve attempt and apply the frozen gate decision; never infer a proof",
+  "unrelated_processes": "do not stop, modify, inspect beyond ordinary host-capacity audit, or charge to this experiment"
+}

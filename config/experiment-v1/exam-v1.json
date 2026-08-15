@@ -1,0 +1,47 @@
+{
+  "schema_version": "s13-method-exam/v1",
+  "frozen_at": "2026-08-15",
+  "channels": 13,
+  "acceptance_comparators": 45,
+  "holdout_manifest": "config/experiment-v1/seeds-e3-holdout.json",
+  "paired_seed_count": 60,
+  "methods": ["frozen_senso", "mericanii_v1"],
+  "candidate_evaluations_per_method_per_seed": 50200,
+  "population": 200,
+  "generations": 500,
+  "run_order": "seed manifest order; even one-based index runs frozen_senso first, odd one-based index runs mericanii_v1 first",
+  "parallel_runs": 1,
+  "success": "candidate with at most 45 comparators accepted on all 8192 inputs by both frozen B1 verifiers",
+  "pass_criteria": {
+    "all_claims_dual_verified": true,
+    "minimum_mericanii_successes": 12,
+    "minimum_success_ratio_vs_senso": 2.0,
+    "maximum_mericanii_evaluations_per_seed": 50200,
+    "integrity_replay_required": true,
+    "holdout_tuning_forbidden": true
+  },
+  "incomplete_run_policy": "a crash, timeout, missing run, or evaluation count other than 50200 makes the scored exam INVALID rather than an advantageous failure",
+  "reporting": {
+    "complete_final_size_distribution": true,
+    "complete_paired_outcomes": true,
+    "wall_cpu_rss_and_time_per_evaluation": true,
+    "model_inference_calls_and_seconds": true,
+    "success_interval": "two-sided Wilson 95% per method",
+    "paired_effect": "Mericanii minus SENSO paired success-rate difference",
+    "paired_uncertainty": "10000 paired bootstrap resamples with seed 2026081503, percentile 95% interval",
+    "uncertainty_changes_gate": false
+  },
+  "integrity_replay": {
+    "rebuild_from_frozen_inputs": true,
+    "reaggregate_all_raw_attempts": true,
+    "rerun_both_verifiers_for_all_successes": true,
+    "inventory_check": true,
+    "exact_sentinel_seed_indices": [1, 60],
+    "required_exact_fields": ["evaluations", "final_comparator_sequence"]
+  },
+  "unexpected_44": "stop immediately, freeze candidate, run both verifiers, and enter witness audit only",
+  "verifiers": [
+    {"path": "src/verifier_a.py", "sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e"},
+    {"path": "src/verifier_b.go", "sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f"}
+  ]
+}

@@ -1,19 +1,25 @@
 # Mericanii S(13) Sorting-Network Laboratory
 
+The completed B0--B4 baseline remains frozen at commit
+`f4829768b9de2db170e4234d6c3d774b312eb318`. The active, separately versioned
+goal evaluates one learned SENSO truncation ranker under
+`METHOD_EXPERIMENT_CONTRACT_V1.md`; it does not alter or regenerate baseline
+evidence.
+
 This folder is the standalone experiment for the first Mericanii open-problem
 programme:
 
 > Determine whether a 13-input sorting network needs 44 or 45 comparators.
 
-The initial execution is deliberately limited to building a trustworthy
-baseline laboratory. It must reproduce known construction and proof baselines
-before any Mericanii learned search or attempt at 44 comparators begins.
+The trustworthy baseline has completed. The active method experiment keeps the
+44 target out of learning and matched evaluation; a bounded frontier attempt is
+allowed only if the frozen method passes.
 
 ## Start here
 
-1. Read `PROJECT_CONTRACT.md` completely.
+1. Read `METHOD_EXPERIMENT_CONTRACT_V1.md` completely.
 2. Read `GOAL_STATE.md`.
-3. Paste `CODEX_BASELINE_PROMPT.md` into a Codex task opened from this folder.
+3. Use `make verify`, then execute only the active serial gate in the ledger.
 
 The execution prompt ends at `BASELINE_READY`. That verdict does **not** mean
 the open problem is solved. It authorizes a later, separately frozen experiment
@@ -41,8 +47,8 @@ published n=11 certificate replay returned `Just (11,35)`. The canonical
 terminal decision and complete evidence ledger are in
 `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 
-The baseline contract is complete. No novel 44-comparator experiment or later
-Mericanii method is authorized without a new user-approved, frozen contract.
+The baseline contract is complete and immutable. The user-approved method-v1
+contract is now the sole authority for E0--E5.
 
 The frozen interface begins with `make setup`, `make verify`, and the serial
 `make baseline-b0` through `make baseline-b4` gates. `make evidence-check`

@@ -1,0 +1,66 @@
+{
+  "schema_version": "s13-method-e0-freeze/v1",
+  "frozen_at": "2026-08-15",
+  "authority": {
+    "contract_path": "METHOD_EXPERIMENT_CONTRACT_V1.md",
+    "contract_sha256": "6d8e9c3d0c4719bbd4c28bf55bc068ead10407e4a5928978afc55be338e503e6",
+    "authority_commit": "3c876d6b2f757fa31ddb5f93258d2ea35432d22b",
+    "user_objective_sha256": "50adee208bbefcc871e4b5987d181fc5156b81841f015d28cb72fe6788691921"
+  },
+  "predecessor": {
+    "baseline_commit": "f4829768b9de2db170e4234d6c3d774b312eb318",
+    "report_path": "evidence/b4/b4-20260815T014232Z/baseline-report.md",
+    "report_sha256": "d2cb721147ba442004bb3018db07a3cdf7d2626264f2aabe1a3d2cacae48abb7",
+    "evidence_paths": ["evidence/b0", "evidence/b1", "evidence/b2", "evidence/b3", "evidence/b4"],
+    "python_verifier_path": "src/verifier_a.py",
+    "python_verifier_sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e",
+    "go_verifier_path": "src/verifier_b.go",
+    "go_verifier_sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f",
+    "b2_execution_path": "config/frozen/b2-execution.json",
+    "b2_execution_sha256": "71ebce6ae9b803ae4121421d796223c4a2f08b5b2c976e2f45d00ebb675cba78",
+    "b2_senso_path": "config/frozen/b2-senso.json",
+    "b2_senso_sha256": "871c35212c04a14ff955b010a0ab86894927783ecc6ad076f1b6f711c21b20ff",
+    "b2_seeds_path": "config/frozen/seeds.json",
+    "b2_seeds_sha256": "dcac67a8eb5b5c14d9629d88fd3240da3aa5d4fa3c77d479d274c901273d7a0b"
+  },
+  "senso": {
+    "archive_path": ".cache/sources/symmetry-1.1.tar.gz",
+    "archive_sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+    "portability_patch_path": "tools/patches/symmetry-1.1-macos.patch",
+    "portability_patch_sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09",
+    "build_manifest_path": ".build/senso/attempt-20260814T232113Z/build-manifest.json",
+    "build_manifest_sha256": "24f47b42a966ed1b53553d4a77aca305af5cdd19ed12f44f0a8238210e5078e4",
+    "binary_path": ".build/senso/attempt-20260814T232113Z/bin/sorting",
+    "binary_sha256": "1d6fe20b547fa0e9dd9c899e34b608ac157104f63fd845d858e6e4ae9c0e6cc6",
+    "binary_size_bytes": 2757240,
+    "baseline_command_source": "tools/b2_gate.py:senso_command",
+    "candidate_accounting": "population + generations * (population * (1 - estimate_fraction)) = 200 + 500 * 100 = 50200"
+  },
+  "config_inventory": [
+    {"path": "config/experiment-v1/budgets-v1.json", "sha256": "6a33ebab176b04990d1c2ad75ad0f8b5bffb0aea2734be04584a3aa2c030a919"},
+    {"path": "config/experiment-v1/dataset-v1.json", "sha256": "51ec094954e4c6e1ec064c9128b4d0198b7ba91150854e50b734c7ebda2cb303"},
+    {"path": "config/experiment-v1/environment-v1.json", "sha256": "ce50985a07f980b9bc3123c4824cc000155da2a038ca4a90b71027d7402c537c"},
+    {"path": "config/experiment-v1/evidence-manifest.schema.json", "sha256": "228952c0c52207e4efe9daef3ed294f201cac978747e169dfa08a960c447473b"},
+    {"path": "config/experiment-v1/exam-v1.json", "sha256": "9421b741a9d626f940075210de5985010954e053b29a0588667a637211e069f1"},
+    {"path": "config/experiment-v1/features-v1.json", "sha256": "557efae74621a613b0c7ad2914eb303fe4a279390a4af86d373c81e6833419ab"},
+    {"path": "config/experiment-v1/model-v1.json", "sha256": "58ef8dc53b56389d00119ecb7bdd06ad2b3c1541caf205a89f29c4a4c7606571"},
+    {"path": "config/experiment-v1/seed-policy.json", "sha256": "528b09a8a7c8d780709596b03e736d91569b160cf8087e376fa1d537970b452a"},
+    {"path": "config/experiment-v1/seeds-development.json", "sha256": "bedd4d38dcb8f6118ef0b64d7c4e0ac5591a2f4e8a6e4c716363a7e06901e7fe"},
+    {"path": "config/experiment-v1/seeds-e3-holdout.json", "sha256": "39350043f435e646958cab8c462c7599904b3e15fdb4ff69ef9511770ee6f644"},
+    {"path": "config/experiment-v1/seeds-validation.json", "sha256": "0d0737167dfc749ed5b444a939a454fd1e16ed9ea6871d5dbb1d83f4b36ace77"},
+    {"path": "config/experiment-v1/sources-v1.json", "sha256": "cab0101988772f83a1dd19fc9e7082705124dcefe392d99de8e8b431b0df8190"}
+  ],
+  "gate_rules": {
+    "status_bounds": [44, 45],
+    "status_settled": false,
+    "development_target": 45,
+    "e3_acceptance": 45,
+    "e3_seed_count": 60,
+    "evaluations_per_method_per_seed": 50200,
+    "frontier_enabled_before_method_pass": false,
+    "b0_b4_tree_must_match_baseline_commit": true,
+    "evidence_inventory_replay_required": true,
+    "minimum_free_disk_bytes": 21474836480,
+    "minimum_local_memory_bytes": 17179869184
+  }
+}

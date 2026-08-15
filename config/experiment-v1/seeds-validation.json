@@ -1,0 +1,29 @@
+{
+  "schema_version": "s13-method-seeds/v1",
+  "partition": "validation",
+  "frozen_at": "2026-08-15",
+  "domain": "mericanii-s13-method-v1/validation/2026-08-15",
+  "purpose": "one offline generalization audit and one integration audit in E2; never gradient training",
+  "seeds": [
+    1596410276,
+    1881412757,
+    1961715267,
+    1858117188,
+    216251218,
+    385810550,
+    1374608696,
+    784491494,
+    1872279905,
+    2096675107,
+    617021551,
+    532671281,
+    1726005578,
+    2021312021,
+    1102374976,
+    678399141,
+    1974881246,
+    929609175,
+    1063018028,
+    1923847079
+  ]
+}

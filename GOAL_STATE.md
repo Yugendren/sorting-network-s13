@@ -21,7 +21,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: contract authority freeze, before E0 scored work.
+- Active milestone: E0 experiment freeze, before any dataset or model score.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -51,8 +51,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 | Gate | State | Next falsifiable outcome |
 |---|---|---|
-| Authority freeze | ACTIVE | Contract and ledgers committed before scores |
-| E0 experiment freeze | PENDING | All pins, partitions, configs, and budgets pass |
+| Authority freeze | COMPLETE | Commit `3c876d6`; no preceding scores |
+| E0 experiment freeze | ACTIVE | All pins, partitions, configs, and budgets pass |
 | E1 dataset | PENDING | Instrumented trajectory unchanged; dataset valid |
 | E2 method v1 | PENDING | Reproducible small model frozen after validation |
 | E3 matched exam | PENDING | Six pass criteria evaluated on sealed 60 seeds |
@@ -62,5 +62,6 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Verify the new authority files, record their hashes, and commit the authority
-freeze. Then execute E0 only. Do not generate scored data before both freezes.
+Commit the tested E0 configuration and gate implementation, run `make
+method-e0` from the clean commit, inventory the immutable evidence, and commit
+the verified E0 checkpoint. Do not begin E1 before E0 PASS.

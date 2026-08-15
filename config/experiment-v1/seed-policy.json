@@ -1,0 +1,42 @@
+{
+  "schema_version": "s13-method-seed-policy/v1",
+  "frozen_at": "2026-08-15",
+  "algorithm": {
+    "digest": "sha256",
+    "payload": "UTF-8 domain|one_based_index|nonce",
+    "candidate": "big-endian first 4 digest bytes masked with 0x7fffffff",
+    "accept": "candidate is nonzero and absent from all earlier partitions",
+    "collision": "increment nonce from zero until accepted"
+  },
+  "partitions": [
+    {
+      "name": "development",
+      "count": 20,
+      "generator": "inherited explicit predecessor B2 seeds 1..20",
+      "manifest": "config/experiment-v1/seeds-development.json"
+    },
+    {
+      "name": "validation",
+      "count": 20,
+      "domain": "mericanii-s13-method-v1/validation/2026-08-15",
+      "manifest": "config/experiment-v1/seeds-validation.json"
+    },
+    {
+      "name": "e3_final_holdout",
+      "count": 60,
+      "domain": "mericanii-s13-method-v1/e3-holdout/2026-08-15",
+      "manifest": "config/experiment-v1/seeds-e3-holdout.json"
+    },
+    {
+      "name": "e4_future_holdout",
+      "count": 60,
+      "domain": "mericanii-s13-method-v1/e4-holdout/2026-08-15",
+      "manifest": null,
+      "compact_seed_array_sha256_commitment": "02436e65dea7b00a1b65cb20d427fd45d5c3f7d2779cdaae6be34f4fc6d57c4f",
+      "materialization_rule": "only after a committed E3 failure analysis and before any version-2 implementation"
+    }
+  ],
+  "disjointness": "all materialized and future partitions are pairwise disjoint",
+  "holdout_access": "development and training tools must reject validation and E3/E4 holdout seeds; validation tools reject E3/E4 seeds",
+  "seed_zero_allowed": false
+}

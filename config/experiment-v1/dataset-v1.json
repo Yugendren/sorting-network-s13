@@ -1,0 +1,50 @@
+{
+  "schema_version": "s13-completion-dataset-config/v1",
+  "frozen_at": "2026-08-15",
+  "source_partition": "config/experiment-v1/seeds-development.json",
+  "feature_definition": "config/experiment-v1/features-v1.json",
+  "channels": 13,
+  "target_comparators": 45,
+  "senso_population": 200,
+  "senso_generations": 500,
+  "candidate_evaluations_per_seed": 50200,
+  "expected_rows_per_seed": 50200,
+  "expected_seed_count": 20,
+  "expected_total_rows": 1004000,
+  "additional_data": "none",
+  "format": {
+    "raw": "UTF-8 tab-separated rows with one frozen header; no quoting",
+    "aggregate": "raw per-seed files plus one zstd-compressed concatenation",
+    "float_format": "decimal with 9 significant digits, parsed as float32",
+    "sequence_encoding": "lower-upper pairs separated by semicolons; present only when final_count <= 45"
+  },
+  "metadata_columns": [
+    "schema",
+    "seed",
+    "generation",
+    "sample_index",
+    "parent_count",
+    "prefix_count"
+  ],
+  "feature_columns": "f000 through f084 in features-v1 index order",
+  "label_columns": ["final_count", "success45"],
+  "audit_column": "candidate_sequence_if_success45",
+  "split": {
+    "training_seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    "calibration_seeds": [17, 18, 19, 20],
+    "row_random_split_allowed": false
+  },
+  "instrumentation": {
+    "enabled_only_by": "MERICANII_DATASET_PATH absolute path plus MERICANII_DATASET_SEED matching ec.rand.seed",
+    "disabled_when_environment_absent": true,
+    "rng_calls_added": 0,
+    "search_decisions_changed": 0,
+    "sentinel_seed": 1,
+    "sentinel_requirement": "instrumentation-off and instrumentation-on produce identical 50200 evaluations, final sequence, and final size"
+  },
+  "integrity": {
+    "no_silent_row_drop": true,
+    "every_success_row_requires_two_verifier_audit": true,
+    "validation_or_holdout_seed_is_terminal_invalid": true
+  }
+}

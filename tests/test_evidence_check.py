@@ -14,13 +14,16 @@ def sha256(path: Path) -> str:
 
 
 class EvidenceCheckTests(unittest.TestCase):
-    def make_run(self, root: Path) -> Path:
-        run = root / "b1" / "test-run"
+    def make_run(self, root: Path, gate: str = "b1") -> Path:
+        run = root / gate / "test-run"
         run.mkdir(parents=True)
+        method_gate = gate.startswith("e")
         manifest = {
-            "schema_version": "s13-evidence-manifest/v1",
+            "schema_version": (
+                "s13-method-evidence-manifest/v1" if method_gate else "s13-evidence-manifest/v1"
+            ),
             "run_id": "test-run",
-            "gate": "B1",
+            "gate": gate.upper(),
             "source_commit": "a" * 40,
             "dirty_at_start": False,
             "command": ["python3", "tool.py"],
@@ -46,6 +49,11 @@ class EvidenceCheckTests(unittest.TestCase):
     def test_valid_run_passes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run = self.make_run(Path(directory))
+            self.assertEqual(evidence_check.verify_run(run), [])
+
+    def test_valid_method_run_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.make_run(Path(directory), "e0")
             self.assertEqual(evidence_check.verify_run(run), [])
 
     def test_missing_inventory_fails(self) -> None:

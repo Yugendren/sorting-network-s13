@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mericanii.local/schemas/method-evidence-manifest-v1.json",
+  "title": "S(13) learned-method scored-run manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "gate", "source_commit", "dirty_at_start", "command", "started_at", "ended_at", "wall_seconds", "cpu_seconds", "peak_rss_bytes", "threads", "host", "config_sha256", "status"],
+  "properties": {
+    "schema_version": {"const": "s13-method-evidence-manifest/v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "gate": {"enum": ["E0", "E1", "E2", "E3", "E4", "E5"]},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "dirty_at_start": {"type": "boolean"},
+    "command": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "started_at": {"type": "string"},
+    "ended_at": {"type": "string"},
+    "wall_seconds": {"type": "number", "minimum": 0},
+    "cpu_seconds": {"type": "number", "minimum": 0},
+    "peak_rss_bytes": {"type": "integer", "minimum": 0},
+    "threads": {"type": "integer", "minimum": 1},
+    "host": {"type": "object"},
+    "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"enum": ["PASS", "FAIL", "TIMEOUT", "CRASH", "INVALID", "BLOCKED"]},
+    "error": {"type": "string"}
+  }
+}

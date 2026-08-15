@@ -1,0 +1,77 @@
+{
+  "schema_version": "s13-completion-model/v1",
+  "frozen_at": "2026-08-15",
+  "method_version": 1,
+  "role": "rank which truncation point of the current SENSO parent to revisit",
+  "input_dimension": 85,
+  "architecture": {
+    "type": "MLP binary classifier",
+    "layers": [85, 64, 32, 1],
+    "hidden_activation": "ReLU",
+    "output_during_training": "logit",
+    "output_during_ranking": "logit; sigmoid is monotone and omitted",
+    "dropout": 0.0,
+    "trainable_parameters": 7617,
+    "parameter_ceiling": 100000,
+    "dtype": "float32"
+  },
+  "objective": {
+    "label": "final_count <= 45",
+    "loss": "BCEWithLogitsLoss",
+    "positive_weight": "min(training_negative_count / training_positive_count, 100.0)",
+    "forbidden_label": 44
+  },
+  "training": {
+    "framework": "PyTorch 2.10.0+cu128",
+    "device": "authorized NVIDIA GeForce RTX 3060",
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 4096,
+    "max_epochs": 50,
+    "early_stopping_patience": 5,
+    "minimum_epochs": 3,
+    "shuffle": true,
+    "seed": 2026081501,
+    "deterministic_algorithms": true,
+    "checkpoint_choice": "highest calibration average precision, then lowest calibration BCE, then earliest epoch",
+    "duplicate_training_replay": "same exported float arrays and SHA-256 required"
+  },
+  "offline_validation": {
+    "partition": "config/experiment-v1/seeds-validation.json",
+    "training_on_partition_allowed": false,
+    "primary_metric": "pairwise concordance between model score and lower final_count within each seed, ties score 0.5",
+    "constant_score_reference": 0.5,
+    "pass_rule": "concordance strictly greater than 0.5 with at least one unequal-final-size pair",
+    "configuration_changes_after_result": 0
+  },
+  "integration": {
+    "baseline_gaussian_draws_per_reconstruction": 1,
+    "proposal_count_maximum": 8,
+    "proposal_construction": [
+      "clamp(base, 0, parent_count)",
+      "clamp(base - 2, 0, parent_count)",
+      "clamp(base + 2, 0, parent_count)",
+      "clamp(base - 4, 0, parent_count)",
+      "clamp(base + 4, 0, parent_count)",
+      "clamp(base - 8, 0, parent_count)",
+      "clamp(base + 8, 0, parent_count)",
+      "0"
+    ],
+    "duplicates": "keep first occurrence only",
+    "ranking": "maximum exported-model logit",
+    "tie_break": "lowest proposal list index; proposal zero is the exact baseline Gaussian truncation",
+    "constant_model_equivalence": "all-equal scores choose proposal zero and exactly recover the baseline truncation decision and RNG call count",
+    "scored_inference": "compiled float32 CPU inference on M4; no Python, GPU, network, LLM, or adaptive state"
+  },
+  "frozen_unchanged_components": [
+    "SENSO parent ranking and estimate fraction",
+    "frequency-model reconstruction after truncation",
+    "heuristic fallback and mutation",
+    "fitness and hall of fame",
+    "population 200 and generation 500",
+    "50200 candidate evaluations per seed",
+    "random seed and all non-truncation RNG behavior",
+    "two independent acceptance verifiers"
+  ]
+}
