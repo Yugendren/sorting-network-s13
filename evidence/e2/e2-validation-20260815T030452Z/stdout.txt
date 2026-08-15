@@ -1,0 +1,2 @@
+E2 V1 falsifiable gate: micro within-seed validation concordance must be strictly greater than 0.5 and compiled integration must replay exactly.
+FAIL: offline validation scoring failed: CRASH

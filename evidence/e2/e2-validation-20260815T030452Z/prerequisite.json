@@ -1,0 +1,13 @@
+{
+  "config_sha256": "5c22a3ce05504045ceaa7359a7b25d318cc0a923163b162779c32975c2533465",
+  "contract_sha256": "6d8e9c3d0c4719bbd4c28bf55bc068ead10407e4a5928978afc55be338e503e6",
+  "e2_training_manifest_sha256": "2ff8fc719428d62b87aa3c50b785f4a2b42581be780f93fd675065ff3f893074",
+  "evidence_replay": "verified 15 immutable evidence inventories and manifests",
+  "instrumented_manifest_sha256": "202c7201ad4389cb46468aa4bf0a07293f6e4faef01103669481c45c420abb4b",
+  "method_manifest_sha256": "33593c58e98dfe925806051b5f5e683d1ec1f41f035d23616d3e5d748b5e013d",
+  "model_checkpoint_sha256": "ad736315f79493ffccaee6418a4d95624282374bb6e844d0001346dd88d617ab",
+  "model_export_sha256": "eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7",
+  "no_e3_seed_accessed": true,
+  "validation_seed_manifest_sha256": "0d0737167dfc749ed5b444a939a454fd1e16ed9ea6871d5dbb1d83f4b36ace77",
+  "verifier_b_binary_sha256": "212805ebb2f71bfdc3a470a0e873167c6494fea0cea9829a8db889298368e3a2"
+}

@@ -1,0 +1,18 @@
+{
+  "binary_path": "evidence/e2/e2-validation-20260815T030452Z/compiled-validation-scorer/score-validation-model",
+  "binary_sha256": "f16262aabb60ac178a3b558795dff8c7efc038725fd3ea624cddc9ec7bd9f0b3",
+  "command": [
+    "clang++",
+    "-std=c++11",
+    "-O2",
+    "-I",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-train-20260815T023758Z/replay-1/artifacts",
+    "/Users/yugendren/experiments/sorting_network_s13/tools/score_validation_model.cpp",
+    "-o",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/compiled-validation-scorer/score-validation-model"
+  ],
+  "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "model_header_sha256": "f7533479d67d44ff5b5da7e9dd3cad9909785e7a912997b8c2b2edfc8fd69864",
+  "source_path": "tools/score_validation_model.cpp",
+  "source_sha256": "d6576e34d82e2d5619e04a4bb1d53220631ed85326c4a7d8264492029f0efc03"
+}

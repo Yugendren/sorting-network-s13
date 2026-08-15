@@ -1,0 +1,19 @@
+validation stream failed: run only from /Users/yugendren/experiments/sorting_network_s13
+        0.05 real         0.04 user         0.01 sys
+            20987904  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                3912  page reclaims
+                  91  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   8  voluntary context switches
+                  23  involuntary context switches
+           614881055  instructions retired
+           215068126  cycles elapsed
+            12042624  peak memory footprint

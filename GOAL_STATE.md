@@ -21,8 +21,9 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: E2 method version 1; no validation or final holdout seed has
-  been run.
+- Active milestone: E2 method version 1; all validation label trajectories are
+  frozen, the mechanical scoring replay is pending, and no final holdout seed
+  has been run.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -80,6 +81,14 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   unscored smoke build crashed in a temporary heuristic replay and is preserved
   at `.build/senso-mericanii-v1/attempt-20260815T024344Z`; direct function replay
   fixed it without changing the frozen role or proposal policy.
+- E2 single-use validation materialization completed all 20 seeds and 1,004,000
+  rows at `evidence/e2/e2-validation-20260815T030452Z`; aggregate dataset
+  SHA-256 is
+  `7bca7bec0cfda5573d4640eb6f9a3af697025dbedf3342242c330eb70dfbbfd9`.
+  It contains 2,079 <=45 rows and no <=44 row. The preserved gate is FAIL only
+  because the scoring wrapper rejected the evidence subdirectory as its CWD
+  before reading the aggregate. No metric or integration-audit outcome exists;
+  no seed trajectory may be rerun or replaced.
 
 ## Gate ledger
 
@@ -96,6 +105,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Immediate next action
 
-Commit the frozen truncation integration, then run the one permitted validation
-audit. Do not access E3 seeds or alter the representation, objective, or
-integration role after the validation result.
+Commit the preserved validation-tooling failure. Repair only the scoring
+wrapper's CWD handling, then resume against the exact frozen aggregate hash and
+run the already-frozen integration audit. Do not rerun a validation trajectory,
+access E3 seeds, or alter representation, objective, metric, or integration.

@@ -1,0 +1,1016 @@
+{
+  "best_size": 45,
+  "candidate_sha256": "597a38beb3bdf63d9245af779684914f2853e567a5a75f4d297bc674929e1d8d",
+  "dataset": {
+    "path": ".cache/method-v1/validation/e2-validation-20260815T030452Z/seed-16-678399141.tsv",
+    "rows": 50200,
+    "sha256": "8dce37e03217be954e3c88d819d40fa474b3703022ca80c04cf9fae30bfaf429",
+    "size_bytes": 43802905
+  },
+  "evaluations": 50200,
+  "generation": 500,
+  "milestone_sha256": "6a3db533c15cae603c0f9ca3fb5811093200bf56043e8aceb445da6764b520ad",
+  "milestone_size_bytes": 10141,
+  "resource": {
+    "cpu_limit_seconds": 1800,
+    "cpu_seconds": 19.63,
+    "exit_code": 0,
+    "memory_limit_bytes": 4294967296,
+    "peak_rss_bytes": 17334272,
+    "status": "PASS",
+    "stderr_sha256": "dff939aeffa4657fdbaea7f120963722b588bbae00f2d447b9e1947e807e564c",
+    "stdout_sha256": "2140c2be5e3035cb578ce489585327d1118a0363dd775ec7945b6e9cedec8bee",
+    "system_seconds": 0.14,
+    "time_peak_rss_bytes": 16367616,
+    "time_real_seconds": 19.67,
+    "user_seconds": 19.49,
+    "wall_limit_seconds": 1800,
+    "wall_seconds": 19.866842
+  },
+  "seed": 678399141,
+  "status": "PASS",
+  "success_sequence_references": [
+    {
+      "final_count": 45,
+      "first_sample_index": 35351,
+      "occurrences": 13,
+      "seed": 678399141,
+      "sequence_sha256": "793210a6409c14f8ca6dbf9aee67b7b8776f314a086f8cda26538b70599bcc09"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 35500,
+      "occurrences": 18,
+      "seed": 678399141,
+      "sequence_sha256": "c37cde19f5cf130e0a96b0ab8b69dd17412bd88b9a47bbddf9e1dda9498d3c53"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 36700,
+      "occurrences": 34,
+      "seed": 678399141,
+      "sequence_sha256": "62c38d58ebab34b275ddd46840713da8a0a84cb7303df42c0f91af86411a1932"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 37456,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "19da4bb4eec8fcaebe7ea27a9cfb7f7765b8a41147588a1d5a3012af543cb528"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 38400,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "b5b9e80df5933d7bb779055c37a64e06c734e9fcd36ad80bc87d5e4404e52b58"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 39498,
+      "occurrences": 13,
+      "seed": 678399141,
+      "sequence_sha256": "232a4187ba760d6ad87b7f787940d006619a0df4fb0cc79d17e6e9caba97eb1d"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 39703,
+      "occurrences": 10,
+      "seed": 678399141,
+      "sequence_sha256": "c915d5a3094fa8a16eec5bb31da46067727a2817e531a576ce5d290fc424d853"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 39811,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "901b66ff8ef13b8a05b036c5719cafc4d77ac546d30360302a6db6a381c74030"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 40106,
+      "occurrences": 8,
+      "seed": 678399141,
+      "sequence_sha256": "5208c0992bc0dddcc9c5bfbf0b816e121beb34ef5e410ae8badd70c0703ba04f"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 40110,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "4b8313f3c927b57997641a8502394d6f2ebd6eccdf67a830e197a40c89a94535"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 40322,
+      "occurrences": 14,
+      "seed": 678399141,
+      "sequence_sha256": "049e53a314835c57cc273ea2146920ab79c95e86ce588626986aa25952fc9c16"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 40505,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "286b7738573da4533557d6f3451734bf727385e3d4e5c9783925a0382898108b"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 41125,
+      "occurrences": 16,
+      "seed": 678399141,
+      "sequence_sha256": "a6687acaa5eac9dad2c763e03ff88d570eb3c4af4837e574db5d2ce7c896d107"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 41602,
+      "occurrences": 7,
+      "seed": 678399141,
+      "sequence_sha256": "84ace29b58bcfedaaad530a0449c4f99b6b2b773df4a4fa5eff593931db3c19f"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 41901,
+      "occurrences": 6,
+      "seed": 678399141,
+      "sequence_sha256": "eea4510b30b294dbd8f73a4c649d35d296e5410d1261c5123180e9fdf7e37fac"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42123,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "fda25410e0a179642ca696732ccb7fbd9869b04f6c2ab2f1199af718fea9e67f"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42234,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "b6098b9c90e70953fc7af0da09acce28821da558571e7933d5addb77be1b9b2c"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42236,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "a6b8d6fe3c0a0d27656d6e8e471529fc61bc7b219739945b21d522ff962fddea"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42267,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "8ffeec973d84c5ac035090ebb0e9cd96f564b6569088f1903c47f0127eda51f3"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42339,
+      "occurrences": 6,
+      "seed": 678399141,
+      "sequence_sha256": "8340b7bd173f2cf5908840ca7733e47c06e5583fad90a5c88d2883b2059239e7"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42446,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "5bfdabb02c9ab058bae0708ddec78452acddfc043f633aeea6067bb1d2b88d94"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42609,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "552c65a707956b0b0ff3f37e8c3aca7f6e0af1692990fb1ac478132df798aad1"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42637,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "89fcea1c759a7d097b853cd5db6d29c8b4530e5ff7366f4e0b33757748829fe6"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42839,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "b0a484b212fde738ba8109d26780cf01a56d2c27efd626da604711bbbdec951a"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42911,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "e3693840f1d35d5578eaca2bd8f2b19411f635843ccefebcd2b46ebf4b3722f2"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42917,
+      "occurrences": 13,
+      "seed": 678399141,
+      "sequence_sha256": "41cf057ba508f59fbc7505fc3e64f76ac8e5d29d9e508ad3ed299ee8ff0b5842"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 42932,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "d73d0ebf13d95f611e87d20b6725961d8c077150280bf4967b068f6987c5ff6a"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43019,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "e9f678b002827c17ec6dbee82b56f25af1ced6b8f9c395feeb2442e5d6ef676d"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43311,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "fa82dacbb05754e4cf919eaeac77e546365bdc0bd87e2cb2cd56394e3b7ce79f"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43334,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "52461564322269a3511b7b7c07ef5d59d7d026130ae872986222345a3c4d58dd"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43357,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "5fab93f4682b2634dca6fda7a09c199e75d1893f30f204965d3f2c20484431e3"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43368,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "7ed55d0bb74c1cfb75ce82b87282c389b5fd09159f5a40ebf7526862cd2d097c"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43467,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "8d14a1fe22d533e31dfe947dc9916bc5f70be942d10977f09b35c75fd428e152"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43664,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "4748dfd3a5d1b365619df99c31fdf94ea5a546ab2a22614fa193a08bab8f8a60"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43815,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "69c728e61f98fa09dd3ef5dd8a7da01c652924e376bdebb5fa7bee101375c6e6"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43840,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "333f45da10da1b89fd8ed16cae44b4ff27fc4d7aa98d67980fba2f11e9e7b509"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43878,
+      "occurrences": 6,
+      "seed": 678399141,
+      "sequence_sha256": "67dffd3a6d1e48d0a12a4bce1871bac967135ca2160a614b4bf9fa6209f5aebe"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 43960,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "b7e06ad7bbb1f0c86b78c7aa52c278998151a4d5cdc37c61b17e111c9332a203"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44009,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "4084b883e045966706b3d1cebf9a5a8862fcad3c929248b731af0dfb224d144b"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44107,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "0d5b21437a82a9e85525304db2c07ad09f8bd76ddcea282c2431d6aee3b10db3"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44126,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "9329211dd4c69b24657597a5f99dc3d8a01d6a99e7b1fa7f06212df84d51996f"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44278,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "03c419896633e7cbec23b6d9b049449ac6984f660bce6b7e34d669812b7930fb"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44287,
+      "occurrences": 6,
+      "seed": 678399141,
+      "sequence_sha256": "bf7b4ef33df6c5e6ff84aa6461245ef633e98c6a562cc53b1021a13af7c9946b"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44386,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "610fbf77a490b877aeef552b52de8e39c3d730f8a338e10daedee99edaf858a6"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44398,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "4cf065c64e7b2e8dab2276bc69df10dcc3afc53be514b6185a84ffbf45d124c4"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44531,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "2d1ee85cc749600083e9af37b056ca955563c451209e3e1b71eb01b0445672dc"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44535,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "015084b67f065b2ae5c82c101c7f5f968459937a3186ec22648a934265224218"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44551,
+      "occurrences": 12,
+      "seed": 678399141,
+      "sequence_sha256": "95a46771575c37a5991402742718129f15fb9e2417893a721b86c4ff1eeac08e"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44575,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "8231b24d9c520a54c75a556d9360ffc033bef86e89f40ab4867bd979c781fc4b"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44612,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "a3c7947c0ea778f821979f81f93b990eb72c655d5a2227701786f9747365bb0d"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44639,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "7f169ff4a8ec83aadf658c3dfbc46421d028b21c7e5822232e0c261777db3769"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44663,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "314dcb88d94b7fb8706e48b6090f1a1ae70b14ca39f5178bae05815d56b59e64"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44710,
+      "occurrences": 6,
+      "seed": 678399141,
+      "sequence_sha256": "010a91fa8c3c2265e51ed481039b1e8596276764fbe8829a3fbba7e93439a8fe"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44719,
+      "occurrences": 6,
+      "seed": 678399141,
+      "sequence_sha256": "f657db93f8ec794f44d05f420946c37d26911cd048224ebf0a0d8302170fefe7"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44822,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "bbdf64ad8d72f2b740e151dee1f040b544773666dc2bcb71cfeea697ef32a384"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 44948,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "13d7eed1aa42d12553d7893a4785f1ff97bbbe3dc158fe63cfd4e86dad956b9a"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45007,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "d0596aa9f9c439a2473fb7298ad81e0c30fec4dcf4de1ecf55d41e96c30531b5"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45192,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "dd98fcbd8c2ea14a76545c2d15092a077a0854f8cb03ea9111ed63a1190e5b41"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45238,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "635fcc5c5264925903df56cff2fa2a829c6789d89cfdb1c525dd9cd6e7ecc3b9"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45252,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "7a77d5faa00a63f317c34fd01ebf3f1c3a593eb759e1d92587778330902d4dd6"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45307,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "cd7d3ad891a5a78f94b459f983aa3952762982b4ea6d7ac9120430517e99b104"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45344,
+      "occurrences": 4,
+      "seed": 678399141,
+      "sequence_sha256": "7b71e9929b3335ef275eacdf466c763f9e3e0fb225e8c844a926d02932cd873a"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45360,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "a1ec4578219f56170ec2b410c0c4696a89d92fa4af60b15722ed8c8c7dc2cb9d"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45406,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "4737430d79ed3fe681f3d468b4fa80442d675a8978d576847376760c27044f20"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45408,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "11760b7e2760cc62a2d509511918fe2514cfdb552645f9a5da4d419d3cf56682"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45608,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "8ac95e1c5b408d6e7b60e757cbe61590cb2eef96847edbbaa6686e7b4ec5ecc7"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45834,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "6faab7ea7e5fc701700c0a376791602dc185a94064310e1308e2118d27375cd6"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45850,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "ccd59801b11e8d5dc0fe80310cdac4b37c0866a9fcc58ac5bc72924f86bf3aaa"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45864,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "12984eca35b26046f4cfaa2e2aa46f96e9fb4674ca63f55bda457f60cd664c50"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45865,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "8d614000ad4636899d82d580348e94dad321eb416bd8c547a895ef596287bd92"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 45946,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "6d705593ead5318db32da0c31d061c2bce80d2b5f10bd214823db7eaf80621ec"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46004,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "281ef843e02754ee6a0db4969d038462db5f0efd61568bf00bede681264f9a76"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46065,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "5c72da8c1c30993106de3f0dc440f24500d18f707399dab3424b8160f96db782"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46174,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "418f50b1196c2f6d8ae52d7bc04c930dbacc32cdce5444ad227015ea3de7f074"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46236,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "97c4f31fb7fe2c43a4343f7cc00d787b5fb58e9c25d28a64eaca664bb6be4cf9"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46238,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "71a33430e01915776b431ba820678dc2e4d609f12dda46979ba6a60515333867"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46320,
+      "occurrences": 12,
+      "seed": 678399141,
+      "sequence_sha256": "2950deb24d76486562f3ae93ede38284185a3f2ba114890f81ae1521866ec041"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46349,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "8c129c038b8a2fe0bddbb3fce7d75ba8f58201be57b6cc5d987b38d1141fd9c1"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46382,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "478e13711e73f9b3372d61cd9ac8393b5520449b0f7e44978f1f4cdd452a21b7"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46394,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "dca06c636e71a65eb77f705a50c22fe13d7e1ad10c8c9b58fdf768e8be5815af"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46573,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "17d93b0b2abdf75b2beb0e0fe201e860ffd156cf78d3802181336648d56f6587"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46586,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "6384d408795c7535ee4919b645ecd0392291d46d31c5728054d229faec364585"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46612,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "04c3eeb5e54a0f7a9238378da8b92d71e09f14a98877ff27f5aa00d714377f4e"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46630,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "88727dcdef44821cdd77bbc6b4383cf9924926c971809e331c854d08d8473deb"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46662,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "d747f2bcc45594d9a382833d4bb38220db6822e89abf3cbc42d618c82a00e3c6"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46676,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "4503da4dfe83ab516a2e5a1c80649aa5e98496e83ddf87489f697a01976e42c5"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46678,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "7982b272aac49a1364730af87408ea3d8dc6a7544562af8a467c394a95ea65e6"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46695,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "7b789c1ec49434233e788b107879f27373e8337a18e0f05628a8d8fb5994c321"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46762,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "2eff9e403781238da2560eadee0001ac963b85b3b02daa69bbc41b4fbbfc9ce4"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46823,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "9bc154a1d115e7569e8b44e26e7750ea29802ebed363c41e5b9d2b48afd2272d"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 46936,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "fe456f1fbb8d8fde7a03d7641533477074eb85e8fea46612103e2d2c67cddf28"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47066,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "94744f5dc72b9ce3c0c2eef286379796a166ccb4735863257b6cc437ac4effe4"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47108,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "ee40738bd3dab66535788e6b4f3575be24c22c954aaddfa8470ba01abcb3cd90"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47233,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "cc53ee5cd436f3106f0a4f57f822b1c17f1a6871438e664d8bf16b2b23040c46"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47335,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "1786abf97b00f71b13d2f2c4460645ee7495b839c833996f2239f72cb8b0d6d4"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47353,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "4c436c525a758af88844a026271043c12f6d475a8757fa8fd56db0aac198152c"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47395,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "07c4a42f07b895789743aa9377e7239bdb8f58d155bfaaf704bd87b0f01ae24e"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47484,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "b94f1486681bb526b74c9d66f19e1a0e8cbbb376fe4c115f50716b34353bc6a3"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47505,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "c3ec0f0b503ba3cfd37d987b195945505565f86df256d6715d1b6be8ba32812e"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47607,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "0266375faacf82bbff69bea896ee80d3eccc5aff34ad6a483d8e7403680e0cc5"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47611,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "efee51e25245839c4f5189c920d0b5fa86ae830bb73940ed31b088541019e15b"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47859,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "fb2ef292596719053f18ce82ffcad2c5ab4539944359faf5a188853357c2b67f"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47897,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "ad28cca9f1d5611a6ca686848c11a393290519d698985d4ced12c47fddf67421"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47953,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "c409c8cc33fe272d411a7e9db4b0491d97091657e3a3dcd996e78c794edf3409"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 47978,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "3cb5cb3814794974027a0b5a573623deb755a52fcf2ae02089e227c35344b5f5"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48005,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "b80f13e6ca57e80525f31ca2f244537d578c6e8ef91c0897c21a2cf2fb5559d0"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48051,
+      "occurrences": 5,
+      "seed": 678399141,
+      "sequence_sha256": "c1af3cf8fbdabf1e9bc27c95afc86bae9bbdf1efaf03d7afefd300e088cb44f2"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48068,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "b80bb4294589155defeb010805a59a549bd378ac9317e1d316d0d16716bde647"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48149,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "7f5e43cd726fb9557fbb7f47afc819c2e6233d669e4e4810a14a44001fdf1c02"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48371,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "1b2766d20017403e1332aa3a6c47af3db40ebd4aed63d2d27fc251731d1dc189"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48389,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "fc374720c2cb5cc55d852d2cb3f82ffe9aebc4daf6fe5f7666afcc31bffe237f"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48399,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "66e0b1f44f5d3b105745344fe6d209894b3b4012cef69f7e0978c066525dd7b4"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48537,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "082312dd485357505887f96817cb54225ea0e977ec09c644b9f25f831f1d1917"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48548,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "cb20238802b891f19ea01ee1b674693c2b27ba4d815d8dd2fb817ca89da8e33c"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48555,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "9090f45a3b4ea48dad4f80283992704fbc255cd1867a5f5720066d648c305e08"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48644,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "6bf6e6cf83cf1a9ca62567923771c4a69d800a1b23bf167e444ac9bc7b462d21"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48675,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "f7752a30389cce39a564f43a16c284d889413ed8a6f2edaed444346069cf01a5"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48788,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "8151934b62fc5eff927d12fef78e9dfceedfd2729059905a18651b48effa769d"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48895,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "8c5432ec1a05ddeb9b8730f7384ebe823dfdffb1d0532696e32c5a871c419e43"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48941,
+      "occurrences": 3,
+      "seed": 678399141,
+      "sequence_sha256": "f1d347c8ebbc282fdf6d22a24dc3a05d91a70ac4ce879d84eee720e83fd44c41"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48978,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "b9dc436cb6f5d8f7311d23d51c9477370c31917edbb9f45ad4df1193e91c4718"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 48985,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "44f8b449dda773d4d843c9f09bd1a3b1155eec0f01a6b1aa29f83e05a2ae0827"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49291,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "48c3c611f1fea38a48a4183d8a962ba9984748b5b48de293874e204149348855"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49292,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "a512fdeab789fe196bfe6275b0f4532ca4dd5a68513f6db511b2e41e55fb8c67"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49408,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "4c77073248902d2a817cc7dada727ab822cdf00df8d2e88d10ec24ebb6a7a803"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49605,
+      "occurrences": 2,
+      "seed": 678399141,
+      "sequence_sha256": "e4c760fa8defc7e9988fb6bb1e1e207ab886102c0602de0737ea9740d4ee91ba"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49634,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "e645ffabd602c298ff69a47d843bf16666c54c6ee670e8b11db2659aff8bf066"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49723,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "813c017e2aacb594bbf98a7d809aa3b7233da0ea59aad171506387d8b368d79d"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49761,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "0085c71a827918842325080cbb1b1cc8c8a7baedcef213925295909e1f16b3ca"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49766,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "db7ab049e9634aed022a5370670667850f91e9e06586669f3539522bd6ef4804"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49824,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "61392733a591fad3921a42d21432b41427697b126e8c7df5adb8ea86ea22b5b0"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49856,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "c787200ef256d20ff9f260c105ea3b4b4ce3cbbd22f3390700a82052f9f0b90b"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 49869,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "a42579d5edd1deda8dfd5701e1dd826ce2f99f3d8d65551eee45620fd9c9207e"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 50071,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "c26adf78b04dd31a1b5f05b6eea53e6faa9676903113c3f331ab01bf2b288225"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 50077,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "9363c2b49e8d0d642f564e4cee56146d1f615fe92691f7da4b7d0495721bc669"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 50089,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "caadd39298737ad4ca44e9003e485df19b059c6bbfde3ea71652cc229b4e3914"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 50145,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "d3d283371c6110fdbbb79b9db6b6d9489c14a16baa7d757336ff77a9e39b7819"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 50172,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "889f5f0c15839ad77072f7b40e9c19b2152b90726a80b688b981b02f412d3944"
+    },
+    {
+      "final_count": 45,
+      "first_sample_index": 50185,
+      "occurrences": 1,
+      "seed": 678399141,
+      "sequence_sha256": "444740947ffc61a22b3f7a7634bae4ac2a6dff99d9b48b19b006cc7cce7098f3"
+    }
+  ],
+  "verification": {
+    "artifact_sha256": "597a38beb3bdf63d9245af779684914f2853e567a5a75f4d297bc674929e1d8d",
+    "candidate_checksum": "57383a93c1a655a49c33b259fbb57a52c1c6925dc8e93c0d23574b66f14d4bb2",
+    "comparators": 45,
+    "verifier_a": "ACCEPT",
+    "verifier_a_report_sha256": "dceaf84ce13709f9786dce483325301eef810cb50812eb62928a659b7a8c085c",
+    "verifier_b": "ACCEPT",
+    "verifier_b_report_sha256": "0a39cca1ef8752e80ba582bd6b6634acd070fb2703488f73ca4675bdce619740"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "best_size": 46,
+  "candidate_sha256": "a474da641133dbf50b37383617c0a897d11aba2604696b81f4d40f0865a8188a",
+  "dataset": {
+    "path": ".cache/method-v1/validation/e2-validation-20260815T030452Z/seed-20-1923847079.tsv",
+    "rows": 50200,
+    "sha256": "7c87e14a7b239d59120f0ce64f5a0242255f672adda600e87e973d8df312b474",
+    "size_bytes": 43691745
+  },
+  "evaluations": 50200,
+  "generation": 500,
+  "milestone_sha256": "e7c65c310d4626ee5e2e45579c41a1eae0d1f489440ad55d6c698a0a90f46dc2",
+  "milestone_size_bytes": 10189,
+  "resource": {
+    "cpu_limit_seconds": 1800,
+    "cpu_seconds": 19.740000000000002,
+    "exit_code": 0,
+    "memory_limit_bytes": 4294967296,
+    "peak_rss_bytes": 17317888,
+    "status": "PASS",
+    "stderr_sha256": "a9c2e23e633c1253d7338f3d8ebc6d6a4283f85a8e6c3c8a47681ab450bcd3e9",
+    "stdout_sha256": "53795b26f87837e7fa40f7bc4f0ecd7816d87f760f6d4977c1f7953f2c8a426a",
+    "system_seconds": 0.14,
+    "time_peak_rss_bytes": 16384000,
+    "time_real_seconds": 19.77,
+    "user_seconds": 19.6,
+    "wall_limit_seconds": 1800,
+    "wall_seconds": 19.843533
+  },
+  "seed": 1923847079,
+  "status": "PASS",
+  "success_sequence_references": [],
+  "verification": {
+    "artifact_sha256": "a474da641133dbf50b37383617c0a897d11aba2604696b81f4d40f0865a8188a",
+    "candidate_checksum": "c3d54909d65fa4857828030a5f5102b2df53a9573426565c208bcfca1d529c48",
+    "comparators": 46,
+    "verifier_a": "ACCEPT",
+    "verifier_a_report_sha256": "70e30dbc1dda32a5600ba0a091ec64a2acac20a661be6f43665505ee04906f62",
+    "verifier_b": "ACCEPT",
+    "verifier_b_report_sha256": "794cd0497469e09f3f42829b4902f8611a79455b3bfc3121c5ab6f227ab390e2"
+  }
+}

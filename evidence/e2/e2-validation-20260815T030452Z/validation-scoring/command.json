@@ -1,0 +1,37 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/yugendren/experiments/sorting_network_s13/tools/score_validation_stream.py",
+    "--dataset",
+    "/Users/yugendren/experiments/sorting_network_s13/.cache/method-v1/validation/e2-validation-20260815T030452Z/validation-dataset.tsv.zst",
+    "--scorer",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/compiled-validation-scorer/score-validation-model",
+    "--output",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/validation-scoring/validation-score.json",
+    "--decompress-stderr",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/validation-scoring/decompress.stderr",
+    "--scorer-stderr",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/validation-scoring/scorer.stderr"
+  ],
+  "environment_overrides": {},
+  "wrapped_command": [
+    "/usr/bin/time",
+    "-l",
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/yugendren/experiments/sorting_network_s13/tools/run_with_limits.py",
+    "--cpu-seconds",
+    "1800",
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/yugendren/experiments/sorting_network_s13/tools/score_validation_stream.py",
+    "--dataset",
+    "/Users/yugendren/experiments/sorting_network_s13/.cache/method-v1/validation/e2-validation-20260815T030452Z/validation-dataset.tsv.zst",
+    "--scorer",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/compiled-validation-scorer/score-validation-model",
+    "--output",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/validation-scoring/validation-score.json",
+    "--decompress-stderr",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/validation-scoring/decompress.stderr",
+    "--scorer-stderr",
+    "/Users/yugendren/experiments/sorting_network_s13/evidence/e2/e2-validation-20260815T030452Z/validation-scoring/scorer.stderr"
+  ]
+}
