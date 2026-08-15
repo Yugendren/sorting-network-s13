@@ -22,7 +22,22 @@ UPSTREAM = ROOT / ".cache/third_party/sortnetopt"
 BUILD_ROOT = ROOT / ".build/b3-toolchain"
 ACTIVE = BUILD_ROOT / "active.json"
 STACK_ROOT = ROOT / ".cache/toolchains/b3-stack-root"
-PORTABILITY_PATCH = ROOT / "tools/patches/sortnetopt-macos-proc.patch"
+LOGGER_PATCH = ROOT / "tools/patches/sortnetopt-macos-proc.patch"
+LARGE_READ_PATCH = ROOT / "tools/patches/sortnetopt-macos-large-read.patch"
+PORTABILITY_PATCHES = (
+    (
+        LOGGER_PATCH,
+        "src/logging.rs",
+        "return unavailable metrics when Linux /proc/self/status is absent",
+        "diagnostic logging only",
+    ),
+    (
+        LARGE_READ_PATCH,
+        "checker/snocheck/src/Main.hs",
+        "read files in bounded lazy chunks before constructing the strict parser input",
+        "unverified file I/O only; parser and verified checker unchanged",
+    ),
+)
 PINNED_COMMIT = "0b5d09c47446096f9e3a0812b35afc72b7f2a718"
 STACK_LOCK_SHA256 = "b7717e291ca56bc694daebbcc60024c3d6f719dacc25dc00cc7e705d9db671bc"
 STRICT_PATCH_SHA256 = "df374fe21c9aa07ee91da700dc2642581c999b61defdacc1ee201a87225435e0"
@@ -95,20 +110,28 @@ def verify_active() -> dict[str, Any] | None:
         identity = upstream_identity()
         if identity["tracked_source_aggregate_sha256"] != manifest["upstream"]["tracked_source_aggregate_sha256"]:
             return None
-        portability = manifest["portability_patch"]
-        if portability["sha256"] != sha256(PORTABILITY_PATCH):
+        portability = manifest["portability_patches"]
+        if len(portability) != len(PORTABILITY_PATCHES):
             return None
         runtime_source = ROOT / manifest["runtime_source_path"]
         if not runtime_source.is_dir():
             return None
         if command_output(["git", "rev-parse", "HEAD"], cwd=runtime_source) != PINNED_COMMIT:
             return None
+        expected_changed = sorted(spec[1] for spec in PORTABILITY_PATCHES)
         changed = command_output(["git", "diff", "--name-only"], cwd=runtime_source).splitlines()
-        if changed != ["src/logging.rs"]:
+        if changed != expected_changed:
             return None
-        logging_source = runtime_source / "src/logging.rs"
-        if sha256(logging_source) != portability["patched_logging_sha256"]:
-            return None
+        for entry, (patch_path, target, _purpose, _effect) in zip(
+            portability, PORTABILITY_PATCHES, strict=True
+        ):
+            if (
+                entry["path"] != patch_path.relative_to(ROOT).as_posix()
+                or entry["sha256"] != sha256(patch_path)
+                or entry["patched_file"] != target
+                or entry["patched_file_sha256"] != sha256(runtime_source / target)
+            ):
+                return None
         cargo_lock = ROOT / manifest["generated_cargo_lock"]["path"]
         if (
             not cargo_lock.is_file()
@@ -207,9 +230,11 @@ def main() -> int:
             ["git", "worktree", "add", "--detach", str(runtime_source), PINNED_COMMIT],
             UPSTREAM,
         )
-        run(["patch", "-V", "none", "-p1", "-i", str(PORTABILITY_PATCH)], runtime_source)
+        for patch_path, _target, _purpose, _effect in PORTABILITY_PATCHES:
+            run(["patch", "-V", "none", "-p1", "-i", str(patch_path)], runtime_source)
+        expected_changed = sorted(spec[1] for spec in PORTABILITY_PATCHES)
         changed = command_output(["git", "diff", "--name-only"], cwd=runtime_source).splitlines()
-        if changed != ["src/logging.rs"]:
+        if changed != expected_changed:
             raise RuntimeError(f"portability patch changed unexpected paths: {changed}")
         run(["git", "diff", "--check"], runtime_source)
         run(["cargo", "build", "--release"], runtime_source)
@@ -243,15 +268,19 @@ def main() -> int:
         "stack_root": STACK_ROOT.relative_to(ROOT).as_posix(),
         "upstream": identity,
         "runtime_source_path": runtime_source.relative_to(ROOT).as_posix(),
-        "portability_patch": {
-            "path": PORTABILITY_PATCH.relative_to(ROOT).as_posix(),
-            "sha256": sha256(PORTABILITY_PATCH),
-            "purpose": "return unavailable metrics when Linux /proc/self/status is absent",
-            "algorithm_effect": "none; diagnostic logging only",
-            "patched_logging_sha256": sha256(runtime_source / "src/logging.rs")
-            if (runtime_source / "src/logging.rs").is_file()
-            else None,
-        },
+        "portability_patches": [
+            {
+                "path": patch_path.relative_to(ROOT).as_posix(),
+                "sha256": sha256(patch_path),
+                "purpose": purpose,
+                "algorithm_effect": effect,
+                "patched_file": target,
+                "patched_file_sha256": sha256(runtime_source / target)
+                if (runtime_source / target).is_file()
+                else None,
+            }
+            for patch_path, target, purpose, effect in PORTABILITY_PATCHES
+        ],
         "generated_cargo_lock": {
             "path": (runtime_source / "Cargo.lock").relative_to(ROOT).as_posix(),
             "sha256": sha256(runtime_source / "Cargo.lock")

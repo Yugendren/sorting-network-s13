@@ -392,6 +392,7 @@ def main() -> int:
             ROOT / "docs/b3-execution.md",
             ROOT / "docs/b3-setup-audit.md",
             ROOT / "tools/patches/sortnetopt-macos-proc.patch",
+            ROOT / "tools/patches/sortnetopt-macos-large-read.patch",
             ROOT / "tools/setup_sortnetopt.py",
             ROOT / "tools/fetch_harder_certificate.py",
             ROOT / "tools/b3_gate.py",
@@ -424,7 +425,7 @@ def main() -> int:
             out / "external-source-reference.json",
             {
                 "sortnetopt": toolchain["upstream"],
-                "sortnetopt_portability_patch": toolchain["portability_patch"],
+                "sortnetopt_portability_patches": toolchain["portability_patches"],
                 "sortnetopt_generated_cargo_lock": toolchain["generated_cargo_lock"],
                 "certificate": {
                     "url": certificate_cache["url"],

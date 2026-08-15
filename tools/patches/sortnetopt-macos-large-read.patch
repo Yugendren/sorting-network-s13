@@ -1,0 +1,23 @@
+--- a/checker/snocheck/src/Main.hs
++++ b/checker/snocheck/src/Main.hs
+@@ -4,3 +4,4 @@ module Main where
+ import           System.Environment
+ import qualified Data.ByteString               as B
++import qualified Data.ByteString.Lazy          as BL
+ import           Decode
+@@ -15,6 +16,6 @@ main = do
+   case args of
+     ["-r", proofFileName] ->
+-      print . checkProof . proofSteps =<< B.readFile proofFileName
++      print . checkProof . proofSteps =<< readProofFile proofFileName
+     ["-v", proofFileName] -> do
+-      proofData <- B.readFile proofFileName
++      proofData <- readProofFile proofFileName
+       let steps   = proofSteps proofData
+@@ -26,3 +27,6 @@ main = do
+     _ -> do
+       putStrLn "usage (reference checker): snocheck -r PROOF"
+       putStrLn "       (verified checker): snocheck -v PROOF"
++
++readProofFile :: FilePath -> IO B.ByteString
++readProofFile path = BL.toStrict <$> BL.readFile path

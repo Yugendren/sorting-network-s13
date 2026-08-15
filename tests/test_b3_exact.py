@@ -47,15 +47,19 @@ class B3ExactTests(unittest.TestCase):
         assert manifest is not None
         self.assertEqual(manifest["status"], "PASS")
         self.assertEqual(manifest["upstream"]["commit"], setup_sortnetopt.PINNED_COMMIT)
+        self.assertEqual(len(manifest["portability_patches"]), 2)
         self.assertEqual(
-            manifest["portability_patch"]["sha256"],
-            b3_gate.sha256(setup_sortnetopt.PORTABILITY_PATCH),
+            [item["sha256"] for item in manifest["portability_patches"]],
+            [b3_gate.sha256(spec[0]) for spec in setup_sortnetopt.PORTABILITY_PATCHES],
         )
         runtime_source = ROOT / manifest["runtime_source_path"]
         changed = subprocess.check_output(
             ["git", "diff", "--name-only"], cwd=runtime_source, text=True
         ).splitlines()
-        self.assertEqual(changed, ["src/logging.rs"])
+        self.assertEqual(
+            changed,
+            ["checker/snocheck/src/Main.hs", "src/logging.rs"],
+        )
         cargo_lock = ROOT / manifest["generated_cargo_lock"]["path"]
         self.assertEqual(
             b3_gate.sha256(cargo_lock), manifest["generated_cargo_lock"]["sha256"]
@@ -79,6 +83,32 @@ class B3ExactTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("[   0 ?]", completed.stdout)
         self.assertIn("layer 4 size is 0", completed.stdout)
+
+    def test_chunked_loader_preserves_small_certificate_result(self) -> None:
+        manifest = setup_sortnetopt.verify_active()
+        assert manifest is not None
+        runtime_source = ROOT / manifest["runtime_source_path"]
+        main_source = (runtime_source / "checker/snocheck/src/Main.hs").read_text()
+        self.assertIn("Data.ByteString.Lazy", main_source)
+        self.assertIn("BL.toStrict <$> BL.readFile path", main_source)
+        self.assertEqual(
+            b3_gate.sha256(runtime_source / "checker/snocheck/src/Verified/Checker.hs"),
+            b3_gate.sha256(ROOT / ".cache/third_party/sortnetopt/checker/snocheck/src/Verified/Checker.hs"),
+        )
+        proof = ROOT / "evidence/b3/b3-20260815T000326Z/n9-workflow/proof.bin"
+        checker = ROOT / manifest["checker_binary"]["path"]
+        completed = subprocess.run(
+            [str(checker), "-v", str(proof)],
+            cwd=runtime_source,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "Just (9,25)\n")
+        self.assertEqual(completed.stderr, "")
 
     def test_active_certificate_matches_published_identity(self) -> None:
         manifest = fetch_harder_certificate.verify_active()

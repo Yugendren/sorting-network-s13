@@ -34,7 +34,7 @@ host.
   `92716723fc8f3c1556d9129a2069dbab76c2b1089f4f2b05a2256de687efefae`.
   It was superseded only to remove a trailing blank context marker from the
   project-owned patch file; the applied `logging.rs` bytes did not change.
-- `MEASURED`: active attempt `attempt-20260815T000004Z` completed in 31.69925
+- `MEASURED`: logger-only attempt `attempt-20260815T000004Z` completed in 31.69925
   wall seconds. Normalized patch SHA-256 is
   `49ce5d772ce6dfcb986b7185ec0e7c14d27681126d4dd703bb4ae259cafcdc42`;
   patched `logging.rs` SHA-256 remains
@@ -47,6 +47,23 @@ host.
   `b364c09a55914e654193b43823da0af27e6cf39018d3163120877470214d2a0d`;
   log SHA-256 is
   `dcf4fb4310cb18779803c7399d1318f2612bd27291c42c0ba6a8e844f5074dea`.
+  This logger-only build was superseded after the first n=11 replay exposed
+  Darwin's single-read limit.
+- `MEASURED`: active attempt `attempt-20260815T000526Z` completed in 34.862314
+  wall seconds. The logger patch SHA-256 remains
+  `49ce5d772ce6dfcb986b7185ec0e7c14d27681126d4dd703bb4ae259cafcdc42`.
+  The loader-only patch SHA-256 is
+  `57b5a0989f937100c71225d34fc609bcb66f409784bd3bee79481c74c68cd848`;
+  patched `Main.hs` SHA-256 is
+  `5b5eac41da01cd9e8bb53ce38bf1ec5419a9b5216a97ab44e5ff1c54e426e425`.
+  The generated Cargo lock remains unchanged. Rust binary SHA-256 is
+  `ffb04c8e8951ef399d58da911daa7be01c6266fdb4e03089aa4d2bd86f42756b`;
+  checked-pipeline binary SHA-256 is
+  `4cd30511f73e7d7f6f3f7bc4083d84b37c0678f2156f85fcbfa186546218a84c`.
+  Active build-manifest SHA-256 is
+  `09007e74a754ca643b8346837573daebc1f7e48edb11817608640abd484ceb84`;
+  log SHA-256 is
+  `8ac675d3076ade550f264b8dffd11dbf2770d3b148117d5ff25418b2fab4ed46`.
 - `ARTIFACT_VERIFIED`: certificate attempt `attempt-20260814T234434Z`
   downloaded the Zenodo object in 282.576548 wall seconds. The compressed
   artifact is exactly 1,247,864,564 bytes with MD5
@@ -90,3 +107,9 @@ the representation mismatch. The corrected parser accepts Haskell
 `Just`/`Nothing` and documented `Some`/`None`, requires exactly one result line,
 normalizes only the constructor, and records the raw line in subsequent
 results.
+
+Run `b3-20260815T000326Z` passed n=9 and its corrupted-certificate rejection,
+then the n=11 loader returned `hGetBuf: invalid argument` with only 6 MiB peak
+RSS in 0.30 seconds. This proves the checked logic did not run. The second
+patch changes only the unverified file-read strategy from one regular-file read
+to bounded lazy chunks followed by reconstruction of the same strict bytes.

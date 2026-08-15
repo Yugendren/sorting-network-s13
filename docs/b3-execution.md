@@ -41,6 +41,15 @@ generated resolution, verifies it with the active build, and copies that small
 lock file into scored evidence. This is an execution identity record, not a
 claim that the author originally used those transitive package releases.
 
+The legacy strict `ByteString.readFile` path asks Darwin for one read as large
+as a regular file. The 3,068,651,498-byte certificate exceeds Darwin's single
+`read(2)` limit, producing `EINVAL` before parsing. A second hashed patch changes
+only unverified `checker/snocheck/src/Main.hs`: lazy `ByteString.readFile`
+performs bounded reads, then `toStrict` reconstructs the identical byte string
+expected by the unchanged decoder and formally verified checker. A committed
+n=9 certificate regression must return the same `Just (9,25)` through the
+rebuilt binary. The gate still hashes the n=11 bytes before and after replay.
+
 The Zenodo file is downloaded resumably to `.cache/certificates`. Its frozen
 compressed size (1,247,864,564 bytes) and MD5 are checked before it is renamed,
 then its decompressed SHA-256 is checked against the digest published by the
