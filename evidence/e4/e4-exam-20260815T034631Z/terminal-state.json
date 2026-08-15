@@ -1,0 +1,5 @@
+{
+  "gate_decision": "E4_FAIL",
+  "next_stage": "terminal_report",
+  "terminal_goal_verdict_pending": true
+}

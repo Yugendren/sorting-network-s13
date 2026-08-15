@@ -1,0 +1,16 @@
+{
+  "cpu_limit_seconds": 1800,
+  "cpu_seconds": 33.25,
+  "exit_code": 0,
+  "memory_limit_bytes": 4294967296,
+  "peak_rss_bytes": 17137664,
+  "status": "PASS",
+  "stderr_sha256": "dcae796b739f14ce71630c622b73ff3cef2430b5dbe2d63408ae82755f062d97",
+  "stdout_sha256": "b7f890c0b6d7c37c4d9700853e3c3732e3d7ca9e9a9284fdc06213cf704de013",
+  "system_seconds": 0.11,
+  "time_peak_rss_bytes": 15925248,
+  "time_real_seconds": 33.27,
+  "user_seconds": 33.14,
+  "wall_limit_seconds": 1800,
+  "wall_seconds": 33.359468
+}

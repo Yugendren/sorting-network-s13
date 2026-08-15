@@ -1,0 +1,244 @@
+{
+  "best_size": 46,
+  "candidate_path": "evidence/e4/e4-exam-20260815T034631Z/runs/seed-34-1241096891/frozen_mericanii_v2/candidate.sortnet",
+  "candidate_sha256": "918b8da8cdf9eae15fc4e859965b56e1da9f6dba87dd3d8eb2221feddbfaba7f",
+  "comparator_sequence": [
+    [
+      2,
+      8
+    ],
+    [
+      4,
+      10
+    ],
+    [
+      0,
+      11
+    ],
+    [
+      1,
+      12
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      0,
+      3
+    ],
+    [
+      9,
+      12
+    ],
+    [
+      2,
+      4
+    ],
+    [
+      8,
+      10
+    ],
+    [
+      1,
+      7
+    ],
+    [
+      5,
+      11
+    ],
+    [
+      2,
+      6
+    ],
+    [
+      6,
+      10
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      11,
+      12
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      10,
+      12
+    ],
+    [
+      1,
+      6
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      4,
+      9
+    ],
+    [
+      6,
+      11
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      3,
+      8
+    ],
+    [
+      5,
+      9
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      9,
+      11
+    ],
+    [
+      2,
+      4
+    ],
+    [
+      5,
+      7
+    ],
+    [
+      8,
+      10
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      4,
+      6
+    ],
+    [
+      5,
+      8
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      5,
+      6
+    ]
+  ],
+  "evaluations": 50200,
+  "generation": 500,
+  "inference_stats": {
+    "rank_calls": 50200,
+    "rank_nanoseconds": 14506744540,
+    "schema_version": "s13-mericanii-inference-stats/v1",
+    "score_calls": 385551,
+    "score_nanoseconds": 685144005,
+    "selected_proposal_histogram": [
+      1704,
+      402,
+      2600,
+      188,
+      4695,
+      804,
+      39765,
+      42
+    ]
+  },
+  "method": "frozen_mericanii_v2",
+  "milestone_path": "evidence/e4/e4-exam-20260815T034631Z/runs/seed-34-1241096891/frozen_mericanii_v2/milestone_g500.obm.gz",
+  "milestone_sha256": "73d578c49dec95aa2bb7afb9eba969aa8021f4ade1de982603f7c2fc94df6058",
+  "ordinal": 34,
+  "phase": "exam",
+  "resource": {
+    "cpu_limit_seconds": 1800,
+    "cpu_seconds": 32.800000000000004,
+    "exit_code": 0,
+    "memory_limit_bytes": 4294967296,
+    "peak_rss_bytes": 17137664,
+    "status": "PASS",
+    "stderr_sha256": "84742771b84023647ec32bb1e9acd912ac233a0ddc7d2d6dbf2fc2c83a3bf1df",
+    "stdout_sha256": "2b73e720b32cd169213b523a42a41f22ce336742ba81f8a6c7749aacf2d7eb8f",
+    "system_seconds": 0.13,
+    "time_peak_rss_bytes": 15925248,
+    "time_real_seconds": 32.82,
+    "user_seconds": 32.67,
+    "wall_limit_seconds": 1800,
+    "wall_seconds": 32.93292
+  },
+  "schema_version": "s13-e4-attempt/v1",
+  "seed": 1241096891,
+  "status": "PASS",
+  "success45": false,
+  "verification": {
+    "artifact_sha256": "918b8da8cdf9eae15fc4e859965b56e1da9f6dba87dd3d8eb2221feddbfaba7f",
+    "candidate_checksum": "49720988e43a50cad1fec4aa03280b26f8feae32c23d09d0a485f515b2eacb0f",
+    "comparators": 46,
+    "verifier_a": "ACCEPT",
+    "verifier_a_report_sha256": "dfe67b96da700ecf27389bd3018f663bb63aa0a644d0ad382e50825a25384bc3",
+    "verifier_b": "ACCEPT",
+    "verifier_b_report_sha256": "f0a6ab442d8cd3f352712e383bb38d805e46c95ef0adf5ed787da855252a4f9b"
+  }
+}

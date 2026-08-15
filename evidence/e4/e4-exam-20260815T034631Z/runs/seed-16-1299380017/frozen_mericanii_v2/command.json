@@ -1,0 +1,61 @@
+{
+  "command": [
+    "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/bin/sorting",
+    "-OBconf=/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf",
+    "-OBec.pop.size=200",
+    "-OBec.rand.seed=1299380017",
+    "-OBec.term.maxgen=500",
+    "-OBsn.init.numinputs=13",
+    "-OBsn.init.filter=0:21",
+    "-OBsn.init.initfuncs=1",
+    "-OBsn.eval.compfit=1",
+    "-OBsn.estimate.frac=0.5",
+    "-OBsn.estimate.prob=0.5",
+    "-OBsn.estimate.gtrun=1",
+    "-OBsn.mutation.mksym=1",
+    "-OBms.write.interval=0",
+    "-OBms.write.compress=1",
+    "-OBms.write.prefix=milestone",
+    "-OBlg.console.level=2",
+    "-OBlg.file.level=3",
+    "-OBlg.file.name=beagle.log"
+  ],
+  "cwd": "evidence/e4/e4-exam-20260815T034631Z/runs/seed-16-1299380017/frozen_mericanii_v2",
+  "environment_overrides": {
+    "MERICANII_INFERENCE_STATS_PATH": "/Users/yugendren/experiments/sorting_network_s13/evidence/e4/e4-exam-20260815T034631Z/runs/seed-16-1299380017/frozen_mericanii_v2/inference-stats.json"
+  },
+  "parent_environment_allowlist": [
+    "PATH",
+    "TMPDIR",
+    "USER",
+    "LOGNAME",
+    "SHELL"
+  ],
+  "wrapped_command": [
+    "/usr/bin/time",
+    "-l",
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/yugendren/experiments/sorting_network_s13/tools/run_with_limits.py",
+    "--cpu-seconds",
+    "1800",
+    "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/bin/sorting",
+    "-OBconf=/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf",
+    "-OBec.pop.size=200",
+    "-OBec.rand.seed=1299380017",
+    "-OBec.term.maxgen=500",
+    "-OBsn.init.numinputs=13",
+    "-OBsn.init.filter=0:21",
+    "-OBsn.init.initfuncs=1",
+    "-OBsn.eval.compfit=1",
+    "-OBsn.estimate.frac=0.5",
+    "-OBsn.estimate.prob=0.5",
+    "-OBsn.estimate.gtrun=1",
+    "-OBsn.mutation.mksym=1",
+    "-OBms.write.interval=0",
+    "-OBms.write.compress=1",
+    "-OBms.write.prefix=milestone",
+    "-OBlg.console.level=2",
+    "-OBlg.file.level=3",
+    "-OBlg.file.name=beagle.log"
+  ]
+}

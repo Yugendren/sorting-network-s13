@@ -1,0 +1,9 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/e4_integrity_rebuild.py",
+    "--run-id",
+    "e4-exam-20260815T034631Z"
+  ],
+  "cwd": "/Users/yugendren/experiments/sorting_network_s13"
+}

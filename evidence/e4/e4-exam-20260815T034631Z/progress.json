@@ -1,0 +1,1085 @@
+{
+  "completed": [
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 1,
+      "result_sha256": "7df50cf89cd6d4becad1d7d7036d1bd70c85818890a9f97d04ec9503dfbaeb48",
+      "seed": 130188847,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 1,
+      "result_sha256": "8c0b5db5754d4ffc1d8fa95e455abfd83adbb6108b478aeffec5cc7ee79157cd",
+      "seed": 130188847,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 2,
+      "result_sha256": "729dfcc5d7df69d0f6a0e643f3004e82dbe7dcdd74e3c92dfe0359f9c928e3a8",
+      "seed": 537458764,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 2,
+      "result_sha256": "155b1a95cbaa2d3e493422b0a7637144cdb287990c1789de9b8eecefde0a3dfe",
+      "seed": 537458764,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 3,
+      "result_sha256": "f5e324512bb7e4d1b12cf11040f83107c9e6e33b2eecfc1b9e5e01d6b993732c",
+      "seed": 874859405,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 3,
+      "result_sha256": "37c21a9bf3df61e1d4e9d3ed40d128aeb6eeba8d1ace98aaf8f658f6c6ade6f1",
+      "seed": 874859405,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 4,
+      "result_sha256": "382d1502968f97fb6c7eb82acc8980bc1ac1b3a6f2280da561abfc6ec9905a7c",
+      "seed": 1154909215,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 4,
+      "result_sha256": "19cf864b44c8560a99fad2262f74214f624aa66e58eb7514df739557a98c66ed",
+      "seed": 1154909215,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 5,
+      "result_sha256": "9fda3ce60e7200ceb36767b5183a2eec21c39805fc1755641be14f1af34ceb2a",
+      "seed": 104651114,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 5,
+      "result_sha256": "c00e39a40c3f19f6618afccc1835dc7dc98cadc2b0bb6a0f7d22d3927ea30d88",
+      "seed": 104651114,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 6,
+      "result_sha256": "df0abe6d226f2148eea5e43ebb0a9598f2bd0b0dea26a105761a32529198a8b3",
+      "seed": 252103815,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 6,
+      "result_sha256": "bdcc945013f75bc69bd2ba3c3e816a9d8d682b0556e76cf6ce6e7c31e4e186ac",
+      "seed": 252103815,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 7,
+      "result_sha256": "56b37a00ae9257d04c10aa6e0283f78f0e8564cd4a5346a088c0d64abb39c54e",
+      "seed": 1753459311,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 7,
+      "result_sha256": "75d91262aaf0d75fcd7bf859184effc212bdafaa6d969d03db33ae9b5548479b",
+      "seed": 1753459311,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 8,
+      "result_sha256": "a0669336350b9f518636640d5b28313af042ff1faef3b5e985fadcd7bf4c7bcb",
+      "seed": 1985200550,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 8,
+      "result_sha256": "7ba9c112d10d023c41104b230653909f818c01529a095bfb54f675f4cd5afd5b",
+      "seed": 1985200550,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 9,
+      "result_sha256": "038665eba8359a8664d4e085cfb179c151cbbbf9d0cd984965c83bd2b169895d",
+      "seed": 1337844944,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 9,
+      "result_sha256": "b552879d6bfb6c0c129d2f48061e82ad76e75784cd0de18848fd0978e42adb51",
+      "seed": 1337844944,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 10,
+      "result_sha256": "79ee2df02f46b08519926c61aadf85904a63521fc0968b753ab7b842f92eb1f4",
+      "seed": 1127971196,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 10,
+      "result_sha256": "25166f03dc76157448574c2926496a61cbce683b78eaf176008bb367a0a79de4",
+      "seed": 1127971196,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 11,
+      "result_sha256": "d8e9095cc014c0cf8910a081ec62fd6be44eebef698e630149195b6cd4f23810",
+      "seed": 309190520,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 11,
+      "result_sha256": "f081ac80c051da462e6e7950816697482cf6cf2248e8cda67b5e06890c063ebc",
+      "seed": 309190520,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 12,
+      "result_sha256": "625eaabce3fb448281ffb4b5924eccbdf86af2bb31f7ac1b048ac9aacedede3e",
+      "seed": 742384021,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 12,
+      "result_sha256": "982d7f6845722ed40ca3b89adb1fa6804c2526422bad23432b68e2c73c4d27c4",
+      "seed": 742384021,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 13,
+      "result_sha256": "c54ee666bbddaf8c212ef54a70a2f495739f9d4d3f1456c1c0e3f8766900c10f",
+      "seed": 1345529701,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 13,
+      "result_sha256": "8524344eb24dde724cab550e436079d208890c2307592563df14896b69d8ef31",
+      "seed": 1345529701,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 14,
+      "result_sha256": "aa901ad6285f37aa03faa3d9654b1478b9cd588ebc556d5a5d99cf8bcc58e574",
+      "seed": 649008375,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 14,
+      "result_sha256": "feadb26eacd799c62ad4145bc8e8ed7c3b6deffccd0cdbe22363addd629b1b95",
+      "seed": 649008375,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 15,
+      "result_sha256": "396aa9158db2e7546abf1d6973f9aae6af86b76764aa4a5d3a66fa8f45d95928",
+      "seed": 1708309951,
+      "success45": false
+    },
+    {
+      "best_size": 45,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 15,
+      "result_sha256": "da329d7930a44818b57db904362898cb0d4337fca67058fc28e2c086bc5b86a3",
+      "seed": 1708309951,
+      "success45": true
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 16,
+      "result_sha256": "07fe7c80edf156e1566862eef265fff8777b22d2a6335dce937df4f37ba6c5b7",
+      "seed": 1299380017,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 16,
+      "result_sha256": "88ae0ba019727e5b63fdfaaffe5268f3b9d19e62aac69757a354e003eb1bc8cc",
+      "seed": 1299380017,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 17,
+      "result_sha256": "8c7c1351c47d5d6ccbc81b6b09803dd66a0e2e2e2d1af885be01262ae7c33dd2",
+      "seed": 1724641247,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 17,
+      "result_sha256": "af13c6997310e84fbe26d5202bcd718b1355baa985085ebb1b4bf32e4a50025c",
+      "seed": 1724641247,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 18,
+      "result_sha256": "ec05c1c80838faeaa4752cbdf52376b8031c900d81ffd6ce3b894bc8011a6c1c",
+      "seed": 837946137,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 18,
+      "result_sha256": "56155ca73c77815212a43d2522f242d0cc00628df51a973edc1c4b4a02bcd5dd",
+      "seed": 837946137,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 19,
+      "result_sha256": "c61e26b1c605ba0f8a806ff59e669b229bf12f669825a482aea20120af34e960",
+      "seed": 1599563688,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 19,
+      "result_sha256": "ef7ce8b9dbca2a3d5c4fe728c0b474c28326a7b29599fb6a945ec25e63253229",
+      "seed": 1599563688,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 20,
+      "result_sha256": "56c44aea52b65410a635c4b96c0fa28125532424d4d8840e536871916f8a5803",
+      "seed": 425695314,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 20,
+      "result_sha256": "008062f5a6e9a66723f2b159ccd3a270a921b1d36d97654ba72406adb2f2872d",
+      "seed": 425695314,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 21,
+      "result_sha256": "eb44fea8128fad955b3c4d5cd2a6f979f5d80177fd6115e96671e8fe7ff0b6c1",
+      "seed": 1571111281,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 21,
+      "result_sha256": "22cce61a864f77599515dcb7344f8650c74b403257134b5b934541bc6e85fede",
+      "seed": 1571111281,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 22,
+      "result_sha256": "483f86528f5ac212d96f88755a53d543457b2b9e1ada54527792c8ef92f24134",
+      "seed": 754396234,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 22,
+      "result_sha256": "ccc50910260b5c99c39d41f20e3699ae3225f49272ea7059aed8d8af80329c59",
+      "seed": 754396234,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 23,
+      "result_sha256": "1f2239a4298140e4ef22c0d94e631c1a5a3f9916836496da3a3598ff8b448171",
+      "seed": 648149119,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 23,
+      "result_sha256": "d34b472f0617e0b7c6085a4e177469b453776a69f3a08c06058768fc36761989",
+      "seed": 648149119,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 24,
+      "result_sha256": "5855ce9ed060ca661e6f5a81be4b183b4fb21ed9cef730f49cfff801013de40f",
+      "seed": 1073359152,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 24,
+      "result_sha256": "b39246f6b32fb3b02eafb4d8d17c1bc6bf24dc06e15d9bbe64a698daaf4fc1e3",
+      "seed": 1073359152,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 25,
+      "result_sha256": "56c741832f7af9478a6c898017c286d11c5e8ef8d35fe951ceeacac97a799378",
+      "seed": 929647190,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 25,
+      "result_sha256": "3ee597042c43460e940c521705e977bda8f4f55822203b9ffecf145ceed3b067",
+      "seed": 929647190,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 26,
+      "result_sha256": "e67c54a97381df298561dd8a7cd50ba5e2d23c42bfd498d8cfbab915c253ad5f",
+      "seed": 606492659,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 26,
+      "result_sha256": "d5d86d9b68477f8892f514fe2df46951d203475189dba9f153693e41a0b32de9",
+      "seed": 606492659,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 27,
+      "result_sha256": "84b65365eab5beb0bac1829b327de84a2c15ef6a67e331d3254c8e21a4d67297",
+      "seed": 1796157188,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 27,
+      "result_sha256": "eab32ce5adb46c84e501df8d7dff05ce9b0e8619fa898a393689b5c506dfb016",
+      "seed": 1796157188,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 28,
+      "result_sha256": "1382026ea8efa4d837ab349681dd6ddadd51cb2b0791ed3cba072839538d1d21",
+      "seed": 1393557639,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 28,
+      "result_sha256": "ae01f047f048a91070425ea7349b0c2e664f18db471ef689ffe521611d14128e",
+      "seed": 1393557639,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 29,
+      "result_sha256": "f760aff846409d4aa41ca78369f8a0ff7525a25617fc112256ed3acf680e0dc2",
+      "seed": 1470478131,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 29,
+      "result_sha256": "d8da7cc2ad04f20fcddb3c4aea9df0cb99d7f774a604bbacaf452292f1c441d1",
+      "seed": 1470478131,
+      "success45": false
+    },
+    {
+      "best_size": 45,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 30,
+      "result_sha256": "150dff64e4384e6bc267ec48b0903ed4a8b376fd2d9252461ecce3001c77031d",
+      "seed": 2026112155,
+      "success45": true
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 30,
+      "result_sha256": "b037be897ed53060ed78d7051a9c155679926978f4d97dcd70b54a9461aec20e",
+      "seed": 2026112155,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 31,
+      "result_sha256": "302b4454b25befbdc4549bdd918e979fd0e71f9541d157963040d65ccd43bdd2",
+      "seed": 1493004438,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 31,
+      "result_sha256": "5ab98783c1ffceedc9657e2b818cddda40462ca683b34093efa4307977151841",
+      "seed": 1493004438,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 32,
+      "result_sha256": "b2f1e0d0842498faaa8dc20bb6b73768d3fe170be2ec571ecee828abecb74873",
+      "seed": 54848151,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 32,
+      "result_sha256": "63b9bce95aa5126d53bf01be36b7c5e79bb8d93992cc1b82b4b84e8cd656b189",
+      "seed": 54848151,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 33,
+      "result_sha256": "7d9ae3b529d9efb67c96e825d861f6bbc33f6ad41203cd7a2e698f3bba5d62d7",
+      "seed": 56444445,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 33,
+      "result_sha256": "4d14f6a3baf2706f66039190c1549d958882c43256091d44da32e03497a8a501",
+      "seed": 56444445,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 34,
+      "result_sha256": "b9c5444dd2b05440aeda8ccbd137d9c6a23908c9e37a1598ead74c59656cc8ce",
+      "seed": 1241096891,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 34,
+      "result_sha256": "6f8609a028dcf4d437b139acd797c302a0f931cfc2e3881c090740ed06d50177",
+      "seed": 1241096891,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 35,
+      "result_sha256": "b3daa7412c962938f4b2b6521e7a17c46ed3a08141969f3fbbcbe42a89100ae9",
+      "seed": 710548898,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 35,
+      "result_sha256": "b239cb01ac2502be1df57be38c35d5770eb31d899cc2d0bfd99019c4f890036c",
+      "seed": 710548898,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 36,
+      "result_sha256": "03741f79b1b779824ffc8aec138b2778f5e7614c027891fa9f283caaa7d96dea",
+      "seed": 1371411087,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 36,
+      "result_sha256": "b1ed06fc00a77c8997cd003468e965606afc55e00213bb4bbe3be0ae9405b5cb",
+      "seed": 1371411087,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 37,
+      "result_sha256": "4ba4f7a0df9fbcf65c3cefec636d1cd60f57b32988748a27eef42827d231aaee",
+      "seed": 2088332683,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 37,
+      "result_sha256": "1413d8bd6245ccdc79cde1274efe142ce1e0db0ec0b8ad12153a0c95b879ba08",
+      "seed": 2088332683,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 38,
+      "result_sha256": "97d51d2c0a4381f514561e364c34e069729dd8658ea22211ef53d87ae6cf7419",
+      "seed": 852008742,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 38,
+      "result_sha256": "8bce01480e796cab095fd122b93dafb2fe3675dd7ad9a6e041c19d23c0984305",
+      "seed": 852008742,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 39,
+      "result_sha256": "e70afb6c27f4f2186c3824067e3bc11f2140d9e4aba1077e35ef2f4108f99132",
+      "seed": 2028087844,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 39,
+      "result_sha256": "a2d19c7163be67ed3d43aeb851c189be8dc26a91bf474a1bce3ec1a61ab3f658",
+      "seed": 2028087844,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 40,
+      "result_sha256": "d85ba2d1675bc8919c6aca439a4993efd8e8553d72b3954251c2baf7856eebd0",
+      "seed": 1096207646,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 40,
+      "result_sha256": "f898a3e9e43cd221d6d6ecfe9fcc90ead94825363267ad7cdcedd49f3c9bc7bd",
+      "seed": 1096207646,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 41,
+      "result_sha256": "acf1c3372c7424f7f8aad9934cd65739782f08bb521f6de523705d5f49a0b567",
+      "seed": 665692908,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 41,
+      "result_sha256": "e10ec421902347a2be0d12325cddbba203948fd34f74b141e37c69d4023cd537",
+      "seed": 665692908,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 42,
+      "result_sha256": "b97167d305bcc4ebf9592b5f19269c1afd4dbf5cfdfb21d4a81d662f72436090",
+      "seed": 999353783,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 42,
+      "result_sha256": "2b9a8919ab03abc1741ee0b0c39394b0442cfd309392f30d11f026c5776e2f90",
+      "seed": 999353783,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 43,
+      "result_sha256": "479136a1b84f29665f1fddd11ab0f47758d3ecb9c7d1232dd37731ae9bbbe6d9",
+      "seed": 1756887738,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 43,
+      "result_sha256": "476f64e0c59538cb902550b0dead5b0c0692ef9c0b9baba164f8e1e5ec08feb1",
+      "seed": 1756887738,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 44,
+      "result_sha256": "e0ab3efdd123f4f8b66605f264183032d8310674077f0791c4f36143765d7502",
+      "seed": 212315403,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 44,
+      "result_sha256": "e74d87faff2775374403c50f027fa6758b3bf474f6c84b50c56ab8ea5fda93a8",
+      "seed": 212315403,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 45,
+      "result_sha256": "627f49bd232ca7b58394a2aa4b36af7d2ed2780e48d73337480e361bb6bda892",
+      "seed": 1494266182,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 45,
+      "result_sha256": "3b1ad34e3bbe8ba558c7ca75cb46691ff515af1b9491bd6611accd9a87e65d34",
+      "seed": 1494266182,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 46,
+      "result_sha256": "183c12419a9b52fd37e356063090b64e58ce2fadf71187eb361c1fd65bfafb9d",
+      "seed": 1098831218,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 46,
+      "result_sha256": "98504474520c2743ee46c0d147cf9a2a7709a3af029a28ac66b209af025c5bfd",
+      "seed": 1098831218,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 47,
+      "result_sha256": "5b5175f34d264dd98d7959976da8cd4be6389a830d891c38852c5f9c0d54421a",
+      "seed": 662955960,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 47,
+      "result_sha256": "9544f4656e25757f8831068f8ffea0d113e6888dde737946992588f6a44e4a4d",
+      "seed": 662955960,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 48,
+      "result_sha256": "8c68c144e7fa90fa033bf4b542677a1cc77dcf679520f4428973d33cbb07cde5",
+      "seed": 64634128,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 48,
+      "result_sha256": "87fc1e23a40e05e0a611dfffb4f6b6f7f495c35c0a715e017dcfdc46d4d0bbfa",
+      "seed": 64634128,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 49,
+      "result_sha256": "dc47052d0943973e0aec5c7117802246fd922c648271049ab301acf03a62ba2f",
+      "seed": 2021753797,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 49,
+      "result_sha256": "739debb9ad98651690cc9a297c51b1d068b4f08a49ca8b36f72293f728c0fc0c",
+      "seed": 2021753797,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 50,
+      "result_sha256": "5f5dae7f0125e56ff2c6f7caa697e6e59119466a22c6b5c6d11db05e5911ddd6",
+      "seed": 1587390717,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 50,
+      "result_sha256": "8e19c25895c626f27ccf80ce38370de971c812697a5d67e3fce0fef8a3587e96",
+      "seed": 1587390717,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 51,
+      "result_sha256": "48917845277c3f9f59e1fb4fcf36b2957275d2a5d9392df962378eaf44db3bae",
+      "seed": 66627002,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 51,
+      "result_sha256": "3ef968064b0141d35fdea3411a42d050e24c4b80d674c5bc0de732f00d476e6d",
+      "seed": 66627002,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 52,
+      "result_sha256": "a662b46db4fff8772b9a5a0d0e4fb422dc3450746306643df65cee35ad141574",
+      "seed": 1083539942,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 52,
+      "result_sha256": "7400f92719169c5b65840b05e5f30eca39c05860747470a542ffcce931acaf68",
+      "seed": 1083539942,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 53,
+      "result_sha256": "6a5953cc61047a48332134d10e9fc9ad05bbe43cc930f5ccf24ef919c5ca4e71",
+      "seed": 709187043,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 53,
+      "result_sha256": "db64a5434f20d8e99ba1aa716642cff120fdd6bdf677b5858f6fd8eddb8b45ed",
+      "seed": 709187043,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 54,
+      "result_sha256": "ec4ebfad8506d85aca6aab531b3c58a14c9f23a716e696f50b98f7f4896efe87",
+      "seed": 1562522203,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 54,
+      "result_sha256": "4213aa403203695402b561da3276b168becf7a8163257879541cdddccf299956",
+      "seed": 1562522203,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 55,
+      "result_sha256": "aa300163b83a6cf2ad679cff1e166046e777d69e6e6c11d16abf0bde66dea339",
+      "seed": 1411665102,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 55,
+      "result_sha256": "2694791cf9865cc98341a10efb774421459bbfc1f44d8a3eb7ba672f04aa35f0",
+      "seed": 1411665102,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 56,
+      "result_sha256": "5790320319a02e651a1b1de20c2983ddd0b38e5e9eb9a238d58c1caf9679b9ea",
+      "seed": 62978616,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 56,
+      "result_sha256": "1a91f3cb5bf74b9261859937c5841b9891392c1065476488f309600382a70a05",
+      "seed": 62978616,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 57,
+      "result_sha256": "478e9963384993d0aa992e56702f2102b6596d260528e2c32c63de65b743ac81",
+      "seed": 1793816582,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 57,
+      "result_sha256": "0616349d055593081e342f5f274c06c6870f74e6a3df02b11cba6b481ff4dc10",
+      "seed": 1793816582,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 58,
+      "result_sha256": "df1e53b81dc238b909f1917f98a00311c0116144c979f55694a7fffc675f4897",
+      "seed": 1933742509,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 58,
+      "result_sha256": "d9826fe21ef6fde656d98955b772d32955be24a7597faa1a541bf8588462fb03",
+      "seed": 1933742509,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 59,
+      "result_sha256": "9ff613708ddc2c5c593d214f63eb98c231747d237ce6762fa232ff73f70d5638",
+      "seed": 340256295,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 59,
+      "result_sha256": "fc084e489ea046f53f4374e66ce59ebad4a9bc48ea3862738327f670c3f1595d",
+      "seed": 340256295,
+      "success45": false
+    },
+    {
+      "best_size": 46,
+      "evaluations": 50200,
+      "method": "frozen_senso",
+      "ordinal": 60,
+      "result_sha256": "f9cd5e776c1e532f3a306642f0d0d5764620e0dc4319b986f344ed3f9ce003bd",
+      "seed": 578296042,
+      "success45": false
+    },
+    {
+      "best_size": 47,
+      "evaluations": 50200,
+      "method": "frozen_mericanii_v2",
+      "ordinal": 60,
+      "result_sha256": "4ad0b702ddc5b8127d419907c526af293e9d9a99e72affafe7847ed86520ab15",
+      "seed": 578296042,
+      "success45": false
+    }
+  ],
+  "expected_attempts": 120
+}

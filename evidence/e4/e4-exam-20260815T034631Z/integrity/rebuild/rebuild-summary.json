@@ -1,0 +1,22 @@
+{
+  "mericanii_v2": {
+    "binary_path": ".build/e4-integrity/e4-exam-20260815T034631Z/mericanii-v2/attempt-20260815T044017Z/bin/sorting",
+    "binary_sha256": "73b8718050555d64f91163b9bb37f64f815316e9046d384f11df78b29345dafb",
+    "manifest_path": ".build/e4-integrity/e4-exam-20260815T034631Z/mericanii-v2/attempt-20260815T044017Z/build-manifest.json",
+    "manifest_sha256": "370e4b3f76bc94a30751b980496c2da53c0b0583a4310c07970cd8b4ad801319",
+    "method_patch_sha256": "f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132",
+    "model_header_sha256": "b2caca36602a0fb86ff1f3cb6310ebdd2f3e1b1c420667c426034161334fc984",
+    "source_path": ".build/e4-integrity/e4-exam-20260815T034631Z/mericanii-v2/attempt-20260815T044017Z/source/symmetry-1.1"
+  },
+  "root": ".build/e4-integrity/e4-exam-20260815T034631Z",
+  "run_id": "e4-exam-20260815T034631Z",
+  "schema_version": "s13-e4-integrity-rebuild/v1",
+  "senso": {
+    "binary_path": ".build/e4-integrity/e4-exam-20260815T034631Z/senso/attempt-20260815T043907Z/bin/sorting",
+    "binary_sha256": "4b60fe492430d843cfeda771c653219bcb101815f6bd443abaa468cc56681715",
+    "manifest_path": ".build/e4-integrity/e4-exam-20260815T034631Z/senso/attempt-20260815T043907Z/build-manifest.json",
+    "manifest_sha256": "ff823d0e15d5b9cb67e3a946f3699f83cfc29b937ac61981cae423bba3cf1800",
+    "source_path": ".build/e4-integrity/e4-exam-20260815T034631Z/senso/attempt-20260815T043907Z/source/symmetry-1.1"
+  },
+  "status": "PASS"
+}

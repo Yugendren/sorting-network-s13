@@ -1,0 +1,8 @@
+{
+  "every_claimed_candidate_dual_verified": true,
+  "integrity_replay": true,
+  "mericanii_at_least_12_of_60": false,
+  "mericanii_at_least_twice_senso": false,
+  "mericanii_no_more_evaluations_per_seed": true,
+  "no_holdout_data_used_for_tuning": true
+}

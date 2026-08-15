@@ -1,0 +1,20 @@
+{
+  "change_manifest_sha256": "06ae75520aefde309e7a60a60cb0af84b20f23b3727b8c781b8cd7a5788bb3ac",
+  "config_sha256": "8cfe3a2cdc2095a8477a39a196407861473fcf7530d75d0570bf9fe38ebda3fc",
+  "contract_sha256": "6d8e9c3d0c4719bbd4c28bf55bc068ead10407e4a5928978afc55be338e503e6",
+  "e3_training_rows_used": 0,
+  "e4_training_rows_used": 0,
+  "evidence_replay": "verified 18 immutable evidence inventories and manifests",
+  "exam_config_sha256": "9c180ea2a0b3d3bd6763cabb3aba1130f1f32339c1d405e4664076a0ad7101d9",
+  "holdout_outcomes_observed_before_start": 0,
+  "method_build_manifest_sha256": "96ffbf06fb3135e636b283248d9daef72e59d851136acdc6c0ced0c02a7afd92",
+  "model_checkpoint_sha256": "60af80b18701f0c93276134b95e8f7ce554c20163020b03ec2d32d8ffe53383f",
+  "seed_manifest_sha256": "b408752e404b3cfa2fb55b3fbaac5377e098128ddf3f04bbe43d6821d5a77b82",
+  "selected_model_sha256": "7d3311d6d2bcc121423005328c010872198bd084b11c98e5a55a9165cd281ef8",
+  "senso_build_manifest_sha256": "24f47b42a966ed1b53553d4a77aca305af5cdd19ed12f44f0a8238210e5078e4",
+  "target_44_used": false,
+  "training_manifest_sha256": "0128da00420a5365d4e39c16b3020392be405b91de3109cfc0090f2c80b1f95f",
+  "verifier_a_sha256": "b420583606173d9f892e48e5656580792d2a4a2aa27a39f9a599ff5770e9ab2e",
+  "verifier_b_binary_sha256": "212805ebb2f71bfdc3a470a0e873167c6494fea0cea9829a8db889298368e3a2",
+  "verifier_b_source_sha256": "a07336fb4d4d1b8c7b275fd00fe65173df3fd8cb4f9ebd017cc90e1ecea1ee2f"
+}

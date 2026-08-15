@@ -1,0 +1,227 @@
+{
+  "best_size": 46,
+  "candidate_path": "evidence/e4/e4-exam-20260815T034631Z/runs/seed-06-252103815/frozen_senso/candidate.sortnet",
+  "candidate_sha256": "c8cdf292a533d010499667d7eda6231150b25b5c52329e8e000548aa67f8fd6a",
+  "comparator_sequence": [
+    [
+      1,
+      5
+    ],
+    [
+      7,
+      11
+    ],
+    [
+      0,
+      4
+    ],
+    [
+      8,
+      12
+    ],
+    [
+      2,
+      9
+    ],
+    [
+      3,
+      10
+    ],
+    [
+      0,
+      8
+    ],
+    [
+      4,
+      12
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      5,
+      9
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      11,
+      12
+    ],
+    [
+      3,
+      6
+    ],
+    [
+      1,
+      6
+    ],
+    [
+      6,
+      9
+    ],
+    [
+      0,
+      3
+    ],
+    [
+      6,
+      11
+    ],
+    [
+      9,
+      12
+    ],
+    [
+      7,
+      10
+    ],
+    [
+      2,
+      5
+    ],
+    [
+      4,
+      8
+    ],
+    [
+      2,
+      4
+    ],
+    [
+      8,
+      10
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      2,
+      7
+    ],
+    [
+      5,
+      10
+    ],
+    [
+      9,
+      11
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      5,
+      8
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      4,
+      6
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      5,
+      7
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      6,
+      7
+    ]
+  ],
+  "evaluations": 50200,
+  "generation": 500,
+  "method": "frozen_senso",
+  "milestone_path": "evidence/e4/e4-exam-20260815T034631Z/runs/seed-06-252103815/frozen_senso/milestone_g500.obm.gz",
+  "milestone_sha256": "f627f5d2355647d47ce9d434ea0db1de9206fb32a113f3d3602924a6753e371c",
+  "ordinal": 6,
+  "phase": "exam",
+  "resource": {
+    "cpu_limit_seconds": 1800,
+    "cpu_seconds": 18.74,
+    "exit_code": 0,
+    "memory_limit_bytes": 4294967296,
+    "peak_rss_bytes": 17055744,
+    "status": "PASS",
+    "stderr_sha256": "6bb212a0cb0063d6488ec73dfab5b4f2de30fc33bb0bc965d51737dbd8d0564f",
+    "stdout_sha256": "0e855ac9f681639e63adb5cd51e9db95d5d8739ff1fa66fb5f0b0f1a683bb49e",
+    "system_seconds": 0.08,
+    "time_peak_rss_bytes": 16089088,
+    "time_real_seconds": 18.76,
+    "user_seconds": 18.66,
+    "wall_limit_seconds": 1800,
+    "wall_seconds": 18.851398
+  },
+  "schema_version": "s13-e4-attempt/v1",
+  "seed": 252103815,
+  "status": "PASS",
+  "success45": false,
+  "verification": {
+    "artifact_sha256": "c8cdf292a533d010499667d7eda6231150b25b5c52329e8e000548aa67f8fd6a",
+    "candidate_checksum": "f39ddf33870dcc8ef27857df1013d459c7d1d5b8bda91eb24abe1443b84ab00d",
+    "comparators": 46,
+    "verifier_a": "ACCEPT",
+    "verifier_a_report_sha256": "87e753a0964bfd073fdd68c0a8e468b05633277873028e3eb0a002124edde82f",
+    "verifier_b": "ACCEPT",
+    "verifier_b_report_sha256": "d183e1c1729f5fb88894a2d4be632393199f021532b839e0c54eee3f5a19787e"
+  }
+}

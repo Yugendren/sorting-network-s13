@@ -21,8 +21,8 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 ## Current truth
 
 - State: `ACTIVE`.
-- Active milestone: single-use E4 V2 matched exam. Version 1 failed E2;
-  neither frozen matched-exam holdout has been run.
+- Active milestone: terminal reporting after a valid E4 V2 exam failure; E5 is
+  forbidden and no further search is authorized.
 - Frozen predecessor report:
   `evidence/b4/b4-20260815T014232Z/baseline-report.md`.
 - Predecessor report SHA-256:
@@ -46,7 +46,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   otherwise frozen.
 - Local host: Apple M4, 10 logical cores, 16 GiB RAM; CPU search and inference.
 - Training host: authorized GeForce RTX 3060, 12 GiB; no paid compute.
-- No matched exam or 44-comparator search has begun.
+- E4 matched exam is complete; no 44-comparator search began.
 - E0 PASS: `evidence/e0/e0-20260815T021424Z`, tested source commit
   `da9301bf1c41378bdb6930388d8ac36f86f5d89c`, manifest SHA-256
   `a38832f101d24fbc5430ce8c25b5a343cbbcd8fcedf66c723f8383a588499754`,
@@ -71,12 +71,6 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   model export SHA-256 is
   `eb606f4f6712a1eaa53bde8d36c0c8280c635c73453d22a861112ccf356babb7`;
   calibration AP was 0.003119165.
-- Frozen V1 integration build PASS:
-  `.build/senso-mericanii-v1/attempt-20260815T024633Z`, binary SHA-256
-  `cbdfb957ecca9aa67b2effb6b05889ba2bcff7a97099246e36bee9a85a2d34dc`,
-  integration-patch SHA-256
-  `f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132`.
-  Compiled float32 inference matched all 32 fixture rows exactly.
 - E2 single-use validation materialization completed all 20 seeds and 1,004,000
   rows at `evidence/e2/e2-validation-20260815T030452Z`; aggregate dataset
   SHA-256 is
@@ -100,6 +94,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   calibration concordance was 0.805550041740 and byte-identical model export
   SHA-256 was `7c7ec61f...79e9e6a`.
 - Frozen V2 integration PASS: patch `f2d8fd25...1a132`; binary `382e4a29...7fdf`.
+- E4 V2 exam valid FAIL: `evidence/e4/e4-exam-20260815T034631Z`, tested commit
+  `4881f9a`, manifest `21059f51...20fea9`. SENSO succeeded 2/60; V2 succeeded
+  0/60 with sizes 46 (27) and 47 (33). All 120 attempts were exact-budget and
+  dual-verified; clean rebuild, two success replays, and four sentinels passed.
 
 ## Gate ledger
 
@@ -110,10 +108,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | E1 dataset | COMPLETE | PASS evidence `e1-20260815T022353Z` |
 | E2 method v1 | COMPLETE / FAIL | Concordance 0.446355505360 < 0.5 |
 | E3 matched exam | NOT RUN FOR V1 | E2 prerequisite failed; seeds remain sealed |
-| E4 one repair | ACTIVE | Run the frozen 60-pair exam and integrity replay once |
-| E5 frontier | CONDITIONAL | Only after pass; 100M eval / seven-day maximum |
-| Terminal report | PENDING | One allowed verdict, then stop |
+| E4 one repair | COMPLETE / FAIL | V2 0/60 versus SENSO 2/60; integrity PASS |
+| E5 frontier | SKIPPED / FORBIDDEN | Both permitted versions failed validly |
+| Terminal report | ACTIVE | Issue `METHOD_REJECTED`, then stop |
 
 ## Immediate next action
 
-Commit the verified exam protocol, then execute the single paired E4 exam once.
+Commit the immutable E4 evidence, issue the one canonical terminal report, stop.

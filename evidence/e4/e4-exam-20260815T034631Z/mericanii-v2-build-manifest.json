@@ -1,0 +1,196 @@
+{
+  "archive_path": ".cache/sources/symmetry-1.1.tar.gz",
+  "archive_sha256": "d3e960fa5c7b292e38a3024e76436fec3550baa27de240faa90568da0882b53c",
+  "binary_path": ".build/senso-mericanii-v2/attempt-20260815T032914Z/bin/sorting",
+  "binary_sha256": "382e4a298f56bacf52d633ae80d08d3ede8590f5083e7726cf0a61d54d337fdf",
+  "binary_size_bytes": 2809368,
+  "boost": "boost 1.90.0_1",
+  "build_log_path": ".build/senso-mericanii-v2/attempt-20260815T032914Z/build.log",
+  "build_log_sha256": "8dc4da91ce81b418679756ac6c77c2946fa7c2d868abb200bea6cede49266eab",
+  "commands": [
+    {
+      "command": [
+        "patch",
+        "-p1",
+        "-i",
+        "/Users/yugendren/experiments/sorting_network_s13/tools/patches/symmetry-1.1-macos.patch"
+      ],
+      "cwd": ".build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1",
+      "environment_profile": "portability",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "patch",
+        "-p1",
+        "-i",
+        "/Users/yugendren/experiments/sorting_network_s13/tools/patches/symmetry-1.1-mericanii-instrumentation.patch"
+      ],
+      "cwd": ".build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1",
+      "environment_profile": "instrumentation",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "patch",
+        "-p1",
+        "-i",
+        "/Users/yugendren/experiments/sorting_network_s13/tools/patches/symmetry-1.1-mericanii-v1.patch"
+      ],
+      "cwd": ".build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1",
+      "environment_profile": "mericanii-v2-frozen-v1-integration",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/yugendren/experiments/sorting_network_s13/tools/verify_compiled_model.py",
+        "--header",
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/beagle/beagle/SN/include/beagle/SN/MericaniiModelV1Weights.hpp",
+        "--fixture",
+        "/Users/yugendren/experiments/sorting_network_s13/evidence/e4/e4-train-20260815T032452Z/replay-1/artifacts/model-inference-fixture.json",
+        "--work-dir",
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/compiled-inference-check"
+      ],
+      "cwd": ".",
+      "environment_profile": "compiled-float32-fixture",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "./configure",
+        "--disable-shared",
+        "--prefix=/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/install"
+      ],
+      "cwd": ".build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/beagle",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "make",
+        "-j1"
+      ],
+      "cwd": ".build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/beagle",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "make",
+        "-j1",
+        "install"
+      ],
+      "cwd": ".build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/beagle",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "clang++",
+        "-O2",
+        "-g",
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/experiments/sorting/sorting/main.cpp",
+        "-o",
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/bin/sorting",
+        "-I/opt/homebrew/include",
+        "-I/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/install/include",
+        "-DPACC_ZLIB",
+        "-L/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/install/lib",
+        "-lbeagle-SN",
+        "-lbeagle",
+        "-lz",
+        "-lpacc-math",
+        "-lpacc-xml",
+        "-lpacc-util"
+      ],
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/bin/sorting",
+        "-OBconf=/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1/experiments/sorting/sorting/beagle.conf",
+        "-OBec.pop.size=2",
+        "-OBec.rand.seed=1",
+        "-OBec.term.maxgen=1",
+        "-OBsn.init.numinputs=13",
+        "-OBsn.init.filter=0:21",
+        "-OBsn.init.initfuncs=1",
+        "-OBsn.eval.compfit=1",
+        "-OBsn.estimate.frac=0.5",
+        "-OBsn.estimate.prob=0.5",
+        "-OBsn.estimate.gtrun=1",
+        "-OBsn.mutation.mksym=1",
+        "-OBms.write.interval=0",
+        "-OBms.write.prefix=smoke",
+        "-OBlg.file.name=smoke.log"
+      ],
+      "cwd": ".build/senso-mericanii-v2/attempt-20260815T032914Z/smoke",
+      "environment_profile": "mericanii-v2-frozen-v1-integration-smoke-seed-1",
+      "exit_code": 0
+    }
+  ],
+  "compiled_inference_check": {
+    "binary_sha256": "88ca1acf78e3a1ca9a5f5767c35e2621884da98d132c3e174a8db8ee3749393c",
+    "compile_command": [
+      "clang++",
+      "-std=c++11",
+      "-O2",
+      "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/compiled-inference-check/verify.cpp",
+      "-o",
+      "/Users/yugendren/experiments/sorting_network_s13/.build/senso-mericanii-v2/attempt-20260815T032914Z/compiled-inference-check/verify"
+    ],
+    "fixture_sha256": "0b63002e366c3e55cb9bd1715510de726293b05fa4f9c38cf78314ff7895c95a",
+    "header_sha256": "b2caca36602a0fb86ff1f3cb6310ebdd2f3e1b1c420667c426034161334fc984",
+    "max_absolute_error": 1.7881393432617188e-07,
+    "rows": 32,
+    "schema_version": "s13-compiled-inference-check/v1",
+    "source_sha256": "9ca7dba07d005e361053684a768160da4426b1d527f73775fde525cef09f20a4",
+    "status": "PASS",
+    "tolerance": 0.0001
+  },
+  "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "ended_at": "2026-08-15T03:30:27.124074+00:00",
+  "install_path": ".build/senso-mericanii-v2/attempt-20260815T032914Z/install",
+  "instrumentation_patch_path": "tools/patches/symmetry-1.1-mericanii-instrumentation.patch",
+  "instrumentation_patch_sha256": "1943fec1e73caf46853c0bcef8ba6850c4e27e63a1e9282988e7aa736258c99e",
+  "method_patch_path": "tools/patches/symmetry-1.1-mericanii-v1.patch",
+  "method_patch_sha256": "f2d8fd259f1ceab62e2e41f826f0573feb1d05cdbd4e17f5cf82df9960f1a132",
+  "model_fixture_path": "evidence/e4/e4-train-20260815T032452Z/replay-1/artifacts/model-inference-fixture.json",
+  "model_fixture_sha256": "0b63002e366c3e55cb9bd1715510de726293b05fa4f9c38cf78314ff7895c95a",
+  "model_header_path": "evidence/e4/e4-train-20260815T032452Z/replay-1/artifacts/MericaniiModelV1Weights.hpp",
+  "model_header_sha256": "b2caca36602a0fb86ff1f3cb6310ebdd2f3e1b1c420667c426034161334fc984",
+  "portability_patch_path": "tools/patches/symmetry-1.1-macos.patch",
+  "portability_patch_sha256": "68c264e0b2e95d4ad5d23d64bad447820d673881c6ea7a4b5ad06388c7da3e09",
+  "schema_version": "s13-senso-mericanii-build/v2",
+  "smoke_dataset": {
+    "data_rows": 3,
+    "path": ".build/senso-mericanii-v2/attempt-20260815T032914Z/smoke/dataset.tsv",
+    "sha256": "446cafbffbf3ab58cadc17c2cff16453161b96ed7845e0f91549b8b2eb29c9af"
+  },
+  "smoke_inference_stats": {
+    "path": ".build/senso-mericanii-v2/attempt-20260815T032914Z/smoke/inference-stats.json",
+    "rank_calls": 3,
+    "rank_nanoseconds": 856833,
+    "schema_version": "s13-mericanii-inference-stats/v1",
+    "score_calls": 10,
+    "score_nanoseconds": 28708,
+    "selected_proposal_histogram": [
+      2,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0
+    ],
+    "sha256": "532d4f385391b7dd42ba8fe4ee04f3b0ca8e49759b6b19c7a030863a48d67516"
+  },
+  "smoke_milestone": {
+    "path": ".build/senso-mericanii-v2/attempt-20260815T032914Z/smoke/smoke_g1.obm.gz",
+    "sha256": "80a8b2125da43cd22c7218c44a948ba006befafb4752e8b81fee81d1f8e88726"
+  },
+  "source_path": ".build/senso-mericanii-v2/attempt-20260815T032914Z/source/symmetry-1.1",
+  "started_at": "2026-08-15T03:29:14.751174+00:00",
+  "status": "PASS",
+  "wall_seconds": 72.373718
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": "s13-mericanii-inference-stats/v1",
+  "rank_calls": 50200,
+  "score_calls": 385873,
+  "rank_nanoseconds": 14500853826,
+  "score_nanoseconds": 685769531,
+  "selected_proposal_histogram": [1540, 1151, 1804, 670, 3368, 370, 41276, 21]
+}

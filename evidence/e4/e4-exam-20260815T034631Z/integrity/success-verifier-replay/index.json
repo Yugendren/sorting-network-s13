@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "candidate_path": "evidence/e4/e4-exam-20260815T034631Z/runs/seed-15-1708309951/frozen_senso/candidate.sortnet",
+      "candidate_sha256": "b91471abc3f6bddcf68f3e63ed35f9bdf2a6d5ca3be7fcfe6309f2212262d02a",
+      "method": "frozen_senso",
+      "ordinal": 15,
+      "seed": 1708309951,
+      "verification": {
+        "artifact_sha256": "b91471abc3f6bddcf68f3e63ed35f9bdf2a6d5ca3be7fcfe6309f2212262d02a",
+        "candidate_checksum": "1400c5caf9a2f5c5394b0127190a80453da1da7bd8f6fb760520d7127acf276a",
+        "comparators": 45,
+        "verifier_a": "ACCEPT",
+        "verifier_a_report_sha256": "032ede065feedc9d47ec256b133df230d8938378c4d2edd25ba4aeaa986e62ba",
+        "verifier_b": "ACCEPT",
+        "verifier_b_report_sha256": "2322b43cb780027fd9ceb855d2b8f19ab3f9cdc116750744239dc941d64f096b"
+      }
+    },
+    {
+      "candidate_path": "evidence/e4/e4-exam-20260815T034631Z/runs/seed-30-2026112155/frozen_senso/candidate.sortnet",
+      "candidate_sha256": "50a829fd0caaaa379e8b9415effe67a4b7576fec82970fc5400e1e80a8b88a35",
+      "method": "frozen_senso",
+      "ordinal": 30,
+      "seed": 2026112155,
+      "verification": {
+        "artifact_sha256": "50a829fd0caaaa379e8b9415effe67a4b7576fec82970fc5400e1e80a8b88a35",
+        "candidate_checksum": "0d0e6f6a0f9a6095636b4a422d325d0096705260c7bd7d2966f9336101f433a9",
+        "comparators": 45,
+        "verifier_a": "ACCEPT",
+        "verifier_a_report_sha256": "6dd8777bbfa12ff79fa0e80352d5b9d3be1a81ae24eb9a35e395064b2db177fa",
+        "verifier_b": "ACCEPT",
+        "verifier_b_report_sha256": "0a072c21475801476b0f10ff0fb1c0275b8732cc21b35801b0915dbd5b84e282"
+      }
+    }
+  ],
+  "status": "PASS",
+  "successes_replayed": 2
+}
