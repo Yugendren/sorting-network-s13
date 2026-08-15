@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "tools/e0_method_gate.py"
+  ],
+  "config_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "cpu_seconds": 0.004485,
+  "dirty_at_start": false,
+  "ended_at": "2026-08-15T02:13:47.316871+00:00",
+  "error": "command failed (1): /opt/homebrew/opt/python@3.14/bin/python3.14 tools/evidence_check.py\n/Users/yugendren/experiments/sorting_network_s13/evidence/e0/e0-20260815T021347Z: missing checksums.sha256\n",
+  "gate": "E0",
+  "host": {},
+  "peak_rss_bytes": 23953408,
+  "run_id": "e0-20260815T021347Z",
+  "schema_version": "s13-method-evidence-manifest/v1",
+  "source_commit": "52402ace855594e3459a12a855170c490a380ea9",
+  "started_at": "2026-08-15T02:13:47.119174+00:00",
+  "status": "FAIL",
+  "threads": 1,
+  "wall_seconds": 0.197627
+}

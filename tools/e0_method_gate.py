@@ -205,7 +205,7 @@ def validate_authority_and_predecessor(freeze: dict[str, Any]) -> dict[str, Any]
     untracked = run(["git", "status", "--porcelain", "--untracked-files=all", "--", *evidence_paths])
     if changed or untracked:
         raise InvalidError("B0--B4 evidence differs from the frozen baseline commit")
-    replay = run([sys.executable, "tools/evidence_check.py"])
+    replay = run([sys.executable, "tools/evidence_check.py", "--baseline-only"])
     return {"verified_pins": verified, "evidence_diff": changed, "evidence_status": untracked, "inventory_replay": replay}
 
 

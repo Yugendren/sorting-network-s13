@@ -13,7 +13,9 @@ from typing import Any
 
 
 ROOT = Path("/Users/yugendren/experiments/sorting_network_s13")
-GATES = tuple(f"b{number}" for number in range(5)) + tuple(f"e{number}" for number in range(6))
+BASELINE_GATES = tuple(f"b{number}" for number in range(5))
+METHOD_GATES = tuple(f"e{number}" for number in range(6))
+GATES = BASELINE_GATES + METHOD_GATES
 STATUSES = {"PASS", "FAIL", "TIMEOUT", "CRASH", "INVALID", "BLOCKED"}
 REQUIRED_MANIFEST_KEYS = {
     "schema_version",
@@ -163,9 +165,17 @@ def main() -> int:
         print(f"run only from {ROOT}", file=sys.stderr)
         return 2
 
+    selected_gates = GATES
+    if sys.argv[1:]:
+        if sys.argv[1:] == ["--baseline-only"]:
+            selected_gates = BASELINE_GATES
+        else:
+            print("usage: evidence_check.py [--baseline-only]", file=sys.stderr)
+            return 2
+
     run_dirs: list[Path] = []
     errors: list[str] = []
-    for gate in GATES:
+    for gate in selected_gates:
         gate_dir = ROOT / "evidence" / gate
         if not gate_dir.exists():
             continue

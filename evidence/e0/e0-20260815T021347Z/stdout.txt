@@ -1,0 +1,4 @@
+E0 falsifiable gate: predecessor, status, partitions, method, budgets, and evidence rules are frozen before scores.
+FAIL: command failed (1): /opt/homebrew/opt/python@3.14/bin/python3.14 tools/evidence_check.py
+/Users/yugendren/experiments/sorting_network_s13/evidence/e0/e0-20260815T021347Z: missing checksums.sha256
+

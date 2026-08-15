@@ -14,6 +14,10 @@ def sha256(path: Path) -> str:
 
 
 class EvidenceCheckTests(unittest.TestCase):
+    def test_gate_sets_preserve_baseline_and_add_method_gates(self) -> None:
+        self.assertEqual(evidence_check.BASELINE_GATES, ("b0", "b1", "b2", "b3", "b4"))
+        self.assertEqual(evidence_check.METHOD_GATES, ("e0", "e1", "e2", "e3", "e4", "e5"))
+
     def make_run(self, root: Path, gate: str = "b1") -> Path:
         run = root / gate / "test-run"
         run.mkdir(parents=True)
