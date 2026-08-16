@@ -1,0 +1,54 @@
+{
+  "schema_version": "s13-method-seed-policy/v2",
+  "frozen_at": null,
+  "status": "PENDING_F0_FREEZE",
+
+  "predecessor_policy": "config/experiment-v1/seed-policy.json",
+
+  "partitions": {
+    "development_v1": {
+      "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+      "source": "config/experiment-v1/seeds-development.json",
+      "sha256": "bedd4d38dcb8f6118ef0b64d7c4e0ac5591a2f4e8a6e4c716363a7e06901e7fe",
+      "purpose": "F1 dataset generation (inherited from E1)"
+    },
+    "extra_development_v2": {
+      "status": "PENDING_F0_FREEZE",
+      "candidate_seeds": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
+                          1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020],
+      "purpose": "Group-E diversity seeds; frozen as a binary F0 decision"
+    },
+    "validation_v2": {
+      "status": "PENDING_F0_FREEZE",
+      "purpose": "F2 checkpoint/configuration selection only; no training",
+      "disjoint_from": ["development_v1", "extra_development_v2", "f3_holdout", "f4_holdout"]
+    },
+    "f3_holdout": {
+      "status": "PENDING_F0_FREEZE",
+      "count": 60,
+      "purpose": "Sealed final holdout for F3 matched exam",
+      "disjoint_from": ["development_v1", "extra_development_v2", "validation_v2", "f4_holdout"],
+      "domain_separator": "s13-method-v2-f3-holdout",
+      "note": "Generated and committed at F0 before any F1 data is seen"
+    },
+    "f4_holdout": {
+      "status": "PENDING_F0_FREEZE",
+      "count": 60,
+      "purpose": "Sealed holdout for F4 exam (generated at F0; used only if F3 fails)",
+      "disjoint_from": ["development_v1", "extra_development_v2", "validation_v2", "f3_holdout"],
+      "domain_separator": "s13-method-v2-f4-holdout",
+      "note": "Domain separator committed at F0; seeds revealed only if F3 fails validly"
+    }
+  },
+
+  "derivation": {
+    "method": "deterministic PRNG from domain separator and integer index",
+    "implementation": "tools/seed_policy.py (to be created at F0)"
+  },
+
+  "guardrails": [
+    "Development tools must reject any seed in validation_v2, f3_holdout, or f4_holdout",
+    "Training code must reject any seed not in its declared partition",
+    "Mixing rows from different seeds across partition boundaries is forbidden"
+  ]
+}

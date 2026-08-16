@@ -1,0 +1,75 @@
+{
+  "schema_version": "s13-completion-dataset-config/v2",
+  "status": "PENDING_F0_FREEZE",
+  "frozen_at": null,
+  "predecessor_dataset_config": "config/experiment-v1/dataset-v1.json",
+
+  "source_partitions": {
+    "development_seeds_v1": {
+      "path": "config/experiment-v1/seeds-development.json",
+      "sha256": "bedd4d38dcb8f6118ef0b64d7c4e0ac5591a2f4e8a6e4c716363a7e06901e7fe",
+      "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    },
+    "extra_seeds_group_e": {
+      "status": "PENDING_F0_FREEZE",
+      "description": "Fresh n=13 target-45 seeds to broaden positive-label coverage",
+      "candidate_seeds": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
+                          1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020],
+      "note": "Exact subset frozen at F0 in seeds-development-v2.json; decision is binary and irrevocable"
+    }
+  },
+
+  "feature_definition": "config/experiment-v2/features-v2.json",
+  "channels": 13,
+  "target_comparators": 45,
+  "senso_population": 200,
+  "senso_generations": 500,
+  "candidate_evaluations_per_seed": 50200,
+  "expected_rows_per_seed": 50200,
+
+  "split_policy": {
+    "note": "PENDING_F0_FREEZE — split is redesigned to ensure positive-label coverage in the training partition",
+    "goal": "At least one positive-label seed must fall in the training split",
+    "approach_options": [
+      "Include Group-E seeds (1001–1020) in training; seed 18 remains in calibration",
+      "Resplit v1 seeds so that seed 18 (sole positive source) is in training, not calibration only",
+      "Both"
+    ],
+    "row_random_split_allowed": false,
+    "holdout_contamination_check": "validation_or_holdout_seed_is_terminal_invalid"
+  },
+
+  "format": {
+    "raw": "UTF-8 tab-separated rows with one frozen header; no quoting",
+    "aggregate": "raw per-seed files plus one zstd-compressed concatenation",
+    "float_format": "decimal with 9 significant digits, parsed as float32",
+    "sequence_encoding": "lower-upper pairs separated by semicolons; present only when final_count <= 45"
+  },
+
+  "metadata_columns": [
+    "schema",
+    "seed",
+    "generation",
+    "sample_index",
+    "parent_count",
+    "prefix_count"
+  ],
+  "feature_columns": "f000 through f(N-1) in features-v2 index order; N frozen at F0",
+  "label_columns": ["final_count", "success45"],
+  "audit_column": "candidate_sequence_if_success45",
+
+  "instrumentation": {
+    "enabled_only_by": "MERICANII_DATASET_PATH absolute path plus MERICANII_DATASET_SEED matching ec.rand.seed",
+    "disabled_when_environment_absent": true,
+    "rng_calls_added": 0,
+    "search_decisions_changed": 0,
+    "sentinel_seed": 1,
+    "sentinel_requirement": "instrumentation-off and instrumentation-on produce identical 50200 evaluations, final sequence, and final size"
+  },
+
+  "integrity": {
+    "no_silent_row_drop": true,
+    "every_success_row_requires_two_verifier_audit": true,
+    "validation_or_holdout_seed_is_terminal_invalid": true
+  }
+}

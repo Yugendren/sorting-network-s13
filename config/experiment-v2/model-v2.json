@@ -1,0 +1,101 @@
+{
+  "schema_version": "s13-completion-model/v2",
+  "status": "PENDING_F0_FREEZE",
+  "frozen_at": null,
+  "predecessor_model_config": "config/experiment-v1/model-v1.json",
+  "method_version": "feature-eng-v1",
+
+  "role": "rank which truncation point of the current SENSO parent to revisit",
+
+  "input_dimension": "TBD_AT_F0_FREEZE — 85 (inherited) + selected Group A–D features",
+
+  "architecture": {
+    "type": "MLP",
+    "hidden_layers": "PENDING_F0_FREEZE — will be rescaled proportionally to new input dimension; 85-64-32-1 is the baseline reference",
+    "hidden_activation": "ReLU",
+    "output_during_training": "logit or regression value per objective",
+    "output_during_ranking": "raw score; monotone transform omitted",
+    "dropout": 0.0,
+    "parameter_ceiling": 100000,
+    "dtype": "float32"
+  },
+
+  "objective": {
+    "note": "PENDING_F0_FREEZE — two candidates under consideration",
+    "candidates": [
+      {
+        "id": "binary_bce",
+        "label": "success45 (final_count <= 45)",
+        "loss": "BCEWithLogitsLoss",
+        "positive_weight": "min(neg_count / pos_count, 100.0)",
+        "comment": "V1 objective; kept as fallback if data diversity fix is sufficient"
+      },
+      {
+        "id": "regression_comparator_count",
+        "label": "standardised negative final_count",
+        "loss": "MSELoss",
+        "comment": "V2 (E4) objective; demonstrated calibration concordance 0.805 on training set"
+      }
+    ],
+    "forbidden_label": 44,
+    "selection_rule": "chosen at F0 freeze; must not change after first F1 result is seen"
+  },
+
+  "training": {
+    "framework": "PyTorch 2.10.0+cu128",
+    "device": "authorized NVIDIA GeForce RTX 3060",
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 4096,
+    "max_epochs": 50,
+    "early_stopping_patience": 5,
+    "minimum_epochs": 3,
+    "shuffle": true,
+    "seed": 2026081701,
+    "deterministic_algorithms": true,
+    "checkpoint_choice": "highest calibration concordance, then lowest calibration loss, then earliest epoch",
+    "duplicate_training_replay": "same exported float arrays and SHA-256 required"
+  },
+
+  "offline_validation": {
+    "partition": "PENDING_F0_FREEZE — seeds-validation-v2.json (disjoint from training and exam partitions)",
+    "training_on_partition_allowed": false,
+    "primary_metric": "pairwise concordance between model score and lower final_count within each seed, ties score 0.5",
+    "constant_score_reference": 0.5,
+    "pass_rule": "concordance strictly greater than 0.5 with at least one unequal-final-size pair",
+    "configuration_changes_after_result": 0
+  },
+
+  "integration": {
+    "note": "Identical to V1/V2 integration; frozen patch SHA-256 inherited",
+    "baseline_gaussian_draws_per_reconstruction": 1,
+    "proposal_count_maximum": 8,
+    "proposal_construction": [
+      "clamp(base, 0, parent_count)",
+      "clamp(base - 2, 0, parent_count)",
+      "clamp(base + 2, 0, parent_count)",
+      "clamp(base - 4, 0, parent_count)",
+      "clamp(base + 4, 0, parent_count)",
+      "clamp(base - 8, 0, parent_count)",
+      "clamp(base + 8, 0, parent_count)",
+      "0"
+    ],
+    "duplicates": "keep first occurrence only",
+    "ranking": "maximum exported-model score",
+    "tie_break": "lowest proposal list index; proposal zero is the exact baseline Gaussian truncation",
+    "scored_inference": "compiled float32 CPU inference on M4; no Python, GPU, network, LLM, or adaptive state"
+  },
+
+  "frozen_unchanged_components": [
+    "SENSO parent ranking and estimate fraction",
+    "frequency-model reconstruction after truncation",
+    "heuristic fallback and mutation",
+    "fitness and hall of fame",
+    "population 200 and generation 500",
+    "50200 candidate evaluations per seed",
+    "random seed and all non-truncation RNG behavior",
+    "two independent acceptance verifiers",
+    "integration patch (same frozen patch as E4)"
+  ]
+}
