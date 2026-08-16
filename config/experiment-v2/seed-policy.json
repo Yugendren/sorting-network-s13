@@ -1,54 +1,69 @@
 {
   "schema_version": "s13-method-seed-policy/v2",
-  "frozen_at": null,
-  "status": "PENDING_F0_FREEZE",
-
+  "status": "FROZEN",
+  "frozen_at": "2026-08-17",
   "predecessor_policy": "config/experiment-v1/seed-policy.json",
+
+  "derivation_method": "HMAC-SHA256(domain_string + big-endian-uint64(index), no separate key) -> first 4 bytes as big-endian uint32, mask to 31 bits; skip zero and previously reserved seeds",
 
   "partitions": {
     "development_v1": {
+      "path": "config/experiment-v2/seeds-development-v2.json",
       "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-      "source": "config/experiment-v1/seeds-development.json",
-      "sha256": "bedd4d38dcb8f6118ef0b64d7c4e0ac5591a2f4e8a6e4c716363a7e06901e7fe",
       "purpose": "F1 dataset generation (inherited from E1)"
     },
     "extra_development_v2": {
-      "status": "PENDING_F0_FREEZE",
-      "candidate_seeds": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
-                          1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020],
-      "purpose": "Group-E diversity seeds; frozen as a binary F0 decision"
+      "path": "config/experiment-v2/seeds-development-v2.json",
+      "seeds": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
+                1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020],
+      "purpose": "Group-E diversity seeds; all 20 included; all assigned to training partition"
+    },
+    "training": {
+      "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
+                1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020],
+      "rationale": "Seed 18 moved from v1 calibration to training: sole positive-label source in v1 must be in gradient training. Extra seeds 1001-1020 all in training for positive-label coverage."
+    },
+    "calibration": {
+      "seeds": [19, 20],
+      "purpose": "F2 checkpoint selection; no gradient training"
     },
     "validation_v2": {
-      "status": "PENDING_F0_FREEZE",
-      "purpose": "F2 checkpoint/configuration selection only; no training",
-      "disjoint_from": ["development_v1", "extra_development_v2", "f3_holdout", "f4_holdout"]
+      "path": "config/experiment-v2/seeds-validation-v2.json",
+      "domain": "mericanii-s13-method-v2/validation/2026-08-17",
+      "count": 20,
+      "purpose": "F2 offline generalization audit; never training"
     },
     "f3_holdout": {
-      "status": "PENDING_F0_FREEZE",
+      "path": "config/experiment-v2/seeds-f3-holdout.json",
+      "domain": "mericanii-s13-method-v2-f3-holdout/2026-08-17",
       "count": 60,
-      "purpose": "Sealed final holdout for F3 matched exam",
-      "disjoint_from": ["development_v1", "extra_development_v2", "validation_v2", "f4_holdout"],
-      "domain_separator": "s13-method-v2-f3-holdout",
-      "note": "Generated and committed at F0 before any F1 data is seen"
+      "sealed": true,
+      "purpose": "F3 paired matched-compute exam only"
     },
     "f4_holdout": {
-      "status": "PENDING_F0_FREEZE",
+      "path": "config/experiment-v2/seeds-f4-holdout.json",
+      "domain": "mericanii-s13-method-v2-f4-holdout/2026-08-17",
       "count": 60,
-      "purpose": "Sealed holdout for F4 exam (generated at F0; used only if F3 fails)",
-      "disjoint_from": ["development_v1", "extra_development_v2", "validation_v2", "f3_holdout"],
-      "domain_separator": "s13-method-v2-f4-holdout",
-      "note": "Domain separator committed at F0; seeds revealed only if F3 fails validly"
+      "sealed": true,
+      "purpose": "F4 exam only; used only if F3 fails validly"
     }
   },
 
-  "derivation": {
-    "method": "deterministic PRNG from domain separator and integer index",
-    "implementation": "tools/seed_policy.py (to be created at F0)"
+  "disjointness": {
+    "verified_at_freeze": "2026-08-17",
+    "all_partitions_disjoint": true,
+    "also_disjoint_from_predecessors": [
+      "v1 validation seeds",
+      "e3_holdout seeds",
+      "e4_holdout seeds"
+    ]
   },
 
   "guardrails": [
     "Development tools must reject any seed in validation_v2, f3_holdout, or f4_holdout",
     "Training code must reject any seed not in its declared partition",
-    "Mixing rows from different seeds across partition boundaries is forbidden"
+    "Mixing rows from different seeds across partition boundaries is forbidden",
+    "F3/F4 holdout seeds must not appear in any training, normalization, or feature extraction run"
   ]
 }

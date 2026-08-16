@@ -1,44 +1,33 @@
 {
-  "schema_version": "s13-completion-model/v2",
-  "status": "PENDING_F0_FREEZE",
-  "frozen_at": null,
-  "predecessor_model_config": "config/experiment-v1/model-v1.json",
+  "schema_version": "s13-completion-model/v3",
+  "status": "FROZEN",
+  "frozen_at": "2026-08-17",
+  "predecessor_model_config": "config/experiment-v1/e4/model-v2.json",
   "method_version": "feature-eng-v1",
 
   "role": "rank which truncation point of the current SENSO parent to revisit",
 
-  "input_dimension": "TBD_AT_F0_FREEZE — 85 (inherited) + selected Group A–D features",
+  "input_dimension": 101,
 
   "architecture": {
-    "type": "MLP",
-    "hidden_layers": "PENDING_F0_FREEZE — will be rescaled proportionally to new input dimension; 85-64-32-1 is the baseline reference",
+    "type": "MLP regressor",
+    "layers": [101, 128, 64, 1],
     "hidden_activation": "ReLU",
-    "output_during_training": "logit or regression value per objective",
-    "output_during_ranking": "raw score; monotone transform omitted",
+    "output_during_training": "regression value (standardized negative final_count)",
+    "output_during_ranking": "raw score; higher = better completion estimate",
     "dropout": 0.0,
+    "trainable_parameters": 22209,
+    "trainable_parameters_check": "101*128+128 + 128*64+64 + 64*1+1 = 13056 + 8256 + 65 + 832 = 22209",
     "parameter_ceiling": 100000,
     "dtype": "float32"
   },
 
   "objective": {
-    "note": "PENDING_F0_FREEZE — two candidates under consideration",
-    "candidates": [
-      {
-        "id": "binary_bce",
-        "label": "success45 (final_count <= 45)",
-        "loss": "BCEWithLogitsLoss",
-        "positive_weight": "min(neg_count / pos_count, 100.0)",
-        "comment": "V1 objective; kept as fallback if data diversity fix is sufficient"
-      },
-      {
-        "id": "regression_comparator_count",
-        "label": "standardised negative final_count",
-        "loss": "MSELoss",
-        "comment": "V2 (E4) objective; demonstrated calibration concordance 0.805 on training set"
-      }
-    ],
+    "label": "standardized negative final_count",
+    "loss": "MSELoss",
+    "standardization": "target = (-final_count - mean(-final_count on training rows)) / std(-final_count on training rows)",
     "forbidden_label": 44,
-    "selection_rule": "chosen at F0 freeze; must not change after first F1 result is seen"
+    "normalization_fit": "training seeds 1-18 and 1001-1020 only; computed fresh; no v1 normalization reuse"
   },
 
   "training": {
@@ -54,12 +43,17 @@
     "shuffle": true,
     "seed": 2026081701,
     "deterministic_algorithms": true,
-    "checkpoint_choice": "highest calibration concordance, then lowest calibration loss, then earliest epoch",
+    "checkpoint_choice": "highest calibration concordance, then lowest calibration MSE, then earliest epoch",
     "duplicate_training_replay": "same exported float arrays and SHA-256 required"
   },
 
+  "training_seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                     1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
+                     1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020],
+  "calibration_seeds": [19, 20],
+
   "offline_validation": {
-    "partition": "PENDING_F0_FREEZE — seeds-validation-v2.json (disjoint from training and exam partitions)",
+    "partition": "config/experiment-v2/seeds-validation-v2.json",
     "training_on_partition_allowed": false,
     "primary_metric": "pairwise concordance between model score and lower final_count within each seed, ties score 0.5",
     "constant_score_reference": 0.5,
@@ -68,7 +62,7 @@
   },
 
   "integration": {
-    "note": "Identical to V1/V2 integration; frozen patch SHA-256 inherited",
+    "note": "Integration patch and proposal policy identical to E4/V2; only the model weights change",
     "baseline_gaussian_draws_per_reconstruction": 1,
     "proposal_count_maximum": 8,
     "proposal_construction": [
@@ -83,7 +77,7 @@
     ],
     "duplicates": "keep first occurrence only",
     "ranking": "maximum exported-model score",
-    "tie_break": "lowest proposal list index; proposal zero is the exact baseline Gaussian truncation",
+    "tie_break": "lowest proposal list index",
     "scored_inference": "compiled float32 CPU inference on M4; no Python, GPU, network, LLM, or adaptive state"
   },
 

@@ -1,90 +1,139 @@
 {
   "schema_version": "s13-completion-features/v2",
-  "status": "PENDING_F0_FREEZE",
-  "frozen_at": null,
+  "status": "FROZEN",
+  "frozen_at": "2026-08-17",
   "channels": 13,
   "learning_target_comparators": 45,
   "predecessor_feature_schema": "config/experiment-v1/features-v1.json",
-  "predecessor_input_dimension": 85,
-  "input_dimension": "TBD_AT_F0_FREEZE",
+  "predecessor_sha256": "557efae74621a613b0c7ad2914eb303fe4a279390a4af86d373c81e6833419ab",
+  "input_dimension": 101,
   "numeric_type": "IEEE-754 float32",
   "extraction_point": "after the SENSO parent prefix is reconstructed and before unchanged continuation",
+  "row_schema_tag": "s13-completion-row-v2",
 
-  "note": "Groups A–E are candidates declared in METHOD_EXPERIMENT_CONTRACT_V2.md Section 4. The subset selected and frozen at F0 replaces this file with a fully specified, SHA-256-committed version. No feature may be added or removed after F0.",
+  "inherited_v1_features": {
+    "indices": "0-84",
+    "source": "config/experiment-v1/features-v1.json",
+    "description": "All 85 v1 features unchanged"
+  },
 
   "group_A_output_set_entropy": {
-    "status": "CANDIDATE",
-    "description": "Structural properties of per-channel output-function-set distributions",
+    "indices": "85-88",
     "features": [
-      {"name": "output_set_entropy",         "formula": "Shannon entropy of channel output-set-size distribution, normalised by log(13)"},
-      {"name": "output_set_gini",            "formula": "Gini coefficient of channel output-set sizes, normalised to [0,1]"},
-      {"name": "singleton_fraction",         "formula": "channels with output-set size == 1  /  13"},
-      {"name": "unconstrained_fraction",     "formula": "channels with output-set size == 8192  /  13"}
+      {
+        "index": 85,
+        "name": "output_set_entropy",
+        "formula": "-sum(p*log(p) for p in sizes/sum(sizes)) / log(13); sizes[i] = getNumSets() for channel i; 0 if all zero"
+      },
+      {
+        "index": 86,
+        "name": "output_set_gini",
+        "formula": "sum(|sizes[i]-sizes[j]|) / (2*13*13*mean_size); clamped to [0,1]; 0 if mean==0"
+      },
+      {
+        "index": 87,
+        "name": "singleton_fraction",
+        "formula": "channels with getNumSets()==1 / 13"
+      },
+      {
+        "index": 88,
+        "name": "unconstrained_fraction",
+        "formula": "channels with getNumSets()==8192 / 13"
+      }
     ]
   },
 
   "group_B_coverage_and_symmetry": {
-    "status": "CANDIDATE",
-    "description": "Comparator-pair coverage, depth histogram, and symmetry indicator",
+    "indices": "89-94",
     "features": [
-      {"name": "pair_coverage",              "formula": "distinct channel pairs used in prefix  /  78"},
-      {"name": "pair_frequency_asymmetry",   "formula": "(max_pair_freq - min_pair_freq)  /  max(max_pair_freq, 1)"},
-      {"name": "depth_early_occupancy",      "formula": "comparators in levels 0..14  /  15"},
-      {"name": "depth_mid_occupancy",        "formula": "comparators in levels 15..29  /  15"},
-      {"name": "depth_late_occupancy",       "formula": "comparators in levels 30..44  /  15"},
-      {"name": "prefix_symmetric",           "formula": "1.0 if prefix comparator list equals channel-reversal of itself else 0.0"}
+      {
+        "index": 89,
+        "name": "pair_coverage",
+        "formula": "distinct (lower,upper) pairs in prefix comparators / 78"
+      },
+      {
+        "index": 90,
+        "name": "pair_frequency_asymmetry",
+        "formula": "(max_pair_frequency - min_pair_frequency) / max(max_pair_frequency, 1); 0 if prefix empty"
+      },
+      {
+        "index": 91,
+        "name": "depth_early_fraction",
+        "formula": "comparators at index in [0, prefix_count/3) / prefix_count; 0 if prefix_count==0"
+      },
+      {
+        "index": 92,
+        "name": "depth_mid_fraction",
+        "formula": "comparators at index in [prefix_count/3, 2*prefix_count/3) / prefix_count; 0 if prefix_count==0"
+      },
+      {
+        "index": 93,
+        "name": "depth_late_fraction",
+        "formula": "comparators at index in [2*prefix_count/3, prefix_count) / prefix_count; 0 if prefix_count==0"
+      },
+      {
+        "index": 94,
+        "name": "prefix_symmetric",
+        "formula": "1.0 if for all i: (12-network[2*(prefix_count-1-i)+1], 12-network[2*(prefix_count-1-i)]) == (network[2*i], network[2*i+1]); else 0.0; 0 if prefix empty"
+      }
     ]
   },
 
   "group_C_progress_velocity": {
-    "status": "CANDIDATE",
-    "description": "Rolling output-set reduction rate and stall detection",
+    "indices": "95-98",
+    "approximation_note": "True per-comparator output-set deltas require per-step buffering. Features 95-97 use a cumulative proxy; feature 98 is approximated zero. These are declared limitations, not bugs.",
     "features": [
-      {"name": "velocity_4",                 "formula": "mean output-set size reduction per comparator over last min(4, prefix_count) comparators  /  8192"},
-      {"name": "velocity_8",                 "formula": "mean output-set size reduction per comparator over last min(8, prefix_count) comparators  /  8192"},
-      {"name": "velocity_16",                "formula": "mean output-set size reduction per comparator over last min(16, prefix_count) comparators  /  8192"},
-      {"name": "stall_fraction_8",           "formula": "proportion of last min(8, prefix_count) comparators that produced zero total output-set reduction"}
+      {
+        "index": 95,
+        "name": "velocity_proxy_4",
+        "formula": "(13*8192 - total_output_sets) / max(prefix_count,1) / 8192 * min(prefix_count,4) / 4"
+      },
+      {
+        "index": 96,
+        "name": "velocity_proxy_8",
+        "formula": "(13*8192 - total_output_sets) / max(prefix_count,1) / 8192 * min(prefix_count,8) / 8"
+      },
+      {
+        "index": 97,
+        "name": "velocity_proxy_16",
+        "formula": "(13*8192 - total_output_sets) / max(prefix_count,1) / 8192 * min(prefix_count,16) / 16"
+      },
+      {
+        "index": 98,
+        "name": "stall_fraction_8",
+        "formula": "APPROXIMATED_ZERO: 0.0 always; reserved for F4 repair"
+      }
     ]
   },
 
   "group_D_generation_context": {
-    "status": "CANDIDATE",
-    "description": "Population and generation progress signals",
+    "indices": "99-100",
+    "approximation_note": "Population rank and fitness history are not available at the reconstruction call site without invasive SENSO changes. Both features are constant 0.0. Reserved for F4 repair.",
     "features": [
-      {"name": "parent_hof_rank",            "formula": "parent hall-of-fame rank  /  200  (0 if parent is rank-0 best)"},
-      {"name": "fitness_progress_ratio",     "formula": "current_generation_best_fitness  /  max(generation_1_best_fitness, 1e-6)"}
+      {
+        "index": 99,
+        "name": "parent_hof_rank_norm",
+        "formula": "APPROXIMATED_ZERO: 0.0 always"
+      },
+      {
+        "index": 100,
+        "name": "fitness_progress_ratio",
+        "formula": "APPROXIMATED_ZERO: 0.0 always"
+      }
     ]
-  },
-
-  "group_E_extra_seeds": {
-    "status": "CANDIDATE",
-    "description": "Additional n=13 target-45 SENSO runs on seeds 1001–1020 to supply positive labels from diverse starting points",
-    "decision": "PENDING_F0_FREEZE",
-    "seeds": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
-              1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020],
-    "constraints": [
-      "Must use the same frozen SENSO binary and configuration as development seeds",
-      "Must be declared and frozen at F0 before any run",
-      "Must pass the same instrumentation-on/off trajectory sentinel",
-      "Disjoint from all predecessor seed partitions (1–20, validation set, E3/E4 holdouts)"
-    ]
-  },
-
-  "inherited_features_from_v1": {
-    "description": "All 85 v1 features are retained as the base; v2 appends the selected candidate groups above",
-    "v1_schema": "config/experiment-v1/features-v1.json",
-    "v1_sha256": "557efae74621a613b0c7ad2914eb303fe4a279390a4af86d373c81e6833419ab"
   },
 
   "post_extraction_standardization": {
-    "fit_on": "PENDING_F0_FREEZE — will include positive-bearing training seeds; exact seed list frozen at F0",
+    "fit_on": "training seeds 1-18 and extra seeds 1001-1020; computed fresh from training data (no v1 normalization reuse)",
     "formula": "(x - training_mean) / max(training_population_stddev, 1e-6)",
-    "export": "one mean and one scale per feature in checkpoint"
+    "export": "one mean and one scale per feature (101 values each) in checkpoint"
   },
 
   "explicit_omissions": [
     "No exact unsorted-input or counterexample enumeration: recomputing all 8192 inputs for every dataset row would materially change throughput.",
     "No 44-comparator budget, indicator, label, reward, or feature.",
-    "No seed identifier, candidate identity, verifier result, wall time, or holdout metadata is a model input."
+    "No seed identifier, candidate identity, verifier result, wall time, or holdout metadata is a model input.",
+    "Group D features (99-100) are constant zero: population rank and fitness history not available at reconstruction call site.",
+    "Group C feature 98 (stall_fraction_8) is constant zero: per-comparator history not buffered."
   ]
 }

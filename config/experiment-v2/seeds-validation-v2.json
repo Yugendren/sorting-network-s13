@@ -1,0 +1,39 @@
+{
+  "derivation": "HMAC-SHA256(domain, index) -> 31-bit; skip reserved predecessors",
+  "disjoint_from": [
+    "v1 development 1-20",
+    "extra development 1001-1020",
+    "v1 validation",
+    "e3_holdout",
+    "e4_holdout",
+    "f3_holdout",
+    "f4_holdout"
+  ],
+  "domain": "mericanii-s13-method-v2/validation/2026-08-17",
+  "frozen_at": "2026-08-17",
+  "partition": "validation_v2",
+  "purpose": "F2 checkpoint and configuration selection only; never gradient training",
+  "schema_version": "s13-method-seeds/v2",
+  "seeds": [
+    1296587706,
+    14112203,
+    1986221628,
+    126009816,
+    1176515885,
+    335629094,
+    2141610494,
+    1984824396,
+    419849137,
+    299099941,
+    1761352677,
+    1367785114,
+    1922759092,
+    1379279657,
+    1094219561,
+    203381202,
+    1970571261,
+    1744564885,
+    675557645,
+    1492426702
+  ]
+}
