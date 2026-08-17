@@ -37,7 +37,10 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 
 ## Measured anchors (evidence/b2, evidence/b3)
 
-- n=9 full search: 15.4 s, ~95 MB (local).
+- n=9 full search: ~0.80 s real (prior 15.4 s figure included a 10 s
+  stats-logger sleep floor + checker); n=10: ~0.92 s, ~86 MB (local).
+- n=10 memo mass: k=7,8 (n-3, n-2) hold 85.7% of packed bytes;
+  get:insert 17:1; 87.6% of table created in final bound iteration.
 - n=11 certificate replay: 5149 s, 4.06 GB (M4, passes).
 - n=11 original full search: 4h51m, 178 GB (Harder's 24-core box).
 - Harder's n=13 direct estimate: >20,000 TB RAM; known waste headroom
@@ -59,7 +62,7 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
 | P1 harness build | A | NOT STARTED | Evaluator + pool + ledger; gen-0 smoke run; valid sorter found |
 | A-45 | A | NOT STARTED | Evolved program reaches 45 comparators |
 | A-beat-SENSO | A | NOT STARTED | >2/60 at ≤45 matched compute |
-| M0 archaeology+profile | B | NOT STARTED | internals doc; n=9/n=10 profiles; waste breakdown |
+| M0 archaeology+profile | B | **COMPLETE** | internals doc + instrumentation patch + memo-mass histogram (evidence/v3/m0) |
 | M1 scaling law | B | NOT STARTED | Cost model + one AWS n=11 replication (~$15) |
 | M2 memory attack | B | NOT STARTED | Full n=11 search on 48GB box, bit-identical, checker-verified |
 | M3 ML+GPU | B | NOT STARTED | Node reduction with bit-identical certificates |
