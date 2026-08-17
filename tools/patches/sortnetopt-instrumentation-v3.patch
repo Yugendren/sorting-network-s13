@@ -1,0 +1,641 @@
+--- /dev/null
++++ b/src/instrument.rs
+@@ -0,0 +1,382 @@
++//! Project-owned search instrumentation (Mericanii S(13) programme, M0b).
++//!
++//! Every value recorded here is read from an already-computed result at a point
++//! where no branch depends on it. Nothing in this module is ever consulted by
++//! the search: there is no code path in which a counter influences which output
++//! sets are visited, which bound is derived, or how work is scheduled.
++//!
++//! Cost discipline (docs/sortnetopt-internals.md section 7):
++//!
++//! * hot-path recording is `AtomicU64::fetch_add` with `Ordering::Relaxed`
++//!   only -- no allocation, no locking, no formatting;
++//! * counters are incremented *outside* the `StateMap` shard `RwLock` critical
++//!   sections (the shard guard is a statement temporary that has been dropped
++//!   before `record_*` is called);
++//! * the per-channel-count census walks `BTreeMap::len` (O(1) each) over the
++//!   shards and is only taken from `Search::log_stats`, which already runs on
++//!   its own 10-second task, plus once per bound iteration and once at exit.
++//!
++//! Output is written to stderr (the search's own `log` target is stdout, so the
++//! two never interleave) and, if `SORTNETOPT_INSTRUMENT_JSON` names a path, as
++//! a JSON document at exit.
++
++use std::{
++    fmt::Write as _,
++    sync::{
++        atomic::{AtomicU64, Ordering::Relaxed},
++        Mutex, OnceLock,
++    },
++    time::Instant,
++};
++
++/// One past the largest channel count that gets its own histogram bucket.
++/// `OutputSetMap` currently has arms for 3..=11; the extra headroom is so a
++/// later `MAX_CHANNELS` bump does not silently drop buckets.
++pub const MAX_TRACKED_CHANNELS: usize = 16;
++
++// --- StateMap::get -----------------------------------------------------------
++
++pub static GET_CALLS: AtomicU64 = AtomicU64::new(0);
++pub static GET_HITS: AtomicU64 = AtomicU64::new(0);
++pub static GET_MISSES: AtomicU64 = AtomicU64::new(0);
++
++// --- StateMap::set -----------------------------------------------------------
++
++pub static SET_CALLS: AtomicU64 = AtomicU64::new(0);
++/// `set` calls that created a new key (the whole-run "states inserted" total).
++pub static SET_INSERTS: AtomicU64 = AtomicU64::new(0);
++/// `set` calls that overwrote an existing key (a bound refinement).
++pub static SET_UPDATES: AtomicU64 = AtomicU64::new(0);
++
++// --- per-set async lock ------------------------------------------------------
++
++pub static LOCK_ACQUIRED: AtomicU64 = AtomicU64::new(0);
++pub static LOCK_CONTENDED: AtomicU64 = AtomicU64::new(0);
++
++// --- work generation ---------------------------------------------------------
++
++pub static IMPROVE_CALLS: AtomicU64 = AtomicU64::new(0);
++pub static IMPROVE_HUFFMAN_CALLS: AtomicU64 = AtomicU64::new(0);
++/// Non-redundant comparator successors generated in `Search::improve`.
++pub static SUCCESSORS_GENERATED: AtomicU64 = AtomicU64::new(0);
++/// Forced-channel (van Voorhis) prunings taken in `Search::improve`.
++pub static FORCED_PRUNINGS: AtomicU64 = AtomicU64::new(0);
++/// Extremal-channel prunings generated in `Search::improve_huffman`.
++pub static HUFFMAN_PRUNINGS: AtomicU64 = AtomicU64::new(0);
++
++/// Highest total `StateMap` entry count ever observed by a census.
++pub static PEAK_ENTRIES: AtomicU64 = AtomicU64::new(0);
++
++static INSERTS_BY_CHANNELS: [AtomicU64; MAX_TRACKED_CHANNELS] = [
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++];
++
++static ITERATIONS: Mutex<Vec<BoundIteration>> = Mutex::new(Vec::new());
++static START: OnceLock<Instant> = OnceLock::new();
++
++/// Milliseconds since the first instrumented event.
++fn elapsed_ms() -> u128 {
++    START.get_or_init(Instant::now).elapsed().as_millis()
++}
++
++/// Call once as early as possible so `elapsed_ms` is anchored to process start.
++pub fn init() {
++    let _ = START.get_or_init(Instant::now);
++}
++
++/// Packed key size in bytes for a `channels`-wide output set. Mirrors
++/// `OutputSet::packed_len_for_channels`; duplicated so this module stays a leaf.
++pub fn packed_len_for_channels(channels: usize) -> u64 {
++    ((1u64 << channels) + 7) / 8
++}
++
++#[inline]
++pub fn record_get(hit: bool) {
++    GET_CALLS.fetch_add(1, Relaxed);
++    if hit {
++        GET_HITS.fetch_add(1, Relaxed);
++    } else {
++        GET_MISSES.fetch_add(1, Relaxed);
++    }
++}
++
++#[inline]
++pub fn record_set(channels: usize, newly_inserted: bool) {
++    SET_CALLS.fetch_add(1, Relaxed);
++    if newly_inserted {
++        SET_INSERTS.fetch_add(1, Relaxed);
++        if channels < MAX_TRACKED_CHANNELS {
++            INSERTS_BY_CHANNELS[channels].fetch_add(1, Relaxed);
++        }
++    } else {
++        SET_UPDATES.fetch_add(1, Relaxed);
++    }
++}
++
++#[inline]
++pub fn record_lock(contended: bool) {
++    if contended {
++        LOCK_CONTENDED.fetch_add(1, Relaxed);
++    } else {
++        LOCK_ACQUIRED.fetch_add(1, Relaxed);
++    }
++}
++
++#[inline]
++pub fn bump(counter: &AtomicU64) {
++    counter.fetch_add(1, Relaxed);
++}
++
++/// A per-channel-count population snapshot of the `StateMap`.
++#[derive(Clone, Debug)]
++pub struct Census {
++    pub entries: [u64; MAX_TRACKED_CHANNELS],
++}
++
++impl Default for Census {
++    fn default() -> Self {
++        Census {
++            entries: [0; MAX_TRACKED_CHANNELS],
++        }
++    }
++}
++
++impl Census {
++    pub fn add(&mut self, other: &Census) {
++        for (slot, value) in self.entries.iter_mut().zip(other.entries.iter()) {
++            *slot += value;
++        }
++    }
++
++    pub fn total(&self) -> u64 {
++        self.entries.iter().sum()
++    }
++
++    /// Packed-key bytes held per channel count (`entries[k] * 2^max(0, k-3)`).
++    pub fn bytes(&self) -> [u64; MAX_TRACKED_CHANNELS] {
++        let mut result = [0u64; MAX_TRACKED_CHANNELS];
++        for channels in 0..MAX_TRACKED_CHANNELS {
++            result[channels] = self.entries[channels] * packed_len_for_channels(channels);
++        }
++        result
++    }
++
++    pub fn total_bytes(&self) -> u64 {
++        self.bytes().iter().sum()
++    }
++
++    /// Resident estimate: packed key plus the 4-byte `State`, ignoring B-tree
++    /// node overhead (measured at roughly 1.9x by Harder's n=11 figures).
++    pub fn total_key_plus_state_bytes(&self) -> u64 {
++        (0..MAX_TRACKED_CHANNELS)
++            .map(|channels| self.entries[channels] * (packed_len_for_channels(channels) + 4))
++            .sum()
++    }
++}
++
++/// Record the highest total entry count seen so far. `state_shards` has no
++/// removal path, so in the unmodified search this is monotone and peak == final.
++pub fn note_peak(total: u64) {
++    PEAK_ENTRIES.fetch_max(total, Relaxed);
++}
++
++#[derive(Clone, Debug)]
++pub struct BoundIteration {
++    pub index: usize,
++    pub bounds: [u8; 2],
++    pub huffman_bounds: [u8; 2],
++    pub elapsed_ms: u128,
++    /// Live `StateMap` entries at the end of this iteration.
++    pub states: u64,
++    /// New keys created during this iteration.
++    pub new_states: u64,
++    pub census: Census,
++}
++
++/// Called once per successive-approximation iteration of `Search::search`.
++pub fn record_bound_iteration(bounds: [u8; 2], huffman_bounds: [u8; 2], census: &Census) {
++    let states = census.total();
++    note_peak(states);
++    let inserts = SET_INSERTS.load(Relaxed);
++
++    let mut iterations = ITERATIONS.lock().unwrap();
++    let index = iterations.len();
++    let already: u64 = iterations.iter().map(|it| it.new_states).sum();
++    iterations.push(BoundIteration {
++        index,
++        bounds,
++        huffman_bounds,
++        elapsed_ms: elapsed_ms(),
++        states,
++        new_states: inserts.saturating_sub(already),
++        census: census.clone(),
++    });
++}
++
++fn counter_lines() -> Vec<(&'static str, u64)> {
++    vec![
++        ("get_calls", GET_CALLS.load(Relaxed)),
++        ("get_hits", GET_HITS.load(Relaxed)),
++        ("get_misses", GET_MISSES.load(Relaxed)),
++        ("set_calls", SET_CALLS.load(Relaxed)),
++        ("set_inserts", SET_INSERTS.load(Relaxed)),
++        ("set_updates", SET_UPDATES.load(Relaxed)),
++        ("lock_acquired", LOCK_ACQUIRED.load(Relaxed)),
++        ("lock_contended", LOCK_CONTENDED.load(Relaxed)),
++        ("improve_calls", IMPROVE_CALLS.load(Relaxed)),
++        ("improve_huffman_calls", IMPROVE_HUFFMAN_CALLS.load(Relaxed)),
++        ("successors_generated", SUCCESSORS_GENERATED.load(Relaxed)),
++        ("forced_prunings", FORCED_PRUNINGS.load(Relaxed)),
++        ("huffman_prunings", HUFFMAN_PRUNINGS.load(Relaxed)),
++        ("peak_entries", PEAK_ENTRIES.load(Relaxed)),
++    ]
++}
++
++fn json_u64_map(pairs: &[(usize, u64)]) -> String {
++    let mut out = String::from("{");
++    for (index, (key, value)) in pairs.iter().enumerate() {
++        if index > 0 {
++            out.push_str(", ");
++        }
++        let _ = write!(out, "\"{}\": {}", key, value);
++    }
++    out.push('}');
++    out
++}
++
++/// Final report. Called from `Search::search` after the main loop has closed the
++/// interval and before `dump_states` consumes the map.
++pub fn report(channels: usize, result: usize, final_census: &Census) {
++    note_peak(final_census.total());
++
++    let counters = counter_lines();
++    let inserts_by_channels: Vec<(usize, u64)> = (0..MAX_TRACKED_CHANNELS)
++        .map(|k| (k, INSERTS_BY_CHANNELS[k].load(Relaxed)))
++        .filter(|(_, v)| *v > 0)
++        .collect();
++    let entries: Vec<(usize, u64)> = (0..MAX_TRACKED_CHANNELS)
++        .map(|k| (k, final_census.entries[k]))
++        .filter(|(_, v)| *v > 0)
++        .collect();
++    let bytes_array = final_census.bytes();
++    let bytes: Vec<(usize, u64)> = entries
++        .iter()
++        .map(|(k, _)| (*k, bytes_array[*k]))
++        .collect();
++
++    eprintln!("=== sortnetopt instrumentation (M0b) ===");
++    eprintln!("channels = {}, result = {}", channels, result);
++    for (name, value) in counters.iter() {
++        eprintln!("counter {:<22} {}", name, value);
++    }
++    eprintln!(
++        "statemap total_entries {} packed_key_bytes {} key_plus_state_bytes {}",
++        final_census.total(),
++        final_census.total_bytes(),
++        final_census.total_key_plus_state_bytes()
++    );
++    eprintln!("channels  entries      inserts      packed_bytes  pct_entries  pct_bytes");
++    let total_entries = final_census.total().max(1);
++    let total_bytes = final_census.total_bytes().max(1);
++    for (k, count) in entries.iter() {
++        let ins = INSERTS_BY_CHANNELS[*k].load(Relaxed);
++        eprintln!(
++            "{:>8}  {:>11}  {:>11}  {:>12}  {:>10.3}%  {:>8.3}%",
++            k,
++            count,
++            ins,
++            bytes_array[*k],
++            100.0 * (*count as f64) / (total_entries as f64),
++            100.0 * (bytes_array[*k] as f64) / (total_bytes as f64),
++        );
++    }
++
++    let iterations = ITERATIONS.lock().unwrap();
++    eprintln!("iteration  lower  upper  elapsed_ms  states  new_states");
++    for it in iterations.iter() {
++        eprintln!(
++            "{:>9}  {:>5}  {:>5}  {:>10}  {:>8}  {:>10}",
++            it.index, it.bounds[0], it.bounds[1], it.elapsed_ms, it.states, it.new_states
++        );
++    }
++
++    if let Ok(path) = std::env::var("SORTNETOPT_INSTRUMENT_JSON") {
++        let mut out = String::new();
++        let _ = writeln!(out, "{{");
++        let _ = writeln!(out, "  \"schema\": \"sortnetopt-instrumentation/v3-m0b\",");
++        let _ = writeln!(out, "  \"channels\": {},", channels);
++        let _ = writeln!(out, "  \"result\": {},", result);
++        let _ = writeln!(out, "  \"counters\": {{");
++        for (index, (name, value)) in counters.iter().enumerate() {
++            let comma = if index + 1 == counters.len() { "" } else { "," };
++            let _ = writeln!(out, "    \"{}\": {}{}", name, value, comma);
++        }
++        let _ = writeln!(out, "  }},");
++        let _ = writeln!(
++            out,
++            "  \"statemap\": {{\"total_entries\": {}, \"packed_key_bytes\": {}, \"key_plus_state_bytes\": {}}},",
++            final_census.total(),
++            final_census.total_bytes(),
++            final_census.total_key_plus_state_bytes()
++        );
++        let _ = writeln!(
++            out,
++            "  \"entries_by_channels\": {},",
++            json_u64_map(&entries)
++        );
++        let _ = writeln!(out, "  \"bytes_by_channels\": {},", json_u64_map(&bytes));
++        let _ = writeln!(
++            out,
++            "  \"inserts_by_channels\": {},",
++            json_u64_map(&inserts_by_channels)
++        );
++        let _ = writeln!(out, "  \"bound_iterations\": [");
++        for (index, it) in iterations.iter().enumerate() {
++            let comma = if index + 1 == iterations.len() {
++                ""
++            } else {
++                ","
++            };
++            let census_entries: Vec<(usize, u64)> = (0..MAX_TRACKED_CHANNELS)
++                .map(|k| (k, it.census.entries[k]))
++                .filter(|(_, v)| *v > 0)
++                .collect();
++            let _ = writeln!(
++                out,
++                "    {{\"index\": {}, \"bounds\": [{}, {}], \"huffman_bounds\": [{}, {}], \"elapsed_ms\": {}, \"states\": {}, \"new_states\": {}, \"entries_by_channels\": {}}}{}",
++                it.index,
++                it.bounds[0],
++                it.bounds[1],
++                it.huffman_bounds[0],
++                it.huffman_bounds[1],
++                it.elapsed_ms,
++                it.states,
++                it.new_states,
++                json_u64_map(&census_entries),
++                comma
++            );
++        }
++        let _ = writeln!(out, "  ]");
++        let _ = writeln!(out, "}}");
++
++        match std::fs::write(&path, out) {
++            Ok(()) => eprintln!("instrumentation json written to {}", path),
++            Err(err) => eprintln!("instrumentation json write to {} failed: {}", path, err),
++        }
++    }
++}
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,5 +1,6 @@
+ pub mod fix;
+ pub mod huffman;
++pub mod instrument;
+ pub mod logging;
+ pub mod output_set;
+ pub mod proof;
+--- a/src/search.rs
++++ b/src/search.rs
+@@ -17,6 +17,7 @@ mod states;
+ use self::states::{State, StateMap};
+ use crate::{
+     huffman::max_plus_1_huffman,
++    instrument::{self, Census},
+     output_set::{CVec, OutputSet},
+     thread_pool::{Handle, Schedule, ThreadPool},
+ };
+@@ -33,10 +34,14 @@ impl Search {
+         limit: Option<usize>,
+         output: Option<PathBuf>,
+     ) -> usize {
++        instrument::init();
++
+         let search = Self {
+             states: StateMap::default(),
+         };
+ 
++        let channels = initial.channels();
++
+         let mut initial = initial.to_owned_bvec();
+ 
+         let limit = limit.unwrap_or(usize::max_value());
+@@ -63,13 +68,20 @@ impl Search {
+                     }
+                     state = search.improve(pool, 0, state, initial.as_ref()).await;
+                     log::info!("bounds: {:?}", state);
+-                    search.log_stats();
++                    let census = search.log_stats();
++                    instrument::record_bound_iteration(
++                        state.bounds,
++                        state.huffman_bounds,
++                        &census,
++                    );
+                 }
+             }));
+ 
+             task::block_on(main_loop)
+         });
+ 
++        instrument::report(channels, final_bound, &search.states.census());
++
+         if let Some(output) = output {
+             search.dump_states(output).unwrap();
+         }
+@@ -106,8 +118,13 @@ impl Search {
+         Ok(())
+     }
+ 
+-    fn log_stats(&self) {
+-        log::info!("states: {:?}", self.states.len());
++    /// Unchanged `states: N` line (N is still the total live entry count, now
++    /// derived from the same single pass that produces the per-channel census).
++    fn log_stats(&self) -> Census {
++        let census = self.states.census();
++        log::info!("states: {:?}", census.total());
++        instrument::note_peak(census.total());
++        census
+     }
+ 
+     fn improve_boxed<'a>(
+@@ -131,6 +148,8 @@ impl Search {
+         previous_state: State,
+         output_set: OutputSet<&[bool]>,
+     ) -> State {
++        instrument::bump(&instrument::IMPROVE_CALLS);
++
+         let _locked = loop {
+             let state = self.states.get(output_set);
+             if state != previous_state {
+@@ -166,6 +185,8 @@ impl Search {
+ 
+         for (pol, pol_channels) in extremal_channels.iter().enumerate() {
+             if pol_channels.len() == 1 {
++                instrument::bump(&instrument::FORCED_PRUNINGS);
++
+                 let mut pruned_output_set = OutputSet::all_values(output_set.channels() - 1);
+                 output_set.prune_extremal_channel_into(
+                     pol > 0,
+@@ -219,6 +240,8 @@ impl Search {
+             for j in 0..i {
+                 let mut target = output_set.to_owned();
+                 if target.apply_comparator([i, j]) {
++                    instrument::bump(&instrument::SUCCESSORS_GENERATED);
++
+                     target.canonicalize(true);
+ 
+                     edges.add_edge(self, target);
+@@ -264,6 +287,8 @@ impl Search {
+         level: usize,
+         output_set: OutputSet<&[bool]>,
+     ) -> State {
++        instrument::bump(&instrument::IMPROVE_HUFFMAN_CALLS);
++
+         let mut state = self.states.get(output_set);
+ 
+         if state.huffman_bounds[1] <= state.bounds[0] {
+@@ -290,6 +315,8 @@ impl Search {
+             .enumerate()
+         {
+             for &channel in pol_channels.iter() {
++                instrument::bump(&instrument::HUFFMAN_PRUNINGS);
++
+                 let mut target = OutputSet::all_values(output_set.channels() - 1);
+                 output_set.prune_extremal_channel_into(pol > 0, channel, target.as_mut());
+                 target.canonicalize(true);
+--- a/src/search/states.rs
++++ b/src/search/states.rs
+@@ -12,6 +12,7 @@ use futures::{
+ };
+ use rustc_hash::FxHasher;
+ 
++use crate::instrument::{self, Census};
+ use crate::output_set::OutputSet;
+ 
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+@@ -38,6 +39,8 @@ impl Default for StateMap {
+ }
+ 
+ impl StateMap {
++    // Retained verbatim from upstream; superseded by `census` for logging.
++    #[allow(dead_code)]
+     pub fn len(&self) -> usize {
+         self.state_shards
+             .iter()
+@@ -45,6 +48,16 @@ impl StateMap {
+             .sum()
+     }
+ 
++    /// Instrumentation (M0b): per-channel-count population of the memo table.
++    /// Read-only; each shard contributes nine O(1) `BTreeMap::len` reads.
++    pub fn census(&self) -> Census {
++        let mut census = Census::default();
++        for shard in self.state_shards.iter() {
++            shard.read().unwrap().add_len_by_channels(&mut census);
++        }
++        census
++    }
++
+     pub fn get(&self, output_set: OutputSet<&[bool]>) -> State {
+         let packed = output_set.packed_pvec();
+ 
+@@ -53,11 +66,15 @@ impl StateMap {
+         let hash = hasher.finish();
+         let shard = (hash & (self.state_shards.len() - 1) as u64) as usize;
+ 
+-        if let Some(result) = self.state_shards[shard]
++        let found = self.state_shards[shard]
+             .read()
+             .unwrap()
+-            .get_with_packed(output_set.channels(), &packed)
+-        {
++            .get_with_packed(output_set.channels(), &packed);
++
++        // Recorded after the shard read guard has been dropped.
++        instrument::record_get(found.is_some());
++
++        if let Some(result) = found {
+             result
+         } else {
+             if output_set.is_sorted() {
+@@ -96,11 +113,14 @@ impl StateMap {
+         let hash = hasher.finish();
+         let shard = (hash & (self.state_shards.len() - 1) as u64) as usize;
+ 
+-        self.state_shards[shard].write().unwrap().set_with_packed(
++        let newly_inserted = self.state_shards[shard].write().unwrap().set_with_packed(
+             output_set.channels(),
+             &output_set.packed_pvec(),
+             state,
+-        )
++        );
++
++        // Recorded after the shard write guard has been dropped.
++        instrument::record_set(output_set.channels(), newly_inserted);
+     }
+ 
+     pub async fn lock<'a>(&'a self, output_set: OutputSet<&'a [bool]>) -> Option<StateLock<'a>> {
+@@ -111,7 +131,10 @@ impl StateMap {
+         let hash = hasher.finish();
+         let shard = (hash & (self.lock_shards.len() - 1) as u64) as usize;
+ 
+-        match self.get_lock(output_set, shard, &packed) {
++        let acquired = self.get_lock(output_set, shard, &packed);
++        instrument::record_lock(acquired.is_ok());
++
++        match acquired {
+             Ok(lock) => {
+                 lock.await.unwrap();
+                 None
+@@ -197,6 +220,8 @@ impl<T> Default for OutputSetMap<T> {
+ }
+ 
+ impl<T: Clone> OutputSetMap<T> {
++    // Retained verbatim from upstream; superseded by `add_len_by_channels`.
++    #[allow(dead_code)]
+     pub fn len(&self) -> usize {
+         self.states_3_channels.len()
+             + self.states_4_channels.len()
+@@ -209,6 +234,20 @@ impl<T: Clone> OutputSetMap<T> {
+             + self.states_11_channels.len()
+     }
+ 
++    /// Instrumentation (M0b): accumulate this map's population into `census`,
++    /// bucketed by channel count. Pure: `BTreeMap::len` is O(1) and const.
++    pub fn add_len_by_channels(&self, census: &mut Census) {
++        census.entries[3] += self.states_3_channels.len() as u64;
++        census.entries[4] += self.states_4_channels.len() as u64;
++        census.entries[5] += self.states_5_channels.len() as u64;
++        census.entries[6] += self.states_6_channels.len() as u64;
++        census.entries[7] += self.states_7_channels.len() as u64;
++        census.entries[8] += self.states_8_channels.len() as u64;
++        census.entries[9] += self.states_9_channels.len() as u64;
++        census.entries[10] += self.states_10_channels.len() as u64;
++        census.entries[11] += self.states_11_channels.len() as u64;
++    }
++
+     pub fn drain_packed(&mut self) -> impl Iterator<Item = (usize, Vec<u8>, T)> {
+         let result = replace(&mut self.states_3_channels, Default::default())
+             .into_iter()
+@@ -336,10 +375,13 @@ impl<T: Clone> OutputSetMap<T> {
+         result
+     }
+ 
+-    pub fn set_with_packed(&mut self, channels: usize, packed: &[u8], value: T) {
++    /// Returns `true` when the key was newly inserted (instrumentation, M0b);
++    /// this is the `BTreeMap::insert` return value that was previously
++    /// discarded. No caller branches on it.
++    pub fn set_with_packed(&mut self, channels: usize, packed: &[u8], value: T) -> bool {
+         assert!(channels > 2);
+ 
+-        match channels {
++        let previous = match channels {
+             3 => self
+                 .states_3_channels
+                 .insert(*array_ref!(packed, 0, 1 << 0), value),
+@@ -378,6 +420,8 @@ impl<T: Clone> OutputSetMap<T> {
+         let _ignored: [(); 0 >> 1] = [];
+         let _ignored: [(); 0 >> 1] = [];
+         let _ignored: [(); 0 >> 1] = [];
++
++        previous.is_none()
+     }
+ 
+     pub fn remove_with_packed(&mut self, channels: usize, packed: &[u8]) {
