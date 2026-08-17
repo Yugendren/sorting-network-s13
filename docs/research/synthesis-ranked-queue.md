@@ -5,6 +5,17 @@ Date: 2026-08-17. Inputs: the four survey documents in this directory
 `xdomain-bound-theory.md`, `xdomain-hardware-probabilistic.md`), each
 grounded against the measured M0b/M2a/M2b bottleneck profile.
 
+> **CORRECTION (2026-08-17, machine-checked)**: independent re-derivation
+> (`tools/verify_shape_case_split.py`, `docs/s13-shape-case-split.md`)
+> found the "5 classes" below was an enumeration slip. The corrected
+> count is **3 unordered root-split classes** (84 of 208,012 plane
+> shapes; 6 up to reflection) — the argument itself reproduced exactly
+> and is *sharper* than claimed. C3 (the 4|9 split) is the cheapest
+> class to kill. One silent assumption (E1′: the per-network,
+> un-minimised form of van Voorhis's bound) carries the whole split and
+> must be confirmed against the primary source before any campaign
+> relies on it. Read the corrected document, not this section's numbers.
+
 ## The headline: a five-front battle plan for S(13) >= 45
 
 The bound-theory survey computed (this session, from F(13)=392 and
