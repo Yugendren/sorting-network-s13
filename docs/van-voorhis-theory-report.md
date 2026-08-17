@@ -660,3 +660,42 @@ Every network the script touches is **constructed** — Batcher odd-even mergeso
 bubble/insertion, odd-even transposition, insertion-extension, and random
 comparator prefixes in front of a bubble network followed by randomised
 redundant-comparator removal. No known witness network is embedded anywhere.
+
+---
+
+## 10. Addendum, 2026-08-18 — partial repair, and one correction to §4.2/§6.4
+
+Follow-up work is recorded in **`docs/kraft-repair-report.md`** (machine check:
+the same `tools/verify_huffman2.py`, now 47 checks, Parts **G** and **H**).
+Three things in the present document are affected.
+
+1. **§3's gap is now half closed.** Define an `N`-sorter to be *clean* if every
+   comparator its max-paths traverse is a branch node (no pass-throughs).
+   **eq (8) is now PROVED for clean sorters** — the antichain step van Voorhis
+   assumed is supplied, and his Kraft *equality* (6) is correctly weakened to the
+   *inequality* the argument needs. Pass-throughs are shown to be the **sole**
+   obstruction. My proposed reduction of the general case to a single lemma
+   (LEMMA★) was subsequently **refuted** — by a counterexample from an
+   independent adversarial verifier — and with it the whole family of per-node
+   charging repairs; eq (8) itself is untouched but now needs a *global*
+   argument. `S(13) >= 44` is still a conjecture and the proved floor is still
+   **43**.
+
+2. **CORRECTION — §4.2's proposed target is refuted as stated.** §4.2 proposed
+   showing that *"for a 13-sorter, `f(MAX(C)) <= 512` forces `f(MIN(C)) >= 513`"*.
+   As a statement about shapes quantified over all 13-sorters this is **false**:
+   Batcher's 8-sorter has `f(MAX) = f(MIN) = 96 = F(8)`, Batcher's 12-sorter has
+   both at `288 = F(12)`, and an explicitly constructed 13-sorter has
+   `f(MAX) = 512` with `f(MIN) = 392`, both admissible. Only the
+   **size-conditioned** version survives, and it cannot be proved by shape
+   reasoning alone. Queue item §6.4 #3 is **demoted** accordingly.
+   *The MIN dual bound of §4.1 is unaffected and remains correct.*
+
+3. **§4.2's other target is sharpened, not weakened.** `P(2,11) = 9` is reduced
+   to a statement about **exactly one shape**: `F(11) = 256 = 2^8` is attained by
+   a unique abstract shape, and the next attainable value is 272 with
+   `ceil(log2 272) = 9`. That shape is realizable, so the claim is not vacuous.
+
+Also new and relevant to §6: **every admissible shape is realizable** as the MAX
+branch tree of an explicitly constructed clean sorter, so none of C1, C2, C3 is
+structurally empty and the 3-class split is not vacuous.

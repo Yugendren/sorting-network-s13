@@ -143,6 +143,20 @@ def nleaves(B):
     return 1 if B is None else nleaves(B[0]) + nleaves(B[1])
 
 
+def leaf_depths(B):
+    out = []
+
+    def w(t, d):
+        if t is None:
+            out.append(d)
+        else:
+            w(t[0], d + 1)
+            w(t[1], d + 1)
+
+    w(B, 0)
+    return sorted(out)
+
+
 @lru_cache(maxsize=None)
 def all_shapes(n):
     if n == 1:
@@ -1080,11 +1094,336 @@ def part_f(fast):
           "fraction of ordinary sorters", kraftbad > tot // 10)
 
 
+# ===========================================================================
+# PART G -- the repair: red/blue leads, the clean-case theorem, LEMMA*
+# ===========================================================================
+#
+# A LEAD is a wire segment.  A lead is RED if some one-hot "largest value"
+# scenario puts the maximum on it, and BLUE otherwise.
+
+def lead_ids(net, n):
+    cur, nxt, comp = list(range(n)), n, []
+    for a, b in net:
+        lo, hi = nxt, nxt + 1
+        nxt += 2
+        comp.append((cur[a], cur[b], lo, hi))
+        cur[a], cur[b] = lo, hi
+    return comp, cur
+
+
+def red_leads(net, n, comp):
+    red = set()
+    for k in range(n):
+        cur, pos = list(range(n)), k
+        red.add(pos)
+        for idx, (a, b) in enumerate(net):
+            ia, ib, lo, hi = comp[idx]
+            if cur[a] == pos or cur[b] == pos:
+                pos = hi
+                red.add(pos)
+            cur[a], cur[b] = lo, hi
+    return red
+
+
+def second_max_leads(net, n, comp, x, y):
+    """Leads occupied by the second largest value (largest entered at x)."""
+    curm, curs, cur, seq = x, y, list(range(n)), [y]
+    for idx, (a, b) in enumerate(net):
+        ia, ib, lo, hi = comp[idx]
+        hm = cur[a] == curm or cur[b] == curm
+        hs = cur[a] == curs or cur[b] == curs
+        if hm and hs:
+            curm, curs = hi, lo
+        elif hm:
+            curm = hi
+        elif hs:
+            curs = hi
+        if hs:
+            seq.append(curs)
+        cur[a], cur[b] = lo, hi
+    return seq
+
+
+def tree_data(T):
+    """a(c) for every branch node, plus each node's two leaf sets and depths."""
+    a, leafset, depth = {}, {}, {}
+
+    def walk(node, d):
+        if node[0] == 'leaf':
+            depth[node[1]] = d
+            return [node[1]]
+        _, idx, L, R = node
+        ls, rs = walk(L, d + 1), walk(R, d + 1)
+        a[idx] = tree_height(L) + tree_height(R) + d + 1
+        leafset[idx] = (ls, rs)
+        return ls + rs
+
+    walk(T, 0)
+    return a, leafset, depth
+
+
+def lemma_sums(net, n):
+    """Returns (vV-choice sum, best-choice sum, clean?, kraft, m-stays-blue?)."""
+    comp, _ = lead_ids(net, n)
+    red = red_leads(net, n, comp)
+    T, branch, traced, rts = extremal_tree(net, n, True)
+    a, leafset, depth = tree_data(T)
+
+    Wbest = {}
+    for x in range(n):
+        for y in range(n):
+            if x == y:
+                continue
+            pm, ps, meet, fm, fs = trace_pair_max(net, x, y)
+            if fm != n - 1 or fs != n - 2 or meet is None:
+                continue
+            Wbest[meet] = max(Wbest.get(meet, 0), len(set(pm) | set(ps)))
+
+    svv = 0.0
+    kraft = 0.0
+    blue = True
+    for c in branch:
+        ls, rs = leafset[c]
+        x = max(ls, key=lambda k: depth[k])
+        y = max(rs, key=lambda k: depth[k])
+        pm, ps, meet, fm, fs = trace_pair_max(net, x, y)
+        svv += 2.0 ** (-(len(set(pm) | set(ps)) - a[c]))
+        kraft += 2.0 ** (-len([z for z in ps if z > c]))
+        seq = second_max_leads(net, n, comp, x, y)
+        post = seq[seq.index(comp[c][2]):]
+        if any(l in red for l in post):
+            blue = False
+    sbest = sum(2.0 ** (-(Wbest[c] - a[c])) for c in branch)
+    struct = (all(lo not in red for (_, _, lo, _) in comp)
+              and all((hi in red) == ((ia in red) or (ib in red))
+                      for (ia, ib, lo, hi) in comp)
+              and {i for i, (ia, ib, _, _) in enumerate(comp)
+                   if ia in red and ib in red} == branch
+              and {i for i, (ia, ib, _, _) in enumerate(comp)
+                   if (ia in red) != (ib in red)} == traced - branch)
+    return svv, sbest, len(traced) == n - 1, kraft, blue, struct
+
+
+def random_sorter_seeded(n, rng):
+    pre = []
+    for _ in range(rng.randint(0, 3 * n)):
+        i = rng.randrange(n - 1)
+        pre.append((i, rng.randrange(i + 1, n)))
+    return thin(pre + bubble(n), n, rng)
+
+
+def realize_shape(S, n):
+    """A CLEAN n-sorter whose MAX branch tree is exactly the shape S: run the
+    tournament that S describes (winner always to the higher channel, so the
+    overall winner lands on channel n-1), then sort channels 0..n-2."""
+    net, nxt = [], [0]
+
+    def rec(t):
+        if t is None:
+            c = nxt[0]
+            nxt[0] += 1
+            return c
+        wa, wb = rec(t[0]), rec(t[1])
+        net.append((min(wa, wb), max(wa, wb)))
+        return max(wa, wb)
+
+    root = rec(S)
+    assert root == n - 1
+    return net + batcher(n - 1)
+
+
 def canon(B):
     if B is None:
         return None
     a, b = canon(B[0]), canon(B[1])
     return (a, b) if repr(a) <= repr(b) else (b, a)
+
+
+def part_g(fast):
+    hdr("PART G  -- the repair: red/blue leads, the clean case, LEMMA*")
+
+    rng = random.Random(4242)
+    per = 40 if fast else 90
+    ns = range(3, 11 if fast else 13)
+    tot = clean = 0
+    bad_struct = bad_blue = bad_kraft = bad_vv = bad_best = bad8 = 0
+    maxbest = 0.0
+    for n in ns:
+        for _ in range(per):
+            net = random_sorter_seeded(n, rng)
+            tot += 1
+            try:
+                svv, sbest, isclean, kraft, blue, struct = lemma_sums(net, n)
+                T, branch, traced, rts = extremal_tree(net, n, True)
+            except ValueError:
+                continue
+            f = f_theorem1(tree_shape(T))
+            if brute_p2(net, n) < math.ceil(math.log2(f)):
+                bad8 += 1
+            if not struct:
+                bad_struct += 1
+            maxbest = max(maxbest, sbest)
+            if sbest > 1 + 1e-9:
+                bad_best += 1
+            if svv > 1 + 1e-9:
+                bad_vv += 1
+            if isclean:
+                clean += 1
+                if not blue:
+                    bad_blue += 1
+                if kraft > 1 + 1e-9:
+                    bad_kraft += 1
+
+    say("    %d constructed sorters (n = %s); pass-through-free: %d"
+        % (tot, list(ns), clean))
+    check("G1  red/blue structure: every LOW output is blue; a HIGH output is "
+          "red iff the comparator has a red input; branch nodes are exactly "
+          "the comparators with TWO red inputs", bad_struct == 0,
+          "%d violations" % bad_struct)
+    check("G2  CLEAN CASE: with no pass-throughs the second max never reaches "
+          "a red lead after separating (%d/%d)" % (clean - bad_blue, clean),
+          bad_blue == 0)
+    check("G3  CLEAN CASE: eq (6)'s Kraft sum is <= 1 (%d/%d) -- van Voorhis's "
+          "proof is valid here" % (clean - bad_kraft, clean), bad_kraft == 0)
+    check("G4  eq (8) holds throughout (%d/%d)" % (tot - bad8, tot), bad8 == 0)
+    # G5 -- LEMMA* is REFUTED.  The counterexample below was found by the
+    # independent adversarial re-derivation tools/verify_kraft_dispute.py (its
+    # network "T3"); this script re-verifies it from scratch and does not import
+    # from it.  It is a counterexample object, not a witness network: 15
+    # comparators on 6 channels, well above S(6) = 12.
+    T3 = [(2, 3), (1, 2), (0, 4), (3, 5), (2, 4), (1, 2), (4, 5), (2, 3),
+          (0, 3), (3, 4), (1, 3), (1, 2), (0, 3), (0, 1), (1, 2)]
+    svv3, sbest3, clean3, kraft3, blue3, struct3 = lemma_sums(T3, 6)
+    T3t, br3, tr3, _ = extremal_tree(T3, 6, True)
+    f3 = f_theorem1(tree_shape(T3t))
+    p3 = brute_p2(T3, 6)
+    check("G5  LEMMA* is REFUTED: an explicit 6-sorter gives slack-Kraft sum "
+          "%.5f > 1 even under the BEST-choice pairing (so the whole per-node "
+          "charging family of repairs fails)" % sbest3,
+          sorts(T3, 6) and sbest3 > 1 + 1e-9)
+    say("    counterexample T3 = %r" % (T3,))
+    say("    |T3| = %d (S(6) = %d), pass-throughs = %d, f = %d, p(2,T3) = %d"
+        % (len(T3), S_EXACT[6], len(tr3) - 5, f3, p3))
+    say("    best-choice sum = %.5f, deepest-leaf sum = %.5f" % (sbest3, svv3))
+    check("G6  ...yet eq (8) still holds on that network "
+          "(ceil(log2 %d) = %d <= p(2,T3) = %d), so LEMMA* was only SUFFICIENT "
+          "for eq (8), never necessary -- eq (8) itself is untouched"
+          % (f3, math.ceil(math.log2(f3)), p3),
+          p3 >= math.ceil(math.log2(f3)))
+    check("G6b SAMPLING CAUTION, recorded: %d randomly constructed sorters "
+          "produced %d LEMMA* violations (max sum %.6f) -- random sampling of "
+          "this generator is NOT evidence for the lemma"
+          % (tot, bad_best, maxbest), bad_best == 0)
+
+    # G7: van Voorhis's OWN choice rule refutes the naive form of LEMMA*.
+    found = None
+    rng2 = random.Random(1)
+    for nn in (5, 6, 7):
+        for _ in range(12):
+            net = random_sorter_seeded(nn, rng2)
+            try:
+                svv, sbest, isclean, kraft, blue, struct = lemma_sums(net, nn)
+            except ValueError:
+                continue
+            if svv > 1 + 1e-9 and sorts(net, nn):
+                found = (nn, net, svv, sbest)
+                break
+        if found:
+            break
+    check("G7  the DEEPEST-LEAF choice rule is NOT enough: an explicit "
+          "constructed sorter has slack-Kraft sum %s > 1 under van Voorhis's "
+          "own pairing (best-choice sum there: %s)"
+          % (("%.6f" % found[2]) if found else "?",
+             ("%.6f" % found[3]) if found else "?"),
+          found is not None and found[2] > 1 and found[3] <= 1 + 1e-9)
+    if found:
+        say("    counterexample: n=%d, |T|=%d, %r"
+            % (found[0], len(found[1]), found[1]))
+
+    # G8: every admissible shape is realizable, by a CLEAN network
+    bad = []
+    for n, ceiling in ((11, 256), (13, 512)):
+        seen = {}
+        for B in all_shapes(n):
+            if f_theorem1(B) <= ceiling:
+                seen.setdefault(canon(B), B)
+        for c, B in seen.items():
+            net = realize_shape(B, n)
+            T, branch, traced, rts = extremal_tree(net, n, True)
+            if not (sorts(net, n) and canon(tree_shape(T)) == c
+                    and len(traced) == n - 1):
+                bad.append((n, f_theorem1(B)))
+    check("G8  every admissible shape is REALIZABLE as the MAX branch tree of "
+          "an actual sorter, by a pass-through-free construction (n=11 "
+          "minimiser and all 6 admissible n=13 shapes)", not bad, repr(bad))
+
+
+def part_h():
+    hdr("PART H  -- the MIN side: P(2,11)=9 and what n=13 would need")
+
+    # H1 -- the n=11 reduction
+    dist = {}
+    mins = {}
+    for B in all_shapes(11):
+        f = f_theorem1(B)
+        dist[f] = dist.get(f, 0) + 1
+        if f == 256:
+            mins.setdefault(canon(B), B)
+    vals = sorted(dist)
+    check("H1  F(11) = 256 = 2^8 exactly, achieved by exactly ONE abstract "
+          "shape (%d plane); the next value up is %d, and ceil(log2 %d) = 9"
+          % (dist[256], vals[1], vals[1]),
+          vals[0] == 256 and len(mins) == 1
+          and math.ceil(math.log2(vals[1])) == 9)
+    B = list(mins.values())[0]
+    say("    the unique minimiser: root split %s, height %d, leaf depths %s"
+        % (sorted([nleaves(B[0]), nleaves(B[1])]), height(B), leaf_depths(B)))
+    say("    => P(2,11) >= 9 reduces to a statement about ONE shape:")
+    say("       'every 11-sorter whose MAX branch tree is that shape admits a")
+    say("        MIN-side pruning of >= 9 comparators'.")
+
+    # H2 -- a pure shape-level MAX/MIN incompatibility is FALSE
+    both = []
+    for n in range(3, 13):
+        F = min(f_theorem1(B) for B in all_shapes(n))
+        net = batcher(n)
+        try:
+            T, _, _, _ = extremal_tree(net, n, True)
+            Tm, _, _, _ = extremal_tree(net, n, False)
+        except ValueError:
+            continue
+        if f_theorem1(tree_shape(T)) == F == f_theorem1(tree_shape(Tm)):
+            both.append(n)
+    check("H2  REFUTED: a pure shape-level MAX/MIN incompatibility cannot "
+          "exist -- Batcher's n-sorter has f(MAX) = f(MIN) = F(n) for n in %s"
+          % both, 8 in both and 12 in both)
+
+    # H3 -- and at n = 13 both trees can be admissible simultaneously
+    hits = []
+    for B in all_shapes(13):
+        if f_theorem1(B) not in (496, 512):
+            continue
+        net = realize_shape(B, 13)
+        Tm, _, _, _ = extremal_tree(net, 13, False)
+        fm = f_theorem1(tree_shape(Tm))
+        if fm <= 512:
+            hits.append((f_theorem1(B), fm, len(net)))
+            break
+    check("H3  REFUTED at n=13 too: a constructed 13-sorter has f(MAX) = %s and "
+          "f(MIN) = %s, BOTH admissible -- so any MAX/MIN incompatibility must "
+          "use the size hypothesis, not shapes alone"
+          % (hits[0][0] if hits else "?", hits[0][1] if hits else "?"),
+          bool(hits))
+
+    # H4 -- what killing one side is worth
+    adm = admissible_13()
+    say("")
+    say("    n=13: 44 needs BOTH f(MAX) <= 512 and f(MIN) <= 512, so killing")
+    say("    EITHER side suffices.  Excess needed per shape:")
+    for sid, B, cls in adm["abstract"]:
+        f = f_theorem1(B)
+        say("      %s (%s) f=%3d -> needs +%3d  (%.2f%%)"
+            % (sid, cls, f, 513 - f, 100.0 * (513 - f) / f))
 
 
 def admissible_13():
@@ -1129,6 +1468,8 @@ def main(argv=None):
     part_e()
     part_d(F)
     part_f(args.fast)
+    part_g(args.fast)
+    part_h()
 
     print("\n" + "=" * 72)
     failed = [c for c in CHECKS if not c[1]]
