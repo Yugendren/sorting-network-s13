@@ -34,4 +34,21 @@ instead of ad-hoc inline watchdogs.
   (with its measured wall cost) — or, per the programme, decomposition
   so no monolithic 42->43 iteration is ever needed.
 
-Artifacts: `.build/v3-limits/probe13-43/run.log`, `watchdog.csv`.
+Artifacts: `.build/v3-limits/probe13-43/run.log`, `watchdog.csv`,
+`NOTE-what-actually-happened.txt`.
+
+## Correction (agent post-mortem, 01:1x)
+
+The monitor trace shows the search was killed BY THE OS at 9m10s under
+memory pressure (RSS falling while states rose = compressor reclaiming;
+peak 6.45 GiB; free pages bottomed at 3,639), essentially simultaneous
+with the session's manual kill. Any later `KILLED: 30min cap` /
+`probe-done` lines appended to run.log by the orphaned launcher shell
+are FALSE — see the NOTE file. Two amendments adopted:
+- **Practical RSS ceiling on the 16 GiB M4 is ~6 GB, not 8 GB** (5.57
+  GiB survived; 6.45 GiB was killed).
+- Future probes must trip on free-page count, not RSS alone — the
+  compressor makes RSS understate pressure exactly when it matters.
+Silver lining: the probe independently reproduced the bound-42
+measurement (4:51.0 vs 4:58.4, ~2%), strengthening the n=12<->n=13
+correspondence.
