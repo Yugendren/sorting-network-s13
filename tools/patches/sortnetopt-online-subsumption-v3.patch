@@ -1,0 +1,788 @@
+# M2a: on-line permutation-subsumption in the sortnetopt search.
+#
+# Applies on top of, in order:
+#   tools/patches/sortnetopt-macos-proc.patch
+#   tools/patches/sortnetopt-instrumentation-v3.patch
+# against the pinned upstream commit 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+# Apply with:  patch -V none -p1 -i <this file>
+#
+# The Isabelle/HOL-extracted checker (checker/) is not touched. The certificate
+# pipeline (prune / prune-all / gen-proof) is not touched.
+#
+# Controlled entirely by environment variables; with none set the search is
+# behaviourally identical to the instrumentation baseline (no index is
+# allocated and neither StateMap::get nor StateMap::set reaches one):
+#
+#   SORTNETOPT_SUBSUME        off (default) | write | writeread | evict
+#   SORTNETOPT_SUBSUME_DIMS   k-d index point dimension (rounded to a multiple of 4)
+#   SORTNETOPT_SUBSUME_RANKS  the same, expressed in abstraction rank chunks
+#   SORTNETOPT_SUBSUME_WIDTHS comma-separated channel widths to index
+#                             (default: n-3, n-2)
+diff -ruN a/src/instrument.rs b/src/instrument.rs
+--- a/src/instrument.rs	2026-08-17 10:46:55
++++ b/src/instrument.rs	2026-08-17 11:09:43
+@@ -67,6 +67,97 @@
+ /// Highest total `StateMap` entry count ever observed by a census.
+ pub static PEAK_ENTRIES: AtomicU64 = AtomicU64::new(0);
+ 
++// --- M2a on-line subsumption index -------------------------------------------
++
++/// `StateMap::get` exact-key misses that went on to query the index.
++pub static IDX_LOOKUPS: AtomicU64 = AtomicU64::new(0);
++/// ... of which returned a bound stronger than the `known_bounds` seed.
++pub static IDX_GET_BOOSTS: AtomicU64 = AtomicU64::new(0);
++/// `StateMap::set` calls routed through `insert_with_abstraction`.
++pub static IDX_INSERTS: AtomicU64 = AtomicU64::new(0);
++/// ... of which found a stored subsuming set with a stronger bound.
++pub static IDX_SET_BOOSTS: AtomicU64 = AtomicU64::new(0);
++/// Memo-table entries removed because the index absorbed them.
++pub static IDX_EVICTIONS: AtomicU64 = AtomicU64::new(0);
++/// Times a subsumption bound exceeded the set's own upper bound (must be 0).
++pub static IDX_CLAMPS: AtomicU64 = AtomicU64::new(0);
++/// Nanoseconds summed over all threads, computing abstraction vectors.
++pub static IDX_NS_ABSTRACTION: AtomicU64 = AtomicU64::new(0);
++/// Nanoseconds summed over all threads, inside the index read lock (lookup).
++pub static IDX_NS_LOOKUP: AtomicU64 = AtomicU64::new(0);
++/// Nanoseconds summed over all threads, inside the index write lock (insert).
++pub static IDX_NS_INSERT: AtomicU64 = AtomicU64::new(0);
++
++#[inline]
++pub fn add_ns(counter: &AtomicU64, start: Instant) {
++    counter.fetch_add(start.elapsed().as_nanos() as u64, Relaxed);
++}
++
++/// `(channels, point_dim, entries, capacity bytes, payload bytes)` at exit.
++static IDX_CENSUS: Mutex<Vec<(usize, u64, u64, u64, u64)>> = Mutex::new(Vec::new());
++/// Mode string of the on-line subsumption prototype, for the report header.
++static IDX_MODE: Mutex<Option<&'static str>> = Mutex::new(None);
++
++/// Live memo-table entries, maintained exactly (insert +1, eviction -1).
++///
++/// The baseline table has no removal path, so `PEAK_ENTRIES` sampled from the
++/// 10-second census was exact there. Once eviction exists the census can miss
++/// a peak that occurs inside a bound iteration, so the peak is tracked here on
++/// every insert instead.
++pub static LIVE_ENTRIES: AtomicU64 = AtomicU64::new(0);
++static LIVE_BY_CHANNELS: [AtomicU64; MAX_TRACKED_CHANNELS] = [
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++];
++/// Packed key bytes currently live, maintained the same way.
++pub static LIVE_KEY_BYTES: AtomicU64 = AtomicU64::new(0);
++pub static PEAK_KEY_BYTES: AtomicU64 = AtomicU64::new(0);
++
++#[inline]
++fn note_live_peak() {
++    let live = LIVE_ENTRIES.load(Relaxed);
++    PEAK_ENTRIES.fetch_max(live, Relaxed);
++    PEAK_KEY_BYTES.fetch_max(LIVE_KEY_BYTES.load(Relaxed), Relaxed);
++}
++
++#[inline]
++pub fn record_entry_added(channels: usize) {
++    LIVE_ENTRIES.fetch_add(1, Relaxed);
++    LIVE_KEY_BYTES.fetch_add(packed_len_for_channels(channels), Relaxed);
++    if channels < MAX_TRACKED_CHANNELS {
++        LIVE_BY_CHANNELS[channels].fetch_add(1, Relaxed);
++    }
++    note_live_peak();
++}
++
++#[inline]
++pub fn record_entry_removed(channels: usize) {
++    LIVE_ENTRIES.fetch_sub(1, Relaxed);
++    LIVE_KEY_BYTES.fetch_sub(packed_len_for_channels(channels), Relaxed);
++    if channels < MAX_TRACKED_CHANNELS {
++        LIVE_BY_CHANNELS[channels].fetch_sub(1, Relaxed);
++    }
++}
++
++pub fn record_subsume_index(mode: &'static str, census: Vec<(usize, u64, u64, u64, u64)>) {
++    *IDX_MODE.lock().unwrap() = Some(mode);
++    *IDX_CENSUS.lock().unwrap() = census;
++}
++
+ static INSERTS_BY_CHANNELS: [AtomicU64; MAX_TRACKED_CHANNELS] = [
+     AtomicU64::new(0),
+     AtomicU64::new(0),
+@@ -123,6 +214,7 @@
+         if channels < MAX_TRACKED_CHANNELS {
+             INSERTS_BY_CHANNELS[channels].fetch_add(1, Relaxed);
+         }
++        record_entry_added(channels);
+     } else {
+         SET_UPDATES.fetch_add(1, Relaxed);
+     }
+@@ -244,6 +336,17 @@
+         ("forced_prunings", FORCED_PRUNINGS.load(Relaxed)),
+         ("huffman_prunings", HUFFMAN_PRUNINGS.load(Relaxed)),
+         ("peak_entries", PEAK_ENTRIES.load(Relaxed)),
++        ("idx_lookups", IDX_LOOKUPS.load(Relaxed)),
++        ("idx_get_boosts", IDX_GET_BOOSTS.load(Relaxed)),
++        ("idx_inserts", IDX_INSERTS.load(Relaxed)),
++        ("idx_set_boosts", IDX_SET_BOOSTS.load(Relaxed)),
++        ("idx_evictions", IDX_EVICTIONS.load(Relaxed)),
++        ("idx_clamps", IDX_CLAMPS.load(Relaxed)),
++        ("live_entries", LIVE_ENTRIES.load(Relaxed)),
++        ("peak_key_bytes", PEAK_KEY_BYTES.load(Relaxed)),
++        ("idx_ns_abstraction", IDX_NS_ABSTRACTION.load(Relaxed)),
++        ("idx_ns_lookup", IDX_NS_LOOKUP.load(Relaxed)),
++        ("idx_ns_insert", IDX_NS_INSERT.load(Relaxed)),
+     ]
+ }
+ 
+@@ -306,6 +409,27 @@
+         );
+     }
+ 
++    let idx_mode = IDX_MODE.lock().unwrap().unwrap_or("off");
++    let idx_census = IDX_CENSUS.lock().unwrap().clone();
++    let idx_entries: u64 = idx_census.iter().map(|&(_, _, e, _, _)| e).sum();
++    let idx_bytes: u64 = idx_census.iter().map(|&(_, _, _, b, _)| b).sum();
++    let idx_payload: u64 = idx_census.iter().map(|&(_, _, _, _, p)| p).sum();
++    eprintln!(
++        "subsume mode {} index_entries {} index_bytes {} index_payload_bytes {} combined_bytes {} combined_payload_bytes {}",
++        idx_mode,
++        idx_entries,
++        idx_bytes,
++        idx_payload,
++        final_census.total_key_plus_state_bytes() + idx_bytes,
++        final_census.total_key_plus_state_bytes() + idx_payload
++    );
++    for &(k, point_dim, entries, bytes, payload) in idx_census.iter() {
++        eprintln!(
++            "subsume  channels {:>2}  point_dim {:>4}  index_entries {:>10}  index_bytes {:>12}  payload_bytes {:>12}",
++            k, point_dim, entries, bytes, payload
++        );
++    }
++
+     let iterations = ITERATIONS.lock().unwrap();
+     eprintln!("iteration  lower  upper  elapsed_ms  states  new_states");
+     for it in iterations.iter() {
+@@ -340,6 +464,50 @@
+             json_u64_map(&entries)
+         );
+         let _ = writeln!(out, "  \"bytes_by_channels\": {},", json_u64_map(&bytes));
++        let _ = writeln!(out, "  \"subsume_mode\": \"{}\",", idx_mode);
++        let _ = writeln!(
++            out,
++            "  \"subsume_index\": {{\"entries\": {}, \"bytes\": {}, \"payload_bytes\": {}, \"by_channels\": {}}},",
++            idx_entries,
++            idx_bytes,
++            idx_payload,
++            json_u64_map(
++                &idx_census
++                    .iter()
++                    .map(|&(k, _, e, _, _)| (k, e))
++                    .collect::<Vec<_>>()
++            )
++        );
++        let _ = writeln!(
++            out,
++            "  \"subsume_index_bytes_by_channels\": {},",
++            json_u64_map(
++                &idx_census
++                    .iter()
++                    .map(|&(k, _, _, b, _)| (k, b))
++                    .collect::<Vec<_>>()
++            )
++        );
++        let _ = writeln!(
++            out,
++            "  \"subsume_index_payload_by_channels\": {},",
++            json_u64_map(
++                &idx_census
++                    .iter()
++                    .map(|&(k, _, _, _, p)| (k, p))
++                    .collect::<Vec<_>>()
++            )
++        );
++        let _ = writeln!(
++            out,
++            "  \"subsume_point_dim_by_channels\": {},",
++            json_u64_map(
++                &idx_census
++                    .iter()
++                    .map(|&(k, d, _, _, _)| (k, d))
++                    .collect::<Vec<_>>()
++            )
++        );
+         let _ = writeln!(
+             out,
+             "  \"inserts_by_channels\": {},",
+diff -ruN a/src/output_set/index/tree.rs b/src/output_set/index/tree.rs
+--- a/src/output_set/index/tree.rs	2026-08-17 10:46:51
++++ b/src/output_set/index/tree.rs	2026-08-17 11:05:37
+@@ -146,6 +146,14 @@
+             nodes,
+         };
+ 
++        // M2a: the flat staging buffers hand over their (doubled) capacity.
++        // A tree is immutable in size afterwards apart from removals, so the
++        // slack is pure waste in a memory experiment. Purely an allocation
++        // change; no element is touched.
++        result.points.shrink_to_fit();
++        result.packed.shrink_to_fit();
++        result.values.shrink_to_fit();
++
+         if !result.values.is_empty() {
+             result.build_tree(0);
+         }
+@@ -163,6 +171,25 @@
+         } else {
+             self.nodes[0].augmentation.size
+         }
++    }
++
++    /// M2a instrumentation: heap bytes held by this tree, charging `capacity`.
++    pub fn estimated_bytes(&self) -> usize {
++        self.points.capacity() * 2
++            + self.packed.capacity()
++            + self.values.capacity()
++            + self.ranges.capacity() * 4
++            + self.nodes.capacity() * std::mem::size_of::<Node>()
++    }
++
++    /// M2a instrumentation: the same, charging `len` — i.e. what a
++    /// capacity-tight implementation of the same data structure would need.
++    pub fn payload_bytes(&self) -> usize {
++        self.points.len() * 2
++            + self.packed.len()
++            + self.values.len()
++            + self.ranges.len() * 4
++            + self.nodes.len() * std::mem::size_of::<Node>()
+     }
+ 
+     fn build_tree(&mut self, mut node_id: usize) {
+diff -ruN a/src/output_set/index.rs b/src/output_set/index.rs
+--- a/src/output_set/index.rs	2026-08-17 10:46:51
++++ b/src/output_set/index.rs	2026-08-17 11:05:52
+@@ -1,6 +1,6 @@
+ use std::{cmp::Reverse, iter::repeat, mem::replace};
+ 
+-use super::{BVec, CVec, OutputSet};
++use super::{BVec, CVec, OutputSet, PAIR_ABSTRACTION_GROUPS};
+ 
+ mod tree;
+ 
+@@ -283,11 +283,32 @@
+ 
+ impl<Dir: IndexDirection> OutputSetIndex<Dir> {
+     pub fn new(channels: usize) -> Self {
++        Self::new_with_point_dim(channels, OutputSet::abstraction_len_for_channels(channels))
++    }
++
++    /// M2a: an index whose k-d points are a *prefix* of the abstraction vector.
++    ///
++    /// Soundness: every `Dir::test_abstraction*` predicate is a conjunction of
++    /// per-coordinate comparisons, so evaluating it on a coordinate subset is a
++    /// strictly weaker necessary condition. The exact arbiter
++    /// (`Dir::test_precise` = `subsumes_permuted`) is unchanged, so a truncated
++    /// index returns exactly the same answers as a full one; it only does more
++    /// precise tests to get there. Truncation trades query time for the
++    /// O(channels^2) per-entry point storage that otherwise dwarfs the
++    /// O(2^channels/8) packed key at the widths where the memo table lives.
++    /// `point_dim` is rounded down to a multiple of `PAIR_ABSTRACTION_GROUPS`
++    /// (4), which is the minimum granularity: `LowerInvert` implements the
++    /// complement symmetry as the coordinate permutation `i ^ 3`, so the
++    /// stored prefix must be closed under flipping the low two bits.
++    pub fn new_with_point_dim(channels: usize, point_dim: usize) -> Self {
++        let full = OutputSet::abstraction_len_for_channels(channels);
++        let point_dim = ((point_dim / PAIR_ABSTRACTION_GROUPS).max(1) * PAIR_ABSTRACTION_GROUPS)
++            .min(full);
+         Self {
+             direction: std::marker::PhantomData,
+             channels,
+             trees: vec![],
+-            point_dim: OutputSet::abstraction_len_for_channels(channels),
++            point_dim,
+             points: vec![],
+             packed_dim: OutputSet::packed_len_for_channels(channels),
+             packed: vec![],
+@@ -295,6 +316,34 @@
+         }
+     }
+ 
++    pub fn point_dim(&self) -> usize {
++        self.point_dim
++    }
++
++    /// M2a instrumentation: heap bytes held by this index (charging capacity).
++    pub fn estimated_bytes(&self) -> usize {
++        self.points.capacity() * 2
++            + self.packed.capacity()
++            + self.values.capacity()
++            + self
++                .trees
++                .iter()
++                .map(|tree| tree.estimated_bytes())
++                .sum::<usize>()
++    }
++
++    /// M2a instrumentation: heap bytes charging `len` instead of `capacity`.
++    pub fn payload_bytes(&self) -> usize {
++        self.points.len() * 2
++            + self.packed.len()
++            + self.values.len()
++            + self
++                .trees
++                .iter()
++                .map(|tree| tree.payload_bytes())
++                .sum::<usize>()
++    }
++
+     pub fn lookup_subsuming_with_abstraction(
+         &self,
+         output_set: OutputSet<&[bool]>,
+@@ -488,6 +537,23 @@
+         abstraction: &[u16],
+         value: u8,
+     ) -> u8 {
++        self.insert_with_abstraction_collect(output_set, abstraction, value, &mut |_| ())
++    }
++
++    /// M2a: `insert_with_abstraction` with the *identity of every evicted entry*
++    /// reported to `on_evict` (the packed bitmap of the dominated set) instead
++    /// of being silently dropped. This is the hook the on-line `StateMap`
++    /// prototype needs in order to mirror index eviction into the memo table.
++    ///
++    /// The returned value is unchanged: the best value over stored sets that
++    /// subsume `output_set`, i.e. a sound lower bound for `output_set`.
++    pub fn insert_with_abstraction_collect(
++        &mut self,
++        output_set: OutputSet<&[bool]>,
++        abstraction: &[u16],
++        value: u8,
++        on_evict: &mut dyn FnMut(&[u8]),
++    ) -> u8 {
+         let best_so_far = self.lookup_with_abstraction(output_set, abstraction);
+ 
+         let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
+@@ -531,6 +597,8 @@
+             ) {
+                 return TraversalMut::Retain;
+             }
++
++            on_evict(packed_candidate);
+ 
+             TraversalMut::Remove
+         };
+diff -ruN a/src/output_set.rs b/src/output_set.rs
+--- a/src/output_set.rs	2026-08-17 10:46:51
++++ b/src/output_set.rs	2026-08-17 10:58:29
+@@ -8,7 +8,7 @@
+ use arrayvec::ArrayVec;
+ use rustc_hash::FxHasher;
+ 
+-const PAIR_ABSTRACTION_GROUPS: usize = 4;
++pub const PAIR_ABSTRACTION_GROUPS: usize = 4;
+ 
+ pub const MAX_CHANNELS: usize = 11;
+ pub const MAX_BITMAP_SIZE: usize = 1 << MAX_CHANNELS;
+@@ -486,6 +486,22 @@
+         self.write_abstraction_into(&mut result[..]);
+ 
+         result
++    }
++
++    /// M2a: the first `dims` coordinates of `abstraction()`.
++    ///
++    /// The abstraction is laid out as `channels - 1` consecutive *rank chunks*
++    /// of `channels * PAIR_ABSTRACTION_GROUPS` coordinates each (rank r holds
++    /// the r-th largest channel-pair count per channel per group), so a prefix
++    /// is the top ranks — the most discriminating coordinates. Because every
++    /// abstraction predicate in `output_set::index` is a conjunction of
++    /// per-coordinate comparisons, a prefix is a sound (merely weaker)
++    /// necessary condition for subsumption.
++    pub fn abstraction_prefix(&self, dims: usize) -> AVec<u16> {
++        let mut full = self.abstraction();
++        let dims = dims.min(full.len());
++        full.truncate(dims);
++        full
+     }
+ 
+     pub fn channel_is_extremal(&self, polarity: bool, channel: usize) -> bool {
+diff -ruN a/src/search/states.rs b/src/search/states.rs
+--- a/src/search/states.rs	2026-08-17 10:46:55
++++ b/src/search/states.rs	2026-08-17 11:13:27
+@@ -3,6 +3,7 @@
+     hash::{Hash, Hasher},
+     mem::{replace, transmute},
+     sync::RwLock,
++    time::Instant,
+ };
+ 
+ use arrayref::array_ref;
+@@ -13,7 +14,10 @@
+ use rustc_hash::FxHasher;
+ 
+ use crate::instrument::{self, Census};
+-use crate::output_set::OutputSet;
++use crate::output_set::{
++    index::{LowerInvert, OutputSetIndex},
++    OutputSet, PVec, MAX_CHANNELS, PAIR_ABSTRACTION_GROUPS,
++};
+ 
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+ pub struct State {
+@@ -21,21 +25,177 @@
+     pub huffman_bounds: [u8; 2],
+ }
+ 
++/// M2a: how much of the on-line permutation-subsumption prototype is active.
++///
++/// `Off` reproduces the unmodified search exactly: no index is allocated and
++/// neither `get` nor `set` gains a single branch that touches one.
++#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
++pub enum SubsumeMode {
++    /// Baseline. No subsumption index at all.
++    Off,
++    /// Write side only: `set` routes the bound through
++    /// `OutputSetIndex::insert_with_abstraction`, which returns the best bound
++    /// over already-stored sets that subsume this one. That bound is a sound
++    /// lower bound, so it is written into the memo table.
++    Write,
++    /// `Write`, plus: an exact-key miss in `get` consults the index instead of
++    /// falling straight through to the `known_bounds` seed.
++    WriteRead,
++    /// `WriteRead`, plus: entries the index evicts as dominated are removed
++    /// from the memo table too. This is the only mode that reduces peak
++    /// entries; it depends on the read side for bound monotonicity.
++    Evict,
++}
++
++impl SubsumeMode {
++    fn from_env() -> Self {
++        match std::env::var("SORTNETOPT_SUBSUME")
++            .unwrap_or_default()
++            .to_ascii_lowercase()
++            .as_str()
++        {
++            "write" => SubsumeMode::Write,
++            "writeread" | "read" => SubsumeMode::WriteRead,
++            "evict" => SubsumeMode::Evict,
++            _ => SubsumeMode::Off,
++        }
++    }
++
++    pub fn name(self) -> &'static str {
++        match self {
++            SubsumeMode::Off => "off",
++            SubsumeMode::Write => "write",
++            SubsumeMode::WriteRead => "writeread",
++            SubsumeMode::Evict => "evict",
++        }
++    }
++}
++
+ pub struct StateMap {
+     state_shards: Vec<RwLock<OutputSetMap<State>>>,
+     lock_shards: Vec<RwLock<OutputSetMap<Shared<oneshot::Receiver<()>>>>>,
++    /// M2a. `subsume_indexes[k]` is present exactly for the indexed widths.
++    subsume_mode: SubsumeMode,
++    subsume_indexes: Vec<Option<RwLock<OutputSetIndex<LowerInvert>>>>,
+ }
+ 
+-impl Default for StateMap {
+-    fn default() -> Self {
++impl StateMap {
++    /// `root_channels` is the width of the search root. The on-line index is
++    /// restricted to k in {n-3, n-2}: M0b measured 85.7 % of the memo table's
++    /// packed bytes and 79.9 % of its entries at exactly those two widths, and
++    /// the abstraction cost per query grows as O(k^2 * 2^k).
++    pub fn new(root_channels: usize) -> Self {
+         let threads = num_cpus::get();
+         let shards = (threads * threads * 8).next_power_of_two();
+ 
++        let subsume_mode = SubsumeMode::from_env();
++
++        let mut subsume_indexes = (0..=MAX_CHANNELS).map(|_| None).collect::<Vec<_>>();
++
++        if subsume_mode != SubsumeMode::Off {
++            // Number of abstraction rank chunks kept as the k-d point.
++            // 0 / unset means "all of them", i.e. Harder's full abstraction.
++            let ranks: usize = std::env::var("SORTNETOPT_SUBSUME_RANKS")
++                .ok()
++                .and_then(|v| v.parse().ok())
++                .unwrap_or(0);
++            // Raw coordinate count; overrides `RANKS` when set.
++            let dims: usize = std::env::var("SORTNETOPT_SUBSUME_DIMS")
++                .ok()
++                .and_then(|v| v.parse().ok())
++                .unwrap_or(0);
++
++            // Default: k in {n-3, n-2}, the widths M0b measured as holding
++            // 85.7 % of the packed bytes. `SORTNETOPT_SUBSUME_WIDTHS` (comma
++            // separated absolute widths) overrides it, so the sensitivity of
++            // the whole design to that choice can be measured rather than
++            // assumed.
++            let widths: Vec<usize> = match std::env::var("SORTNETOPT_SUBSUME_WIDTHS") {
++                Ok(spec) if !spec.trim().is_empty() => spec
++                    .split(',')
++                    .filter_map(|part| part.trim().parse::<usize>().ok())
++                    .collect(),
++                _ => vec![
++                    root_channels.wrapping_sub(3),
++                    root_channels.wrapping_sub(2),
++                ],
++            };
++
++            for k in widths.into_iter() {
++                if k >= 3 && k <= MAX_CHANNELS {
++                    let point_dim = if dims > 0 {
++                        dims
++                    } else if ranks == 0 {
++                        OutputSet::abstraction_len_for_channels(k)
++                    } else {
++                        ranks * k * PAIR_ABSTRACTION_GROUPS
++                    };
++                    subsume_indexes[k] =
++                        Some(RwLock::new(OutputSetIndex::new_with_point_dim(k, point_dim)));
++                }
++            }
++        }
++
+         Self {
+             state_shards: (0..shards).map(|_| Default::default()).collect(),
+             lock_shards: (0..shards).map(|_| Default::default()).collect(),
++            subsume_mode,
++            subsume_indexes,
+         }
+     }
++
++    pub fn subsume_mode(&self) -> SubsumeMode {
++        self.subsume_mode
++    }
++
++    /// `(channels, point_dim, entries, capacity bytes, payload bytes)` for each
++    /// on-line index.
++    pub fn subsume_census(&self) -> Vec<(usize, u64, u64, u64, u64)> {
++        self.subsume_indexes
++            .iter()
++            .enumerate()
++            .filter_map(|(k, slot)| {
++                slot.as_ref().map(|lock| {
++                    let index = lock.read().unwrap();
++                    (
++                        k,
++                        index.point_dim() as u64,
++                        index.len() as u64,
++                        index.estimated_bytes() as u64,
++                        index.payload_bytes() as u64,
++                    )
++                })
++            })
++            .collect()
++    }
++
++    #[inline]
++    fn subsume_index(&self, channels: usize) -> Option<&RwLock<OutputSetIndex<LowerInvert>>> {
++        self.subsume_indexes.get(channels).and_then(|s| s.as_ref())
++    }
++
++    fn shard_of(&self, packed: &PVec<u8>) -> usize {
++        let mut hasher = FxHasher::default();
++        packed.hash(&mut hasher);
++        let hash = hasher.finish();
++        (hash & (self.state_shards.len() - 1) as u64) as usize
++    }
++
++    /// M2a: drop a memo-table entry the subsumption index has just absorbed.
++    /// The key is rebuilt as a `PVec` so the shard hash is bit-identical to the
++    /// one `get`/`set` compute for the same set.
++    fn remove_state(&self, channels: usize, packed_bytes: &[u8]) {
++        let packed: PVec<u8> = packed_bytes.iter().cloned().collect();
++        let shard = self.shard_of(&packed);
++        let removed = self.state_shards[shard]
++            .write()
++            .unwrap()
++            .remove_with_packed(channels, &packed);
++        // Recorded after the shard write guard has been dropped.
++        if removed {
++            instrument::record_entry_removed(channels);
++        }
++    }
+ }
+ 
+ impl StateMap {
+@@ -97,15 +257,109 @@
+                     .cloned()
+                     .unwrap_or(quadratic_bound as u8);
+ 
+-                State {
++                let mut state = State {
+                     bounds: [1, bound],
+                     huffman_bounds: [1, bound],
++                };
++
++                // --- M2a read-side hook -------------------------------------
++                //
++                // Only on an exact-key miss, and only at the two indexed
++                // widths. If some stored set Y subsumes this one (Y is a
++                // subset of it, modulo channel permutation and complement)
++                // then every network sorting this set also sorts Y, so Y's
++                // lower bound transfers upward. This is the same lemma the
++                // off-line `prune` stage and the checker use.
++                //
++                // It is also what makes `Evict` sound: an entry the index
++                // absorbed is gone from the memo table, and this path is how
++                // its bound is recovered, so `get` stays monotone in time.
++                if self.subsume_mode >= SubsumeMode::WriteRead {
++                    if let Some(index_lock) = self.subsume_index(output_set.channels()) {
++                        let point_dim = index_lock.read().unwrap().point_dim();
++                        let t0 = Instant::now();
++                        let abstraction = output_set.abstraction_prefix(point_dim);
++                        instrument::add_ns(&instrument::IDX_NS_ABSTRACTION, t0);
++                        instrument::bump(&instrument::IDX_LOOKUPS);
++                        let t1 = Instant::now();
++                        let subsuming = index_lock
++                            .read()
++                            .unwrap()
++                            .lookup_with_abstraction(output_set, &abstraction);
++                        instrument::add_ns(&instrument::IDX_NS_LOOKUP, t1);
++                        if let Some(subsuming) = subsuming {
++                            if subsuming > state.bounds[0] {
++                                instrument::bump(&instrument::IDX_GET_BOOSTS);
++                                state.bounds[0] = subsuming.min(state.bounds[1]);
++                            }
++                        }
++                    }
+                 }
++
++                state
+             }
+         }
+     }
+ 
+-    pub fn set(&self, output_set: OutputSet<&[bool]>, state: State) {
++    pub fn set(&self, output_set: OutputSet<&[bool]>, mut state: State) {
++        // --- M2a write-side hook ---------------------------------------------
++        //
++        // `set_inserts : get_calls` is 1:17, so this is where the O(k^2 * 2^k)
++        // abstraction computation belongs. `insert_with_abstraction` already
++        // does store-and-evict: it returns the best bound over stored subsuming
++        // sets and removes every stored entry the new one dominates.
++        if self.subsume_mode >= SubsumeMode::Write && output_set.channels() > 2 {
++            if let Some(index_lock) = self.subsume_index(output_set.channels()) {
++                if !output_set.is_sorted() {
++                    let point_dim = index_lock.read().unwrap().point_dim();
++                    let t0 = Instant::now();
++                    let abstraction = output_set.abstraction_prefix(point_dim);
++                    instrument::add_ns(&instrument::IDX_NS_ABSTRACTION, t0);
++
++                    let packed_dim = output_set.packed_len();
++                    let mut evicted: Vec<u8> = vec![];
++                    let evicting = self.subsume_mode >= SubsumeMode::Evict;
++
++                    instrument::bump(&instrument::IDX_INSERTS);
++                    let t1 = Instant::now();
++                    let best = {
++                        let mut index = index_lock.write().unwrap();
++                        index.insert_with_abstraction_collect(
++                            output_set,
++                            &abstraction,
++                            state.bounds[0],
++                            &mut |packed| {
++                                if evicting {
++                                    evicted.extend_from_slice(packed);
++                                }
++                            },
++                        )
++                    };
++                    instrument::add_ns(&instrument::IDX_NS_INSERT, t1);
++
++                    if best > state.bounds[0] {
++                        instrument::bump(&instrument::IDX_SET_BOOSTS);
++                        // Clamp: a sound lower bound can never exceed a sound
++                        // upper bound. Clamping is defensive only; if it ever
++                        // fires the counter says so.
++                        if best > state.bounds[1] {
++                            instrument::bump(&instrument::IDX_CLAMPS);
++                            state.bounds[0] = state.bounds[1];
++                        } else {
++                            state.bounds[0] = best;
++                        }
++                    }
++
++                    if evicting && !evicted.is_empty() {
++                        for packed in evicted.chunks(packed_dim) {
++                            instrument::bump(&instrument::IDX_EVICTIONS);
++                            self.remove_state(output_set.channels(), packed);
++                        }
++                    }
++                }
++            }
++        }
++
+         let packed = output_set.packed_pvec();
+ 
+         let mut hasher = FxHasher::default();
+@@ -424,10 +678,12 @@
+         previous.is_none()
+     }
+ 
+-    pub fn remove_with_packed(&mut self, channels: usize, packed: &[u8]) {
++    /// Returns `true` when a value was actually removed (M2a: needed so the
++    /// live-entry counter stays exact under concurrent eviction).
++    pub fn remove_with_packed(&mut self, channels: usize, packed: &[u8]) -> bool {
+         assert!(channels > 2);
+ 
+-        match channels {
++        let previous = match channels {
+             3 => self.states_3_channels.remove(array_ref!(packed, 0, 1 << 0)),
+             4 => self.states_4_channels.remove(array_ref!(packed, 0, 1 << 1)),
+             5 => self.states_5_channels.remove(array_ref!(packed, 0, 1 << 2)),
+@@ -451,5 +707,7 @@
+         let _ignored: [(); 0 >> 1] = [];
+         let _ignored: [(); 0 >> 1] = [];
+         let _ignored: [(); 0 >> 1] = [];
++
++        previous.is_some()
+     }
+ }
+diff -ruN a/src/search.rs b/src/search.rs
+--- a/src/search.rs	2026-08-17 10:46:55
++++ b/src/search.rs	2026-08-17 11:00:44
+@@ -36,12 +36,14 @@
+     ) -> usize {
+         instrument::init();
+ 
++        let channels = initial.channels();
++
++        // M2a: the on-line subsumption index is sized from the root width, so
++        // it can only be built once the root is known.
+         let search = Self {
+-            states: StateMap::default(),
++            states: StateMap::new(channels),
+         };
+ 
+-        let channels = initial.channels();
+-
+         let mut initial = initial.to_owned_bvec();
+ 
+         let limit = limit.unwrap_or(usize::max_value());
+@@ -80,6 +82,10 @@
+             task::block_on(main_loop)
+         });
+ 
++        instrument::record_subsume_index(
++            search.states.subsume_mode().name(),
++            search.states.subsume_census(),
++        );
+         instrument::report(channels, final_bound, &search.states.census());
+ 
+         if let Some(output) = output {
