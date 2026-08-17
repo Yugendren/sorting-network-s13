@@ -1,0 +1,2581 @@
+diff -ruN a/src/bin/sortnetopt.rs b/src/bin/sortnetopt.rs
+--- a/src/bin/sortnetopt.rs	2026-08-17 19:12:42
++++ b/src/bin/sortnetopt.rs	2026-08-17 20:58:29
+@@ -109,7 +109,12 @@
+ 
+     log::info!(
+         "result = {}",
+-        Search::search(initial.as_ref(), opt.limit, opt.output.clone())
++        Search::search(
++            initial.as_ref(),
++            opt.limit,
++            &opt.prefix,
++            opt.output.clone()
++        )
+     );
+ }
+ 
+diff -ruN a/src/instrument.rs b/src/instrument.rs
+--- a/src/instrument.rs	2026-08-17 19:12:42
++++ b/src/instrument.rs	2026-08-17 20:58:53
+@@ -145,6 +145,28 @@
+ /// before this counter can be reported.
+ pub static FILTER_AUDIT_VIOLATIONS: AtomicU64 = AtomicU64::new(0);
+ 
++// --- TIER2b: checkpoint / restart --------------------------------------------
++
++/// Snapshots successfully written (periodic plus the final one).
++pub static CKPT_WRITES: AtomicU64 = AtomicU64::new(0);
++/// Bytes written, summed over all snapshots.
++pub static CKPT_BYTES: AtomicU64 = AtomicU64::new(0);
++/// Total time spent inside the snapshot function.
++pub static CKPT_WRITE_NS: AtomicU64 = AtomicU64::new(0);
++/// Time the quiescing gate's *write* guard was held. This is the number that
++/// bounds the search's lost throughput; everything else in `CKPT_WRITE_NS`
++/// happens with the search running.
++pub static CKPT_STALL_NS: AtomicU64 = AtomicU64::new(0);
++/// Read acquisitions of the quiescing gate in `StateMap::set`. Zero when
++/// checkpointing is disabled, in which case the gate is never touched.
++pub static CKPT_GATE_ACQUIRES: AtomicU64 = AtomicU64::new(0);
++/// Wall time spent validating and restoring a checkpoint at startup.
++pub static CKPT_RESTORE_NS: AtomicU64 = AtomicU64::new(0);
++/// Memo-table entries reinstated from a checkpoint.
++pub static CKPT_RESTORED_STATES: AtomicU64 = AtomicU64::new(0);
++/// Subsumption-index entries reinstated from a checkpoint.
++pub static CKPT_RESTORED_INDEX: AtomicU64 = AtomicU64::new(0);
++
+ #[inline]
+ pub fn add_ns(counter: &AtomicU64, start: Instant) {
+     counter.fetch_add(start.elapsed().as_nanos() as u64, Relaxed);
+@@ -393,7 +415,46 @@
+     });
+ }
+ 
++/// TIER2b: search-phase park time and wall, captured in `Search::search` the
++/// instant the main loop closes the interval — i.e. *before* the pool's own
++/// idle tail. `ThreadPool::POOL_LOOP_NS` spans each worker's whole lifetime,
++/// which includes the ~10 s floor the 10-second stats logger imposes on every
++/// process (M0b §4), so a utilisation figure derived from it measures
++/// "busy / 10 s", not utilisation during the search. These two do.
++pub static POOL_SEARCH_PARK_NS: AtomicU64 = AtomicU64::new(0);
++pub static POOL_SEARCH_WALL_NS: AtomicU64 = AtomicU64::new(0);
++
++/// Called once from `Search::search`, immediately after the main loop returns
++/// and while the pool is still alive.
++pub fn record_pool_search_phase(park_ns: u64, wall_ns: u64) {
++    POOL_SEARCH_PARK_NS.store(park_ns, Relaxed);
++    POOL_SEARCH_WALL_NS.store(wall_ns, Relaxed);
++}
++
+ fn counter_lines() -> Vec<(&'static str, u64)> {
++    let mut lines = counter_lines_core();
++    lines.extend(crate::thread_pool::counters());
++    lines.push(("pool_search_park_ns", POOL_SEARCH_PARK_NS.load(Relaxed)));
++    lines.push(("pool_search_wall_ns", POOL_SEARCH_WALL_NS.load(Relaxed)));
++    // Utilisation over the search phase only, in basis points (10000 = every
++    // worker busy for the whole search). Derived, not measured: a worker that
++    // is blocked on a mutex rather than parked in `recv_timeout` counts as
++    // busy here, so this is an upper bound. `tools/cpu_sampler.py` is the
++    // ground truth.
++    let threads = crate::thread_pool::POOL_THREADS.load(Relaxed);
++    let wall = POOL_SEARCH_WALL_NS.load(Relaxed);
++    let park = POOL_SEARCH_PARK_NS.load(Relaxed);
++    let capacity = threads.saturating_mul(wall);
++    let bp = if capacity > 0 {
++        (10_000u128 * (capacity.saturating_sub(park)) as u128 / capacity as u128) as u64
++    } else {
++        0
++    };
++    lines.push(("pool_search_utilisation_bp", bp));
++    lines
++}
++
++fn counter_lines_core() -> Vec<(&'static str, u64)> {
+     vec![
+         ("get_calls", GET_CALLS.load(Relaxed)),
+         ("get_hits", GET_HITS.load(Relaxed)),
+@@ -459,6 +520,14 @@
+             "filter_audit_violations",
+             FILTER_AUDIT_VIOLATIONS.load(Relaxed),
+         ),
++        ("ckpt_writes", CKPT_WRITES.load(Relaxed)),
++        ("ckpt_bytes", CKPT_BYTES.load(Relaxed)),
++        ("ckpt_write_ns", CKPT_WRITE_NS.load(Relaxed)),
++        ("ckpt_stall_ns", CKPT_STALL_NS.load(Relaxed)),
++        ("ckpt_gate_acquires", CKPT_GATE_ACQUIRES.load(Relaxed)),
++        ("ckpt_restore_ns", CKPT_RESTORE_NS.load(Relaxed)),
++        ("ckpt_restored_states", CKPT_RESTORED_STATES.load(Relaxed)),
++        ("ckpt_restored_index", CKPT_RESTORED_INDEX.load(Relaxed)),
+     ]
+ }
+ 
+diff -ruN a/src/search/checkpoint.rs b/src/search/checkpoint.rs
+--- a/src/search/checkpoint.rs	1970-01-01 07:30:00
++++ b/src/search/checkpoint.rs	2026-08-17 22:29:32
+@@ -0,0 +1,1415 @@
++//! Tier-2b: durable checkpoint / restart for the `StateMap` search.
++//!
++//! A prior n=11 run was SIGKILLed 4 h 10 m in and lost everything, because the
++//! engine had no durable state (`evidence/v3/n11-attempt1-oom.md`). This module
++//! adds one, and nothing else: it never influences which output sets are
++//! visited or which bound is derived.
++//!
++//! # What is captured, and what is not
++//!
++//! 1. The `StateMap` memo table: `(channels, packed bitmap, State)` for every
++//!    live entry. That is the entire persistent state of the search.
++//! 2. The on-line subsumption index (`StateMap::subsume_indexes[k]`):
++//!    `(k, packed bitmap, abstraction point, value)` for every live entry. The
++//!    popcount bucket is *derivable* from the packed bitmap (the packed length
++//!    is an exact multiple of 8 bits for every k >= 3, so there are no padding
++//!    bits and `popcount(packed) == |set|`), so it is not stored.
++//! 3. Nothing else. The successive-approximation position in `Search::search`
++//!    is *implicit*: the loop reads the root's state out of the `StateMap` and
++//!    continues from it, so restoring the table restores the iteration
++//!    position. In-flight async frames are deliberately not captured --
++//!    `improve` recomputes them from the memo table.
++//!
++//! # Why the snapshot is globally quiesced rather than torn
++//!
++//! It is tempting to copy the shards one at a time under their own locks and
++//! never stop the search. Every stored interval is sound *in isolation*, so
++//! such a torn snapshot would still be a sound memo table, and a resumed search
++//! would still terminate with a correct bound.
++//!
++//! It would not, however, still be a state the search could have been *in*. A
++//! tear can retain a parent whose bound was derived from a child that the tear
++//! dropped. That is invisible to the search itself, but `GenProof::prove_all`
++//! *panics* with "no valid proof step found" when a retained set has no
++//! justification (`docs/sortnetopt-internals.md` §3.6 invariant 4), so a torn
++//! snapshot could produce a run that searches correctly and then cannot emit a
++//! certificate -- exactly the failure mode that costs the most wall time to
++//! discover.
++//!
++//! A globally quiesced snapshot needs no new argument at all. It is precisely a
++//! state the live run passed through, so everything that was true of the
++//! running search at that instant is true of the resumed one, including every
++//! invariant in §3.6. The price is a stall, which is measured
++//! (`ckpt_stall_ns`) rather than assumed.
++//!
++//! Quiescing is implemented with `StateMap::checkpoint_gate`, an array of
++//! cache-line-padded `RwLock<()>` stripes, one per CPU. `StateMap::set` -- the
++//! *only* write path, covering the index insert/evict, the `remove_state`
++//! mirroring and the shard write -- takes **its own thread's stripe** in read
++//! mode for its whole body, and the checkpointer takes **every** stripe in
++//! write mode, in ascending index order, for the duration of the snapshot.
++//!
++//! Striping costs nothing in soundness. The snapshot is still globally
++//! consistent: a `set` is in flight only while holding some stripe in read
++//! mode, and the checkpointer holds all stripes simultaneously, so no `set`
++//! can be in flight anywhere while the snapshot runs. Nor can the stripes
++//! deadlock -- the checkpointer acquires them in ascending order and a `set`
++//! only ever holds one, so no thread holds a higher-indexed stripe while
++//! waiting on a lower one.
++//!
++//! What striping buys is that each worker keeps hammering its own cache line
++//! rather than all workers sharing one atomic, which is where the measured
++//! gate overhead came from.
++//!
++//! The lock order is unchanged: `gate stripes -> {index buckets, state
++//! shards}` in both paths, consistently, and `set` contains no `.await`, so no
++//! stripe guard is ever held across a suspension point (§3.6 invariant 3).
++//! When checkpointing is disabled no stripes are even allocated and the gate
++//! is not touched at all, so such a run is bit-for-bit the pre-Tier-2b code
++//! path.
++
++use std::{
++    fs::{self, File},
++    io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
++    path::{Path, PathBuf},
++    sync::{
++        atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
++        OnceLock,
++    },
++    time::{Duration, Instant},
++};
++
++use super::states::{State, StateMap};
++use crate::{
++    instrument,
++    output_set::{OutputSet, MAX_CHANNELS},
++};
++
++/// Compile-time build identity, folded into the identity hash so a checkpoint
++/// written by one binary is never resumed by a semantically different one.
++/// Override at build time with `SORTNETOPT_BUILD_ID=...`.
++const BUILD_ID_FALLBACK: &str = "tier2b-v3-1";
++
++const MAGIC: [u8; 8] = *b"SNOCKPT\x01";
++const MAGIC_END: [u8; 8] = *b"SNOCKPTE";
++const FORMAT_VERSION: u32 = 1;
++const HEADER_LEN: usize = 128;
++const TRAILER_LEN: usize = 40;
++const FLAG_INDEX: u32 = 1;
++
++const FILE_NAME: &str = "checkpoint.bin";
++const TMP_NAME: &str = "checkpoint.bin.tmp";
++const PREV_NAME: &str = "checkpoint.prev.bin";
++
++// --- SHA-256 (FIPS 180-4) ----------------------------------------------------
++//
++// Implemented here rather than pulled in as a dependency: the Tier-2b brief
++// forbids new `Cargo.toml` entries, and a checkpoint's integrity check must not
++// itself be a supply-chain surface. Verified against the three standard test
++// vectors in the unit tests at the bottom of this file.
++
++const SHA256_K: [u32; 64] = [
++    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
++    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
++    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
++    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
++    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
++    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
++    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
++    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
++];
++
++pub struct Sha256 {
++    state: [u32; 8],
++    buffer: [u8; 64],
++    buffered: usize,
++    length: u64,
++}
++
++impl Sha256 {
++    pub fn new() -> Self {
++        Self {
++            state: [
++                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
++                0x5be0cd19,
++            ],
++            buffer: [0; 64],
++            buffered: 0,
++            length: 0,
++        }
++    }
++
++    fn compress(&mut self, block: &[u8]) {
++        let mut w = [0u32; 64];
++        for (index, chunk) in block.chunks_exact(4).enumerate().take(16) {
++            w[index] = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
++        }
++        for index in 16..64 {
++            let s0 = w[index - 15].rotate_right(7)
++                ^ w[index - 15].rotate_right(18)
++                ^ (w[index - 15] >> 3);
++            let s1 = w[index - 2].rotate_right(17)
++                ^ w[index - 2].rotate_right(19)
++                ^ (w[index - 2] >> 10);
++            w[index] = w[index - 16]
++                .wrapping_add(s0)
++                .wrapping_add(w[index - 7])
++                .wrapping_add(s1);
++        }
++
++        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = self.state;
++
++        for index in 0..64 {
++            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
++            let ch = (e & f) ^ ((!e) & g);
++            let temp1 = h
++                .wrapping_add(s1)
++                .wrapping_add(ch)
++                .wrapping_add(SHA256_K[index])
++                .wrapping_add(w[index]);
++            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
++            let maj = (a & b) ^ (a & c) ^ (b & c);
++            let temp2 = s0.wrapping_add(maj);
++
++            h = g;
++            g = f;
++            f = e;
++            e = d.wrapping_add(temp1);
++            d = c;
++            c = b;
++            b = a;
++            a = temp1.wrapping_add(temp2);
++        }
++
++        self.state[0] = self.state[0].wrapping_add(a);
++        self.state[1] = self.state[1].wrapping_add(b);
++        self.state[2] = self.state[2].wrapping_add(c);
++        self.state[3] = self.state[3].wrapping_add(d);
++        self.state[4] = self.state[4].wrapping_add(e);
++        self.state[5] = self.state[5].wrapping_add(f);
++        self.state[6] = self.state[6].wrapping_add(g);
++        self.state[7] = self.state[7].wrapping_add(h);
++    }
++
++    pub fn update(&mut self, mut data: &[u8]) {
++        self.length = self.length.wrapping_add(data.len() as u64);
++
++        if self.buffered > 0 {
++            let want = (64 - self.buffered).min(data.len());
++            self.buffer[self.buffered..self.buffered + want].copy_from_slice(&data[..want]);
++            self.buffered += want;
++            data = &data[want..];
++            if self.buffered == 64 {
++                let block = self.buffer;
++                self.compress(&block);
++                self.buffered = 0;
++            }
++        }
++
++        let mut chunks = data.chunks_exact(64);
++        for chunk in &mut chunks {
++            self.compress(chunk);
++        }
++
++        let remainder = chunks.remainder();
++        if !remainder.is_empty() {
++            self.buffer[..remainder.len()].copy_from_slice(remainder);
++            self.buffered = remainder.len();
++        }
++    }
++
++    pub fn finalize(mut self) -> [u8; 32] {
++        let bit_length = self.length.wrapping_mul(8);
++
++        self.update(&[0x80]);
++        // `update` counted the padding byte; the length field must not.
++        self.length = self.length.wrapping_sub(1);
++        while self.buffered != 56 {
++            self.update(&[0x00]);
++            self.length = self.length.wrapping_sub(1);
++        }
++        self.update(&bit_length.to_be_bytes());
++
++        let mut out = [0u8; 32];
++        for (index, word) in self.state.iter().enumerate() {
++            out[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
++        }
++        out
++    }
++}
++
++pub fn sha256(data: &[u8]) -> [u8; 32] {
++    let mut hasher = Sha256::new();
++    hasher.update(data);
++    hasher.finalize()
++}
++
++/// FNV-1a, 64 bit. Used only for the fixed-size header, where the point is to
++/// catch a torn or bit-flipped header *before* any field in it is trusted.
++fn fnv1a64(data: &[u8]) -> u64 {
++    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
++    for &byte in data {
++        hash ^= byte as u64;
++        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
++    }
++    hash
++}
++
++fn hex(bytes: &[u8]) -> String {
++    let mut out = String::with_capacity(bytes.len() * 2);
++    for byte in bytes {
++        out.push_str(&format!("{:02x}", byte));
++    }
++    out
++}
++
++// --- configuration -----------------------------------------------------------
++
++#[derive(Clone, Debug)]
++pub struct CheckpointConfig {
++    /// `None` disables checkpointing entirely, including the `StateMap` gate.
++    pub dir: Option<PathBuf>,
++    /// Zero disables periodic writes (the final write still happens).
++    pub interval: Duration,
++    pub resume: bool,
++    pub keep_prev: bool,
++    pub final_write: bool,
++}
++
++fn env_flag(name: &str) -> bool {
++    match std::env::var(name) {
++        Ok(value) => {
++            let value = value.trim().to_ascii_lowercase();
++            value == "1" || value == "true" || value == "yes"
++        }
++        Err(_) => false,
++    }
++}
++
++fn env_flag_default_on(name: &str) -> bool {
++    match std::env::var(name) {
++        Ok(value) => {
++            let value = value.trim().to_ascii_lowercase();
++            !(value == "0" || value == "false" || value == "no")
++        }
++        Err(_) => true,
++    }
++}
++
++impl CheckpointConfig {
++    fn from_env() -> Self {
++        let dir = match std::env::var("SORTNETOPT_CHECKPOINT_DIR") {
++            Ok(value) if !value.trim().is_empty() => Some(PathBuf::from(value.trim())),
++            _ => None,
++        };
++        let interval_secs: u64 = std::env::var("SORTNETOPT_CHECKPOINT_INTERVAL_SECS")
++            .ok()
++            .and_then(|value| value.trim().parse().ok())
++            .unwrap_or(600);
++
++        Self {
++            dir,
++            interval: Duration::from_secs(interval_secs),
++            resume: env_flag("SORTNETOPT_CHECKPOINT_RESUME"),
++            keep_prev: env_flag("SORTNETOPT_CHECKPOINT_KEEP_PREV"),
++            final_write: env_flag_default_on("SORTNETOPT_CHECKPOINT_FINAL"),
++        }
++    }
++}
++
++static CONFIG: OnceLock<CheckpointConfig> = OnceLock::new();
++
++pub fn config() -> &'static CheckpointConfig {
++    CONFIG.get_or_init(CheckpointConfig::from_env)
++}
++
++/// Whether `StateMap::set` has to take the quiescing gate. Read once, at
++/// `StateMap::new`, and stored on the map.
++pub fn enabled() -> bool {
++    config().dir.is_some()
++}
++
++// --- identity ----------------------------------------------------------------
++
++/// The canonical, sorted, newline-separated key=value text covering everything
++/// that changes search semantics. Its SHA-256 goes in the header; the text
++/// itself is stored too, so a refusal can print *what* differed.
++///
++/// Deliberately **excluded**: the `StateMap` shard count and `num_cpus::get()`.
++/// Shard assignment is recomputed from the packed key on load (`restore_state`
++/// runs the same `FxHasher`-of-`PVec` rule `get`/`set` use), and the worker
++/// count changes nothing semantic -- so a checkpoint stays portable between
++/// machines with different core counts.
++pub fn identity_string(states: &StateMap, channels: usize, limit: Option<usize>, prefix: &[usize]) -> String {
++    let build = option_env!("SORTNETOPT_BUILD_ID").unwrap_or(BUILD_ID_FALLBACK);
++
++    let limit = match limit {
++        Some(limit) => limit.to_string(),
++        None => "none".to_owned(),
++    };
++
++    let prefix = if prefix.is_empty() {
++        "none".to_owned()
++    } else {
++        prefix
++            .iter()
++            .map(|value| value.to_string())
++            .collect::<Vec<_>>()
++            .join(",")
++    };
++
++    let dims = states.subsume_index_dims();
++    let subsume_index = if dims.is_empty() {
++        "none".to_owned()
++    } else {
++        dims.iter()
++            .map(|(k, point_dim)| format!("{}:{}", k, point_dim))
++            .collect::<Vec<_>>()
++            .join(",")
++    };
++
++    let mut lines = vec![
++        "sortnetopt-checkpoint".to_owned(),
++        format!("format={}", FORMAT_VERSION),
++        format!("build={}", build),
++        format!("channels={}", channels),
++        format!("limit={}", limit),
++        format!("prefix={}", prefix),
++        format!("max_channels={}", MAX_CHANNELS),
++        format!("subsume_mode={}", states.subsume_mode().name()),
++        format!("subsume_index={}", subsume_index),
++        format!(
++            "tier1_sig={}",
++            crate::output_set::index::sig_filter_enabled() as u8
++        ),
++        format!(
++            "tier1_hist={}",
++            crate::output_set::index::hist_filter_enabled() as u8
++        ),
++    ];
++    // The leading tag stays first; everything after it is sorted so the text is
++    // canonical regardless of the order the fields were assembled in.
++    lines[1..].sort();
++    lines.join("\n")
++}
++
++// --- writing -----------------------------------------------------------------
++
++struct HashWriter<W: Write> {
++    inner: W,
++    hasher: Sha256,
++    count: u64,
++}
++
++impl<W: Write> HashWriter<W> {
++    fn new(inner: W) -> Self {
++        Self {
++            inner,
++            hasher: Sha256::new(),
++            count: 0,
++        }
++    }
++
++    fn put(&mut self, bytes: &[u8]) -> io::Result<()> {
++        self.hasher.update(bytes);
++        self.count += bytes.len() as u64;
++        self.inner.write_all(bytes)
++    }
++
++    fn put_u8(&mut self, value: u8) -> io::Result<()> {
++        self.put(&[value])
++    }
++
++    fn put_u32(&mut self, value: u32) -> io::Result<()> {
++        self.put(&value.to_le_bytes())
++    }
++
++    fn put_u64(&mut self, value: u64) -> io::Result<()> {
++        self.put(&value.to_le_bytes())
++    }
++}
++
++#[derive(Clone, Copy, Debug, Default)]
++pub struct SnapshotStats {
++    pub seq: u64,
++    pub bytes: u64,
++    pub states: u64,
++    pub index: u64,
++    pub elapsed: Duration,
++    pub stall: Duration,
++}
++
++#[derive(Clone, Copy, Debug)]
++pub struct ResumeInfo {
++    pub seq: u64,
++    pub states: u64,
++    pub index: u64,
++    pub elapsed: Duration,
++}
++
++pub struct Checkpointer<'a> {
++    states: &'a StateMap,
++    /// The canonicalised search root, kept so the header can carry its bounds.
++    root: OutputSet,
++    channels: usize,
++    identity: String,
++    identity_hash: [u8; 32],
++    dir: PathBuf,
++    keep_prev: bool,
++    started: Instant,
++    seq: AtomicU64,
++}
++
++impl<'a> Checkpointer<'a> {
++    /// `None` when `SORTNETOPT_CHECKPOINT_DIR` is unset.
++    pub fn from_env(
++        states: &'a StateMap,
++        root: OutputSet<&[bool]>,
++        limit: Option<usize>,
++        prefix: &[usize],
++    ) -> io::Result<Option<Self>> {
++        let config = config();
++        match config.dir.as_ref() {
++            None => Ok(None),
++            Some(dir) => Ok(Some(Self::new_at(
++                dir.clone(),
++                config.keep_prev,
++                states,
++                root,
++                limit,
++                prefix,
++            )?)),
++        }
++    }
++
++    pub fn new_at(
++        dir: PathBuf,
++        keep_prev: bool,
++        states: &'a StateMap,
++        root: OutputSet<&[bool]>,
++        limit: Option<usize>,
++        prefix: &[usize],
++    ) -> io::Result<Self> {
++        // macOS: leaf directories must exist before a file is created in them.
++        fs::create_dir_all(&dir)?;
++
++        let channels = root.channels();
++        let identity = identity_string(states, channels, limit, prefix);
++        let identity_hash = sha256(identity.as_bytes());
++
++        Ok(Self {
++            states,
++            root: root.to_owned(),
++            channels,
++            identity,
++            identity_hash,
++            dir,
++            keep_prev,
++            started: Instant::now(),
++            seq: AtomicU64::new(0),
++        })
++    }
++
++    pub fn path(&self) -> PathBuf {
++        self.dir.join(FILE_NAME)
++    }
++
++    /// Take one globally quiesced snapshot and rename it over `checkpoint.bin`.
++    pub fn snapshot(&self) -> io::Result<SnapshotStats> {
++        let t_total = Instant::now();
++        let seq = self.seq.fetch_add(1, Relaxed) + 1;
++
++        let tmp_path = self.dir.join(TMP_NAME);
++        let final_path = self.path();
++
++        // Anti-starvation only: it changes no semantics, it just stops a stream
++        // of `set` readers from indefinitely deferring our write acquisition.
++        self.states.request_checkpoint(true);
++
++        let stats;
++        let stall;
++        let file;
++        {
++            let t_stall = Instant::now();
++            // Every stripe, released together when this block ends.
++            let _quiesced = self.states.checkpoint_gate_write();
++
++            // Everything from here to the end of this block observes a single,
++            // frozen state of the memo table and the subsumption index.
++            let result = self.write_to(&tmp_path, seq);
++            stall = t_stall.elapsed();
++
++            match result {
++                Ok((snapshot_stats, snapshot_file)) => {
++                    stats = snapshot_stats;
++                    file = snapshot_file;
++                }
++                Err(err) => {
++                    self.states.request_checkpoint(false);
++                    return Err(err);
++                }
++            }
++        }
++        self.states.request_checkpoint(false);
++
++        // Durability, outside the quiesce: the bytes are already in the kernel,
++        // and no further read of the frozen state is needed.
++        file.sync_all()?;
++        drop(file);
++
++        if self.keep_prev && final_path.exists() {
++            let _ = fs::rename(&final_path, self.dir.join(PREV_NAME));
++        }
++
++        // Atomic on APFS.
++        fs::rename(&tmp_path, &final_path)?;
++
++        // ... but the rename itself is only durable once the *directory* is
++        // synced, otherwise a power loss can leave neither name pointing at the
++        // new inode.
++        File::open(&self.dir)?.sync_all()?;
++
++        let stats = SnapshotStats {
++            elapsed: t_total.elapsed(),
++            stall,
++            ..stats
++        };
++
++        instrument::bump(&instrument::CKPT_WRITES);
++        instrument::add(&instrument::CKPT_BYTES, stats.bytes);
++        instrument::add(&instrument::CKPT_WRITE_NS, stats.elapsed.as_nanos() as u64);
++        instrument::add(&instrument::CKPT_STALL_NS, stats.stall.as_nanos() as u64);
++
++        Ok(stats)
++    }
++
++    /// Must be called with every checkpoint gate stripe held in write mode.
++    fn write_to(&self, tmp_path: &Path, seq: u64) -> io::Result<(SnapshotStats, File)> {
++        let census = self.states.census();
++        let states_total = census.total();
++
++        let dims = self.states.subsume_index_dims();
++        let index_counts = dims
++            .iter()
++            .map(|&(k, point_dim)| {
++                let count = self
++                    .states
++                    .subsume_index_at(k)
++                    .map(|index| index.len() as u64)
++                    .unwrap_or(0);
++                (k, point_dim, count)
++            })
++            .collect::<Vec<_>>();
++        let index_total: u64 = index_counts.iter().map(|&(_, _, count)| count).sum();
++
++        let root_state = self.states.get(self.root.as_ref());
++
++        let mut flags = 0u32;
++        if !index_counts.is_empty() {
++            flags |= FLAG_INDEX;
++        }
++
++        let file = File::create(tmp_path)?;
++        let mut out = HashWriter::new(BufWriter::with_capacity(1 << 20, file));
++
++        // --- header -----------------------------------------------------
++        let mut header = [0u8; HEADER_LEN];
++        header[0..8].copy_from_slice(&MAGIC);
++        header[8..12].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
++        header[12..16].copy_from_slice(&flags.to_le_bytes());
++        header[16..48].copy_from_slice(&self.identity_hash);
++        header[48..56].copy_from_slice(&(self.channels as u64).to_le_bytes());
++        header[56..64].copy_from_slice(&seq.to_le_bytes());
++        header[64..72].copy_from_slice(&states_total.to_le_bytes());
++        header[72..80].copy_from_slice(&index_total.to_le_bytes());
++        header[80..88].copy_from_slice(&(self.started.elapsed().as_millis() as u64).to_le_bytes());
++        header[88] = root_state.bounds[0];
++        header[89] = root_state.bounds[1];
++        header[90] = root_state.huffman_bounds[0];
++        header[91] = root_state.huffman_bounds[1];
++        // header[92..120] stays zeroed (reserved).
++        let header_hash = fnv1a64(&header[..120]);
++        header[120..128].copy_from_slice(&header_hash.to_le_bytes());
++        out.put(&header)?;
++
++        // --- identity text ----------------------------------------------
++        let identity = self.identity.as_bytes();
++        out.put_u32(identity.len() as u32)?;
++        out.put(identity)?;
++
++        // --- states -----------------------------------------------------
++        let mut written_states = 0u64;
++        for channels in 3..=MAX_CHANNELS {
++            let count = census.entries[channels];
++            out.put_u64(count)?;
++            if count == 0 {
++                continue;
++            }
++
++            let mut emitted = 0u64;
++            let mut error: Option<io::Error> = None;
++            self.states.for_each_state_at(channels, &mut |packed, state| {
++                if error.is_some() {
++                    return;
++                }
++                let mut record = [0u8; 4];
++                record[0] = state.bounds[0];
++                record[1] = state.bounds[1];
++                record[2] = state.huffman_bounds[0];
++                record[3] = state.huffman_bounds[1];
++                if let Err(err) = out.put(packed).and_then(|()| out.put(&record)) {
++                    error = Some(err);
++                    return;
++                }
++                emitted += 1;
++            });
++            if let Some(err) = error {
++                return Err(err);
++            }
++            // Every gate stripe is held, so nothing can have changed under us.
++            assert_eq!(
++                emitted, count,
++                "checkpoint: states section for k={} raced the census",
++                channels
++            );
++            written_states += emitted;
++        }
++        assert_eq!(written_states, states_total);
++
++        // --- index ------------------------------------------------------
++        let mut written_index = 0u64;
++        if flags & FLAG_INDEX != 0 {
++            out.put_u32(index_counts.len() as u32)?;
++            for &(k, point_dim, count) in index_counts.iter() {
++                out.put_u8(k as u8)?;
++                out.put_u32(point_dim as u32)?;
++                out.put_u64(count)?;
++
++                let index = self.states.subsume_index_at(k).unwrap();
++                let mut emitted = 0u64;
++                let mut error: Option<io::Error> = None;
++                index.for_each_entry(&mut |packed, value, abstraction| {
++                    if error.is_some() {
++                        return;
++                    }
++                    debug_assert_eq!(abstraction.len(), point_dim);
++                    let result = out.put(packed).and_then(|()| out.put_u8(value)).and_then(|()| {
++                        for coordinate in abstraction.iter() {
++                            out.put(&coordinate.to_le_bytes())?;
++                        }
++                        Ok(())
++                    });
++                    if let Err(err) = result {
++                        error = Some(err);
++                        return;
++                    }
++                    emitted += 1;
++                });
++                if let Some(err) = error {
++                    return Err(err);
++                }
++                assert_eq!(
++                    emitted, count,
++                    "checkpoint: index section for k={} raced its own len()",
++                    k
++                );
++                written_index += emitted;
++            }
++        }
++        assert_eq!(written_index, index_total);
++
++        // --- trailer ----------------------------------------------------
++        let payload_hash = out.hasher.finalize();
++        let mut inner = out.inner;
++        inner.write_all(&payload_hash)?;
++        inner.write_all(&MAGIC_END)?;
++        let bytes = out.count + TRAILER_LEN as u64;
++
++        inner.flush()?;
++        let file = inner.into_inner().map_err(|err| err.into_error())?;
++
++        // TIER2b: `flush()` (the last `write(2)`) is the last operation that
++        // needs to observe the frozen state. `sync_all()` does not — it only
++        // pushes bytes the kernel already owns down to stable storage — so it
++        // is deliberately *not* done here. The caller drops the quiesce guard
++        // first and fsyncs after, which keeps the search stall proportional to
++        // the walk and not to the device. At n=10 that is worth ~2 ms of a
++        // 12 ms stall; at n=11, where the payload is gigabytes, it is the
++        // difference between a bounded stall and a device-latency stall.
++        Ok((
++            SnapshotStats {
++                seq,
++                bytes,
++                states: states_total,
++                index: index_total,
++                elapsed: Duration::default(),
++                stall: Duration::default(),
++            },
++            file,
++        ))
++    }
++
++    /// One snapshot with the standard log line. Errors are logged, not fatal:
++    /// losing a periodic checkpoint must not kill a multi-hour search.
++    pub fn snapshot_logged(&self, label: &str) {
++        match self.snapshot() {
++            Ok(stats) => log::info!(
++                "checkpoint: wrote seq={} states={} index={} bytes={} in {} ms (stall {} ms){}",
++                stats.seq,
++                stats.states,
++                stats.index,
++                stats.bytes,
++                stats.elapsed.as_millis(),
++                stats.stall.as_millis(),
++                label,
++            ),
++            Err(err) => log::error!("checkpoint: write failed: {}", err),
++        }
++    }
++
++    /// The dedicated checkpoint thread. Not a pool task: it must not occupy a
++    /// worker, and it must not be an async task that a blocked pool could
++    /// starve. Wakes once a second so shutdown is prompt regardless of the
++    /// configured interval.
++    pub fn drive(&self, shutdown: &AtomicBool, interval: Duration) {
++        if interval.is_zero() {
++            // Periodic writes disabled; the final write still happens.
++            while !shutdown.load(Relaxed) {
++                std::thread::sleep(Duration::from_secs(1));
++            }
++            return;
++        }
++
++        let mut next = Instant::now() + interval;
++        loop {
++            std::thread::sleep(Duration::from_secs(1));
++            if shutdown.load(Relaxed) {
++                return;
++            }
++            if Instant::now() >= next {
++                self.snapshot_logged("");
++                next = Instant::now() + interval;
++            }
++        }
++    }
++
++    // --- reading ---------------------------------------------------------
++
++    /// Resume from `<dir>/checkpoint.bin` when `SORTNETOPT_CHECKPOINT_RESUME`
++    /// asks for it. A missing file is not an error (logged, start fresh); any
++    /// *invalid* file is fatal, with no override.
++    pub fn resume_if_requested(&self) -> Option<ResumeInfo> {
++        if !config().resume {
++            return None;
++        }
++
++        let path = self.path();
++        if !path.exists() {
++            log::info!(
++                "checkpoint: resume requested but {} does not exist; starting fresh",
++                path.display()
++            );
++            return None;
++        }
++
++        match self.restore_from(&path) {
++            Ok(info) => {
++                let root = self.states.get(self.root.as_ref());
++                log::info!(
++                    "checkpoint: resumed seq={} states={} index={} root={:?} in {} ms",
++                    info.seq,
++                    info.states,
++                    info.index,
++                    root,
++                    info.elapsed.as_millis()
++                );
++                Some(info)
++            }
++            Err(message) => {
++                // No silent fallback to a fresh start, and no override flag: a
++                // measurement that quietly restarted would be worse than one
++                // that stopped.
++                log::error!("checkpoint: refusing to resume from {}", path.display());
++                for line in message.lines() {
++                    log::error!("checkpoint: {}", line);
++                }
++                eprintln!(
++                    "checkpoint: refusing to resume from {}\n{}",
++                    path.display(),
++                    message
++                );
++                std::process::exit(3);
++            }
++        }
++    }
++
++    /// Validate, then restore. Single-threaded, before any worker starts, so no
++    /// gate is needed.
++    pub fn restore_from(&self, path: &Path) -> Result<ResumeInfo, String> {
++        let t0 = Instant::now();
++
++        let header = self.validate(path)?;
++
++        let file = File::open(path).map_err(|err| format!("cannot open: {}", err))?;
++        let mut reader = BufReader::with_capacity(1 << 20, file);
++        let mut skip = vec![0u8; HEADER_LEN + 4 + header.identity_len];
++        reader
++            .read_exact(&mut skip)
++            .map_err(|err| format!("truncated before sections: {}", err))?;
++
++        // --- states -----------------------------------------------------
++        let mut restored_states = 0u64;
++        for channels in 3..=MAX_CHANNELS {
++            let count = read_u64(&mut reader)?;
++            let packed_len = OutputSet::packed_len_for_channels(channels);
++            let mut record = vec![0u8; packed_len + 4];
++            for _ in 0..count {
++                reader
++                    .read_exact(&mut record)
++                    .map_err(|err| format!("truncated in states k={}: {}", channels, err))?;
++                let state = State {
++                    bounds: [record[packed_len], record[packed_len + 1]],
++                    huffman_bounds: [record[packed_len + 2], record[packed_len + 3]],
++                };
++                self.states
++                    .restore_state(channels, &record[..packed_len], state);
++                restored_states += 1;
++            }
++        }
++
++        // --- index ------------------------------------------------------
++        let mut restored_index = 0u64;
++        if header.flags & FLAG_INDEX != 0 {
++            let n_widths = read_u32(&mut reader)? as usize;
++            for _ in 0..n_widths {
++                let k = read_u8(&mut reader)? as usize;
++                let point_dim = read_u32(&mut reader)? as usize;
++                let count = read_u64(&mut reader)?;
++                let packed_len = OutputSet::packed_len_for_channels(k);
++                let record_len = packed_len + 1 + point_dim * 2;
++                let mut record = vec![0u8; record_len];
++
++                let live = self.states.subsume_index_at(k);
++                // Cannot happen: the width/point_dim list is in the identity
++                // hash, which has already been checked. Assert loudly anyway.
++                let live_dim = live.map(|index| index.point_dim());
++                assert_eq!(
++                    live_dim,
++                    Some(point_dim),
++                    "checkpoint: stored index width k={} point_dim={} disagrees with the live \
++                     index ({:?}) despite a matching identity hash",
++                    k,
++                    point_dim,
++                    live_dim
++                );
++
++                let mut abstraction = vec![0u16; point_dim];
++                for _ in 0..count {
++                    reader
++                        .read_exact(&mut record)
++                        .map_err(|err| format!("truncated in index k={}: {}", k, err))?;
++                    let value = record[packed_len];
++                    for (slot, chunk) in abstraction
++                        .iter_mut()
++                        .zip(record[packed_len + 1..].chunks_exact(2))
++                    {
++                        *slot = u16::from_le_bytes([chunk[0], chunk[1]]);
++                    }
++                    live.unwrap()
++                        .restore_entry(&record[..packed_len], value, &abstraction);
++                    restored_index += 1;
++                }
++            }
++        }
++
++        if restored_states != header.states_total {
++            return Err(format!(
++                "states section holds {} entries, header claims {}",
++                restored_states, header.states_total
++            ));
++        }
++        if restored_index != header.index_total {
++            return Err(format!(
++                "index section holds {} entries, header claims {}",
++                restored_index, header.index_total
++            ));
++        }
++
++        let elapsed = t0.elapsed();
++        instrument::add(&instrument::CKPT_RESTORE_NS, elapsed.as_nanos() as u64);
++        instrument::add(&instrument::CKPT_RESTORED_STATES, restored_states);
++        instrument::add(&instrument::CKPT_RESTORED_INDEX, restored_index);
++        // A resumed run continues the sequence rather than restarting it.
++        self.seq.store(header.seq, Relaxed);
++
++        Ok(ResumeInfo {
++            seq: header.seq,
++            states: restored_states,
++            index: restored_index,
++            elapsed,
++        })
++    }
++
++    /// Validation pass. The order is deliberate, and each step has its own
++    /// actionable message: magic, format_version, header_hash, identity_hash,
++    /// trailer magic, payload_hash. Nothing is restored until all of them pass.
++    fn validate(&self, path: &Path) -> Result<Header, String> {
++        let mut file = File::open(path).map_err(|err| format!("cannot open: {}", err))?;
++        let file_len = file
++            .metadata()
++            .map_err(|err| format!("cannot stat: {}", err))?
++            .len();
++
++        if file_len < (HEADER_LEN + 4 + TRAILER_LEN) as u64 {
++            return Err(format!(
++                "file is {} bytes, smaller than the {}-byte minimum (header + identity + trailer); \
++                 it is truncated or not a checkpoint",
++                file_len,
++                HEADER_LEN + 4 + TRAILER_LEN
++            ));
++        }
++
++        let mut raw = [0u8; HEADER_LEN];
++        file.read_exact(&mut raw)
++            .map_err(|err| format!("cannot read header: {}", err))?;
++
++        // 1. magic
++        if raw[0..8] != MAGIC {
++            return Err(format!(
++                "bad magic: found {:?}, expected {:?}. This is not a sortnetopt checkpoint.",
++                &raw[0..8],
++                &MAGIC
++            ));
++        }
++
++        // 2. format_version
++        let format_version = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
++        if format_version != FORMAT_VERSION {
++            return Err(format!(
++                "format_version {} is not supported by this binary (which writes and reads {}). \
++                 Re-run the search from scratch with this binary.",
++                format_version, FORMAT_VERSION
++            ));
++        }
++
++        // 3. header_hash
++        let stored_header_hash = u64::from_le_bytes([
++            raw[120], raw[121], raw[122], raw[123], raw[124], raw[125], raw[126], raw[127],
++        ]);
++        let computed_header_hash = fnv1a64(&raw[..120]);
++        if stored_header_hash != computed_header_hash {
++            return Err(format!(
++                "header hash mismatch: stored {:#018x}, computed {:#018x}. The header is corrupt; \
++                 no field in it can be trusted.",
++                stored_header_hash, computed_header_hash
++            ));
++        }
++
++        let header = Header {
++            flags: u32::from_le_bytes([raw[12], raw[13], raw[14], raw[15]]),
++            identity_hash: {
++                let mut hash = [0u8; 32];
++                hash.copy_from_slice(&raw[16..48]);
++                hash
++            },
++            channels: u64::from_le_bytes([
++                raw[48], raw[49], raw[50], raw[51], raw[52], raw[53], raw[54], raw[55],
++            ]),
++            seq: u64::from_le_bytes([
++                raw[56], raw[57], raw[58], raw[59], raw[60], raw[61], raw[62], raw[63],
++            ]),
++            states_total: u64::from_le_bytes([
++                raw[64], raw[65], raw[66], raw[67], raw[68], raw[69], raw[70], raw[71],
++            ]),
++            index_total: u64::from_le_bytes([
++                raw[72], raw[73], raw[74], raw[75], raw[76], raw[77], raw[78], raw[79],
++            ]),
++            identity_len: 0,
++        };
++
++        // identity text (needed to explain a hash mismatch)
++        let mut length = [0u8; 4];
++        file.read_exact(&mut length)
++            .map_err(|err| format!("cannot read identity length: {}", err))?;
++        let identity_len = u32::from_le_bytes(length) as usize;
++        if identity_len as u64 > file_len {
++            return Err(format!(
++                "identity length {} exceeds the file size {}",
++                identity_len, file_len
++            ));
++        }
++        let mut identity = vec![0u8; identity_len];
++        file.read_exact(&mut identity)
++            .map_err(|err| format!("cannot read identity string: {}", err))?;
++        let stored_identity = String::from_utf8_lossy(&identity).into_owned();
++
++        // 4. identity_hash
++        if header.identity_hash != self.identity_hash {
++            let mut message = String::new();
++            message.push_str(
++                "identity mismatch: this checkpoint was written by a search with different \
++                 semantics, so resuming from it would produce an unsound or incomparable result.\n",
++            );
++            let stored_lines: Vec<&str> = stored_identity.lines().collect();
++            let current_lines: Vec<&str> = self.identity.lines().collect();
++            let differing: Vec<String> = diff_lines(&stored_lines, &current_lines);
++            message.push_str("differing lines:\n");
++            for line in differing.iter() {
++                message.push_str("  ");
++                message.push_str(line);
++                message.push('\n');
++            }
++            message.push_str(&format!(
++                "stored identity (sha256 {}):\n{}\ncurrent identity (sha256 {}):\n{}",
++                hex(&header.identity_hash),
++                stored_identity,
++                hex(&self.identity_hash),
++                self.identity
++            ));
++            return Err(message);
++        }
++
++        // 5. trailer magic
++        let mut trailer = [0u8; TRAILER_LEN];
++        file.seek(SeekFrom::Start(file_len - TRAILER_LEN as u64))
++            .map_err(|err| format!("cannot seek to trailer: {}", err))?;
++        file.read_exact(&mut trailer)
++            .map_err(|err| format!("cannot read trailer: {}", err))?;
++        if trailer[32..40] != MAGIC_END {
++            return Err(format!(
++                "bad trailer magic: found {:?}, expected {:?}. The file was truncated, or the \
++                 writing process was killed mid-write (in which case the *.tmp rename never ran, \
++                 so this file should not exist).",
++                &trailer[32..40],
++                &MAGIC_END
++            ));
++        }
++
++        // 6. payload_hash
++        file.seek(SeekFrom::Start(0))
++            .map_err(|err| format!("cannot rewind: {}", err))?;
++        let mut hasher = Sha256::new();
++        let mut remaining = file_len - TRAILER_LEN as u64;
++        let mut buffer = vec![0u8; 1 << 20];
++        while remaining > 0 {
++            let want = (buffer.len() as u64).min(remaining) as usize;
++            file.read_exact(&mut buffer[..want])
++                .map_err(|err| format!("cannot read payload: {}", err))?;
++            hasher.update(&buffer[..want]);
++            remaining -= want as u64;
++        }
++        let computed = hasher.finalize();
++        if computed != trailer[..32] {
++            return Err(format!(
++                "payload hash mismatch: stored {}, computed {}. The checkpoint body is corrupt \
++                 (bit rot, a partial write, or an edit).",
++                hex(&trailer[..32]),
++                hex(&computed)
++            ));
++        }
++
++        if header.channels != self.channels as u64 {
++            // Unreachable while `channels` is in the identity string, but the
++            // header field is what the restore loop trusts, so check it too.
++            return Err(format!(
++                "header channels={} but this search has channels={}",
++                header.channels, self.channels
++            ));
++        }
++
++        Ok(Header {
++            identity_len,
++            ..header
++        })
++    }
++}
++
++#[derive(Clone, Copy, Debug)]
++struct Header {
++    flags: u32,
++    identity_hash: [u8; 32],
++    channels: u64,
++    seq: u64,
++    states_total: u64,
++    index_total: u64,
++    identity_len: usize,
++}
++
++/// Line-level set difference in both directions, formatted for a refusal
++/// message. The identity string is a sorted key=value text, so this is enough
++/// to name the offending setting exactly.
++fn diff_lines(stored: &[&str], current: &[&str]) -> Vec<String> {
++    let mut out = vec![];
++    for line in stored.iter() {
++        if !current.contains(line) {
++            out.push(format!("stored  : {}", line));
++        }
++    }
++    for line in current.iter() {
++        if !stored.contains(line) {
++            out.push(format!("current : {}", line));
++        }
++    }
++    if out.is_empty() {
++        out.push("(no textual difference; the stored identity text is itself corrupt)".to_owned());
++    }
++    out
++}
++
++fn read_exact_n<R: Read>(reader: &mut R, buffer: &mut [u8]) -> Result<(), String> {
++    reader
++        .read_exact(buffer)
++        .map_err(|err| format!("truncated checkpoint: {}", err))
++}
++
++fn read_u8<R: Read>(reader: &mut R) -> Result<u8, String> {
++    let mut buffer = [0u8; 1];
++    read_exact_n(reader, &mut buffer)?;
++    Ok(buffer[0])
++}
++
++fn read_u32<R: Read>(reader: &mut R) -> Result<u32, String> {
++    let mut buffer = [0u8; 4];
++    read_exact_n(reader, &mut buffer)?;
++    Ok(u32::from_le_bytes(buffer))
++}
++
++fn read_u64<R: Read>(reader: &mut R) -> Result<u64, String> {
++    let mut buffer = [0u8; 8];
++    read_exact_n(reader, &mut buffer)?;
++    Ok(u64::from_le_bytes(buffer))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::output_set::index::SubsumeFilter;
++    use crate::search::subsume::ShardedSubsumeIndex;
++
++    #[test]
++    fn sha256_standard_vectors() {
++        assert_eq!(
++            hex(&sha256(b"")),
++            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
++        );
++        assert_eq!(
++            hex(&sha256(b"abc")),
++            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
++        );
++        assert_eq!(
++            hex(&sha256(
++                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
++            )),
++            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
++        );
++    }
++
++    #[test]
++    fn sha256_multi_block_and_incremental() {
++        // One million 'a' is the fourth FIPS vector; also exercises the
++        // incremental `update` path with a buffer boundary that is not a
++        // multiple of the 64-byte block.
++        let mut hasher = Sha256::new();
++        let chunk = vec![b'a'; 1000];
++        for _ in 0..1000 {
++            hasher.update(&chunk);
++        }
++        assert_eq!(
++            hex(&hasher.finalize()),
++            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
++        );
++
++        let mut hasher = Sha256::new();
++        for byte in b"abc" {
++            hasher.update(&[*byte]);
++        }
++        assert_eq!(
++            hex(&hasher.finalize()),
++            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
++        );
++    }
++
++    #[test]
++    fn fnv1a_is_stable() {
++        // Reference values for the 64-bit FNV-1a parameters used above.
++        assert_eq!(fnv1a64(b""), 0xcbf2_9ce4_8422_2325);
++        assert_eq!(fnv1a64(b"a"), 0xaf63_dc4c_8601_ec8c);
++        assert_eq!(fnv1a64(b"foobar"), 0x85944171f73967e8);
++    }
++
++    fn scratch_dir(tag: &str) -> PathBuf {
++        let dir = std::env::temp_dir().join(format!(
++            "sortnetopt-ckpt-test-{}-{}",
++            std::process::id(),
++            tag
++        ));
++        let _ = fs::remove_dir_all(&dir);
++        fs::create_dir_all(&dir).unwrap();
++        dir
++    }
++
++    /// Write a small synthetic checkpoint and read it back into a fresh map.
++    #[test]
++    fn round_trip_states() {
++        let dir = scratch_dir("roundtrip");
++
++        let channels = 6;
++        let mut root = OutputSet::all_values(channels);
++        root.canonicalize(true);
++
++        let written = StateMap::new(channels);
++
++        // A handful of genuinely reachable output sets at three widths.
++        let mut expected = vec![];
++        for (i, j) in [(1usize, 0usize), (2, 0), (3, 1), (4, 2), (5, 3)].iter() {
++            let mut set = OutputSet::all_values(channels);
++            set.apply_comparator([*i, *j]);
++            set.canonicalize(true);
++            let state = State {
++                bounds: [*i as u8 + 1, *i as u8 + 7],
++                huffman_bounds: [*i as u8 + 1, *i as u8 + 7],
++            };
++            written.set(set.as_ref(), state);
++            expected.push(set);
++        }
++        for k in 3..=5 {
++            let mut set = OutputSet::all_values(k);
++            set.apply_comparator([1, 0]);
++            set.canonicalize(true);
++            let state = State {
++                bounds: [1, k as u8],
++                huffman_bounds: [1, k as u8],
++            };
++            written.set(set.as_ref(), state);
++            expected.push(set);
++        }
++
++        // Several of the comparators above canonicalise to the same set, so the
++        // authority on what should come back is the map itself, not the states
++        // that were handed to `set`.
++        let expected = expected
++            .into_iter()
++            .map(|set| {
++                let state = written.get(set.as_ref());
++                (set, state)
++            })
++            .collect::<Vec<_>>();
++
++        let writer =
++            Checkpointer::new_at(dir.clone(), false, &written, root.as_ref(), Some(29), &[1, 0])
++                .unwrap();
++        let stats = writer.snapshot().unwrap();
++        assert_eq!(stats.states, written.census().total());
++        assert!(stats.bytes > HEADER_LEN as u64);
++
++        let restored = StateMap::new(channels);
++        let reader =
++            Checkpointer::new_at(dir.clone(), false, &restored, root.as_ref(), Some(29), &[1, 0])
++                .unwrap();
++        let info = reader.restore_from(&writer.path()).unwrap();
++
++        assert_eq!(info.states, stats.states);
++        assert_eq!(info.seq, stats.seq);
++        assert_eq!(restored.census().total(), written.census().total());
++        for (set, state) in expected.iter() {
++            assert_eq!(restored.get(set.as_ref()), *state, "set {:?}", set.packed());
++        }
++
++        // A different channel count must be refused by the identity check.
++        let other = StateMap::new(channels);
++        let mut other_root = OutputSet::all_values(5);
++        other_root.canonicalize(true);
++        let other_reader = Checkpointer::new_at(
++            dir.clone(),
++            false,
++            &other,
++            other_root.as_ref(),
++            Some(29),
++            &[1, 0],
++        )
++        .unwrap();
++        let err = other_reader.restore_from(&writer.path()).unwrap_err();
++        assert!(err.contains("identity mismatch"), "{}", err);
++        assert!(err.contains("channels="), "{}", err);
++
++        // A flipped byte in the body must be caught by the payload hash.
++        let corrupt = dir.join("corrupt.bin");
++        let mut bytes = fs::read(writer.path()).unwrap();
++        let middle = bytes.len() / 2;
++        bytes[middle] ^= 0x01;
++        fs::write(&corrupt, &bytes).unwrap();
++        let err = reader.restore_from(&corrupt).unwrap_err();
++        assert!(err.contains("payload hash mismatch"), "{}", err);
++
++        // A flipped byte in the header must be caught by the header hash first.
++        let corrupt_header = dir.join("corrupt_header.bin");
++        let mut bytes = fs::read(writer.path()).unwrap();
++        bytes[56] ^= 0x01; // seq
++        fs::write(&corrupt_header, &bytes).unwrap();
++        let err = reader.restore_from(&corrupt_header).unwrap_err();
++        assert!(err.contains("header hash mismatch"), "{}", err);
++
++        // A flipped magic byte is caught before anything else.
++        let corrupt_magic = dir.join("corrupt_magic.bin");
++        let mut bytes = fs::read(writer.path()).unwrap();
++        bytes[3] ^= 0x01;
++        fs::write(&corrupt_magic, &bytes).unwrap();
++        let err = reader.restore_from(&corrupt_magic).unwrap_err();
++        assert!(err.contains("bad magic"), "{}", err);
++
++        let _ = fs::remove_dir_all(&dir);
++    }
++
++    /// `restore_entry` must rebuild an index that answers lookups identically
++    /// to the one that was enumerated. This is the piece the states round-trip
++    /// cannot cover without mutating the process environment.
++    #[test]
++    fn round_trip_subsume_index() {
++        let channels = 6;
++        let point_dim = 12;
++
++        let source = ShardedSubsumeIndex::new(channels, point_dim);
++
++        let mut sets = vec![];
++        for i in 1..channels {
++            for j in 0..i {
++                let mut set = OutputSet::all_values(channels);
++                set.apply_comparator([i, j]);
++                set.apply_comparator([(i + 2) % channels, (j + 1) % channels]);
++                set.canonicalize(true);
++                sets.push(set);
++            }
++        }
++
++        for (index, set) in sets.iter().enumerate() {
++            let abstraction = set.abstraction_prefix(source.point_dim());
++            source.insert_collect(set.as_ref(), &abstraction, (index % 7) as u8 + 1, &mut |_| {});
++        }
++
++        let target = ShardedSubsumeIndex::new(channels, point_dim);
++        source.for_each_entry(&mut |packed, value, abstraction| {
++            target.restore_entry(packed, value, abstraction);
++        });
++
++        assert_eq!(target.len(), source.len());
++
++        for set in sets.iter() {
++            let abstraction = set.abstraction_prefix(source.point_dim());
++            assert_eq!(
++                target.lookup(set.as_ref(), &abstraction),
++                source.lookup(set.as_ref(), &abstraction),
++                "lookup disagreed after restore"
++            );
++        }
++
++        // And the filter built from packed bytes agrees with the one built
++        // from the bitmap, which is what `restore_entry` relies on.
++        for set in sets.iter() {
++            let from_bitmap = SubsumeFilter::from_output_set(set.as_ref());
++            let from_bytes = SubsumeFilter::from_packed_bytes(channels, &set.packed());
++            assert_eq!(from_bitmap.sig, from_bytes.sig);
++            assert_eq!(from_bitmap.sig_rev, from_bytes.sig_rev);
++            assert_eq!(from_bitmap.hist, from_bytes.hist);
++        }
++    }
++}
+diff -ruN a/src/search/states.rs b/src/search/states.rs
+--- a/src/search/states.rs	2026-08-17 19:12:42
++++ b/src/search/states.rs	2026-08-17 22:29:32
+@@ -2,7 +2,10 @@
+     collections::BTreeMap,
+     hash::{Hash, Hasher},
+     mem::{replace, transmute},
+-    sync::RwLock,
++    sync::{
++        atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed},
++        RwLock, RwLockWriteGuard,
++    },
+     time::Instant,
+ };
+ 
+@@ -13,6 +16,7 @@
+ };
+ use rustc_hash::FxHasher;
+ 
++use super::checkpoint;
+ use super::subsume::ShardedSubsumeIndex;
+ use crate::instrument::{self, Census};
+ use crate::output_set::{OutputSet, PVec, MAX_CHANNELS, PAIR_ABSTRACTION_GROUPS};
+@@ -69,6 +73,33 @@
+     }
+ }
+ 
++/// TIER2b: one stripe of the quiescing gate.
++///
++/// `#[repr(align(128))]` so that two stripes can never share a cache line.
++/// 128 rather than 64 because the Apple silicon performance cores use 128-byte
++/// lines; over-aligning is free here, since there are only `num_cpus` stripes.
++///
++/// The whole point of the striping is that a `set` on a given worker thread
++/// always touches *its own* line, so the read acquisition stays exclusively in
++/// that core's cache instead of ping-ponging one shared atomic between all
++/// workers.
++#[repr(align(128))]
++struct GateStripe(RwLock<()>);
++
++/// Hands out gate stripe indices, one per thread, on first use. Only the
++/// spacing of the values matters, never their absolute value, so `Relaxed` is
++/// enough.
++static NEXT_STRIPE: AtomicUsize = AtomicUsize::new(0);
++
++thread_local! {
++    /// The stripe this thread uses for *every* `StateMap::set` it performs.
++    /// Chosen once per thread, not once per call: re-picking per call would
++    /// reintroduce exactly the shared-atomic traffic the striping removes.
++    /// Reduced modulo the stripe count at the point of use, so a single value
++    /// stays correct across `StateMap`s with different stripe counts.
++    static GATE_STRIPE: usize = NEXT_STRIPE.fetch_add(1, Relaxed);
++}
++
+ pub struct StateMap {
+     state_shards: Vec<RwLock<OutputSetMap<State>>>,
+     lock_shards: Vec<RwLock<OutputSetMap<Shared<oneshot::Receiver<()>>>>>,
+@@ -78,6 +109,31 @@
+     /// traversal filter.
+     subsume_mode: SubsumeMode,
+     subsume_indexes: Vec<Option<ShardedSubsumeIndex>>,
++    /// TIER2b: the quiescing gate, striped one `RwLock<()>` per CPU.
++    ///
++    /// `set` (the only write path) holds **its own thread's stripe** in
++    /// **read** mode for its whole body; the checkpointer holds **every**
++    /// stripe in **write** mode for the duration of a snapshot. The snapshot
++    /// is therefore still globally consistent: because the checkpointer holds
++    /// all stripes simultaneously, no `set` can be in flight on any stripe, so
++    /// no `set` can be in flight anywhere, while it runs.
++    ///
++    /// Lock order is unchanged: `gate stripes -> {index buckets, state
++    /// shards}` in both directions, and `set` contains no `.await`, so no
++    /// stripe guard is ever held across a suspension point
++    /// (`docs/sortnetopt-internals.md` §3.6 invariant 3).
++    ///
++    /// Empty when checkpointing is disabled — nothing is allocated and nothing
++    /// is touched.
++    checkpoint_gate: Vec<GateStripe>,
++    /// Set from the environment once, at construction. When false, `set` never
++    /// touches the gate, so a run with checkpointing off is bit-for-bit the
++    /// pre-TIER2b code path.
++    checkpoint_enabled: bool,
++    /// Anti-starvation only: the checkpointer raises it before asking for the
++    /// write guard, and `set` yields once when it sees it. Changes no
++    /// semantics.
++    checkpoint_requested: AtomicBool,
+ }
+ 
+ impl StateMap {
+@@ -136,11 +192,25 @@
+             }
+         }
+ 
++        // One gate stripe per CPU, and only when checkpointing is on: with it
++        // off the gate is never touched, so there is nothing to allocate.
++        let checkpoint_enabled = checkpoint::enabled();
++        let checkpoint_gate = if checkpoint_enabled {
++            (0..threads.max(1))
++                .map(|_| GateStripe(RwLock::new(())))
++                .collect()
++        } else {
++            vec![]
++        };
++
+         Self {
+             state_shards: (0..shards).map(|_| Default::default()).collect(),
+             lock_shards: (0..shards).map(|_| Default::default()).collect(),
+             subsume_mode,
+             subsume_indexes,
++            checkpoint_gate,
++            checkpoint_enabled,
++            checkpoint_requested: AtomicBool::new(false),
+         }
+     }
+ 
+@@ -148,6 +218,78 @@
+         self.subsume_mode
+     }
+ 
++    // --- TIER2b checkpoint support -----------------------------------------
++
++    /// Freeze every write path: acquire *every* gate stripe in write mode. The
++    /// returned guards are held for the duration of a snapshot and released
++    /// together when the caller drops the vector.
++    ///
++    /// Taking all stripes is what preserves global consistency — a `set` can
++    /// only be in flight while holding some stripe in read mode, and here we
++    /// hold all of them, so no `set` is in flight anywhere.
++    ///
++    /// No lock-ordering cycle is possible: stripes are acquired in strictly
++    /// ascending index order here, and a `set` only ever holds a single
++    /// stripe, so no thread can hold stripe `j` while waiting on stripe
++    /// `i < j`. (There is also only ever one checkpointer.)
++    pub fn checkpoint_gate_write(&self) -> Vec<RwLockWriteGuard<'_, ()>> {
++        self.checkpoint_gate
++            .iter()
++            .map(|stripe| stripe.0.write().unwrap())
++            .collect()
++    }
++
++    pub fn request_checkpoint(&self, requested: bool) {
++        self.checkpoint_requested.store(requested, Relaxed);
++    }
++
++    /// `(k, point_dim)` for each indexed width, sorted by `k`. Part of the
++    /// checkpoint identity string.
++    pub fn subsume_index_dims(&self) -> Vec<(usize, usize)> {
++        self.subsume_indexes
++            .iter()
++            .enumerate()
++            .filter_map(|(k, slot)| slot.as_ref().map(|index| (k, index.point_dim())))
++            .collect()
++    }
++
++    pub fn subsume_index_at(&self, channels: usize) -> Option<&ShardedSubsumeIndex> {
++        self.subsume_index(channels)
++    }
++
++    /// Every live memo entry at `channels`, as `(packed key, state)`. Read-only;
++    /// each shard is visited under its own read guard. Meaningful as a snapshot
++    /// only while the checkpoint gate is held in write mode.
++    pub fn for_each_state_at(&self, channels: usize, action: &mut dyn FnMut(&[u8], State)) {
++        for shard in self.state_shards.iter() {
++            shard
++                .read()
++                .unwrap()
++                .for_each_packed_at(channels, &mut |packed, state| action(packed, *state));
++        }
++    }
++
++    /// Reinstate one memo entry from a checkpoint. Deliberately *not* routed
++    /// through `set`: no index insert and no eviction, because the index is
++    /// restored separately and verbatim. The key is rebuilt as a `PVec` so the
++    /// shard hash is bit-identical to the one `get`/`set` compute, exactly as
++    /// `remove_state` does — which is why the shard count is not part of the
++    /// checkpoint identity.
++    pub fn restore_state(&self, channels: usize, packed_bytes: &[u8], state: State) {
++        let packed: PVec<u8> = packed_bytes.iter().cloned().collect();
++        let shard = self.shard_of(&packed);
++        let newly_inserted = self.state_shards[shard]
++            .write()
++            .unwrap()
++            .set_with_packed(channels, &packed, state);
++        // Recorded after the shard write guard has been dropped. Only the live
++        // entry accounting is touched: a restore is not a `set`, so it must not
++        // inflate `set_calls` / `set_inserts`.
++        if newly_inserted {
++            instrument::record_entry_added(channels);
++        }
++    }
++
+     /// `(channels, point_dim, entries, capacity bytes, payload bytes)` for each
+     /// on-line index.
+     pub fn subsume_census(&self) -> Vec<(usize, u64, u64, u64, u64)> {
+@@ -314,7 +456,43 @@
+         }
+     }
+ 
+-    pub fn set(&self, output_set: OutputSet<&[bool]>, mut state: State) {
++    /// TIER2b: the checkpoint gate wrapper.
++    ///
++    /// `set` is the *only* write path into the persistent state — it performs
++    /// the index insert/evict, the `remove_state` mirroring and the shard write
++    /// — so holding a gate stripe in read mode across `set_inner` is exactly
++    /// what makes a snapshot taken under the write guards a state the live
++    /// search genuinely passed through. Only *this thread's* stripe is taken;
++    /// that is sufficient because the checkpointer takes every stripe, so it
++    /// still excludes every in-flight `set`, whichever stripe it is on.
++    ///
++    /// **`set_inner` contains no `.await`.** It is a plain `fn`, not an `async
++    /// fn`, so this is enforced by the type system rather than by discipline;
++    /// a stripe guard can therefore never be held across a suspension point
++    /// (`docs/sortnetopt-internals.md` §3.6 invariant 3).
++    pub fn set(&self, output_set: OutputSet<&[bool]>, state: State) {
++        if !self.checkpoint_enabled {
++            // Bit-for-bit the pre-TIER2b path: not even a load of the flag on
++            // the hot side of the branch.
++            return self.set_inner(output_set, state);
++        }
++
++        if self.checkpoint_requested.load(Relaxed) {
++            // Anti-starvation. A stream of read acquisitions can otherwise
++            // defer the checkpointer's write acquisition indefinitely; yielding
++            // gives it a chance to get in. No semantics depend on this.
++            std::thread::yield_now();
++        }
++        // This thread's own stripe, picked once per thread, so in the steady
++        // state the line stays in this core's cache and the acquisition is
++        // uncontended.
++        let stripe = GATE_STRIPE.with(|stripe| *stripe % self.checkpoint_gate.len());
++        let _gate = self.checkpoint_gate[stripe].0.read().unwrap();
++        instrument::bump(&instrument::CKPT_GATE_ACQUIRES);
++        self.set_inner(output_set, state)
++    }
++
++    fn set_inner(&self, output_set: OutputSet<&[bool]>, mut state: State) {
+         // --- M2a write-side hook ---------------------------------------------
+         //
+         // `set_inserts : get_calls` is 1:17, so this is where the O(k^2 * 2^k)
+@@ -587,6 +765,63 @@
+         let _ignored: [(); 0 >> 1] = [];
+ 
+         result
++    }
++
++    /// TIER2b: visit every `(packed key, value)` at one channel count, without
++    /// consuming the map (`drain_packed` is the destructive counterpart used by
++    /// `dump_states`, whose behaviour is unchanged).
++    ///
++    /// For k in 9..=11 the `BTreeMap` key is a nested array; the reinterpret to
++    /// a flat byte slice is the by-reference form of the `transmute` that
++    /// `drain_packed`, `get_with_packed` and `set_with_packed` already use, and
++    /// is sound for the same reason: `[[u8; 32]; m]` and `[u8; 32 * m]` have
++    /// identical layout.
++    pub fn for_each_packed_at(&self, channels: usize, action: &mut dyn FnMut(&[u8], &T)) {
++        match channels {
++            3 => self
++                .states_3_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
++            4 => self
++                .states_4_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
++            5 => self
++                .states_5_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
++            6 => self
++                .states_6_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
++            7 => self
++                .states_7_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
++            8 => self
++                .states_8_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
++
++            9 => self.states_9_channels.iter().for_each(|(packed, value)| {
++                let bytes = unsafe { &*(packed as *const _ as *const [u8; 1 << 6]) };
++                action(bytes.as_ref(), value)
++            }),
++            10 => self.states_10_channels.iter().for_each(|(packed, value)| {
++                let bytes = unsafe { &*(packed as *const _ as *const [u8; 1 << 7]) };
++                action(bytes.as_ref(), value)
++            }),
++            11 => self.states_11_channels.iter().for_each(|(packed, value)| {
++                let bytes = unsafe { &*(packed as *const _ as *const [u8; 1 << 8]) };
++                action(bytes.as_ref(), value)
++            }),
++            _ => {}
++        }
++
++        // Works around vscode's broken syntax highlighting
++        let _ignored: [(); 0 >> 1] = [];
++        let _ignored: [(); 0 >> 1] = [];
++        let _ignored: [(); 0 >> 1] = [];
+     }
+ 
+     pub fn get_with_packed(&self, channels: usize, packed: &[u8]) -> Option<T> {
+diff -ruN a/src/search/subsume.rs b/src/search/subsume.rs
+--- a/src/search/subsume.rs	2026-08-17 19:12:42
++++ b/src/search/subsume.rs	2026-08-17 20:58:29
+@@ -121,6 +121,7 @@
+ 
+ /// One indexed width's on-line subsumption index, partitioned by `|set|`.
+ pub struct ShardedSubsumeIndex {
++    channels: usize,
+     point_dim: usize,
+     /// `buckets[p]` holds exactly the stored sets with `|set| == p`; length is
+     /// `2^channels + 1`.
+@@ -133,11 +134,83 @@
+             .map(|_| Bucket::new(channels, point_dim))
+             .collect::<Vec<_>>();
+         let point_dim = buckets[0].index.read().unwrap().point_dim();
+-        Self { point_dim, buckets }
++        Self {
++            channels,
++            point_dim,
++            buckets,
++        }
+     }
+ 
+     pub fn point_dim(&self) -> usize {
+         self.point_dim
++    }
++
++    // --- TIER2b checkpoint support -----------------------------------------
++
++    /// Every stored entry, as `(packed key, value, abstraction point)`. The
++    /// popcount bucket is not reported because it is recoverable from the
++    /// packed key (see `restore_entry`).
++    ///
++    /// Buckets are visited one at a time under their own read guard, in
++    /// ascending popcount order; that is only a coherent snapshot while the
++    /// `StateMap` checkpoint gate is held in write mode, which is the only
++    /// context this is called from.
++    pub fn for_each_entry(&self, action: &mut dyn FnMut(&[u8], u8, &[u16])) {
++        for bucket in self.buckets.iter() {
++            bucket
++                .index
++                .read()
++                .unwrap()
++                .for_each(|output_set, abstraction, _sig, value| {
++                    action(&output_set.packed_pvec(), value, abstraction);
++                });
++        }
++    }
++
++    /// Reinstate one entry from a checkpoint, into the bucket its popcount
++    /// selects.
++    ///
++    /// The packed key length is an exact multiple of 8 bits for every k >= 3,
++    /// so there are no padding bits and the byte popcount *is* `|set|` — the
++    /// same quantity `insert_collect` gets from `OutputSet::len`.
++    ///
++    /// `insert_new_unchecked_with_abstraction` is the right primitive: the
++    /// stored set is known to be neither dominated by nor dominating any other
++    /// stored set (that was already resolved by the `insert_collect` that put
++    /// it there), so neither the lookup nor the eviction pass has anything to
++    /// do. The `len` / `max_value` / `min_value` water marks are then updated
++    /// exactly as `insert_collect` updates them.
++    ///
++    /// Single-threaded, before any worker starts, so no gate is needed.
++    pub fn restore_entry(&self, packed_bytes: &[u8], value: u8, abstraction: &[u16]) {
++        debug_assert_eq!(
++            packed_bytes.len(),
++            OutputSet::packed_len_for_channels(self.channels)
++        );
++        debug_assert_eq!(abstraction.len(), self.point_dim);
++
++        let popcount = packed_bytes
++            .iter()
++            .map(|byte| byte.count_ones() as usize)
++            .sum::<usize>();
++
++        let output_set = OutputSet::from_packed(self.channels, packed_bytes);
++        debug_assert_eq!(output_set.len(), popcount);
++        let filter = SubsumeFilter::from_packed_bytes(self.channels, packed_bytes);
++
++        let bucket = &self.buckets[popcount];
++        {
++            let mut index = bucket.index.write().unwrap();
++            index.insert_new_unchecked_with_abstraction(
++                output_set.as_ref(),
++                abstraction,
++                &filter,
++                value,
++            );
++            bucket.len.store(index.len() as u64, Relaxed);
++        }
++        bucket.max_value.fetch_max(value, Relaxed);
++        bucket.min_value.fetch_min(value, Relaxed);
+     }
+ 
+     /// Maximum value over stored sets that subsume `output_set`, or `None`.
+diff -ruN a/src/search.rs b/src/search.rs
+--- a/src/search.rs	2026-08-17 19:12:42
++++ b/src/search.rs	2026-08-17 20:59:03
+@@ -4,7 +4,10 @@
+     io::{self, BufWriter, ErrorKind, Write},
+     path::PathBuf,
+     pin::Pin,
+-    sync::Arc,
++    sync::{
++        atomic::{AtomicBool, Ordering::Relaxed},
++        Arc,
++    },
+     time::{Duration, Instant},
+ };
+ 
+@@ -12,6 +15,7 @@
+ use futures::{pending, poll, task::Poll};
+ use rustc_hash::FxHashMap as HashMap;
+ 
++mod checkpoint;
+ mod states;
+ mod subsume;
+ 
+@@ -33,6 +37,7 @@
+     pub fn search(
+         initial: OutputSet<&[bool]>,
+         limit: Option<usize>,
++        prefix: &[usize],
+         output: Option<PathBuf>,
+     ) -> usize {
+         instrument::init();
+@@ -47,41 +52,103 @@
+ 
+         let mut initial = initial.to_owned_bvec();
+ 
++        let limit_arg = limit;
+         let limit = limit.unwrap_or(usize::max_value());
+ 
+         initial.canonicalize(true);
+ 
+-        let final_bound = ThreadPool::scope(|pool| {
+-            let _info_thread = pool.spawn(Box::pin(async {
+-                let mut last_msg = Instant::now();
+-                loop {
+-                    let next_msg = last_msg + Duration::from_secs(10);
+-                    let sleep_for = next_msg.saturating_duration_since(Instant::now());
+-                    last_msg = next_msg;
+-                    sleep(sleep_for).await;
+-                    search.log_stats();
++        // TIER2b: checkpointing. `Checkpointer::from_env` returns `None` unless
++        // `SORTNETOPT_CHECKPOINT_DIR` is set, in which case nothing below this
++        // point costs anything and `StateMap::set` never touches its gate.
++        let checkpointer =
++            match checkpoint::Checkpointer::from_env(&search.states, initial.as_ref(), limit_arg, prefix)
++            {
++                Ok(checkpointer) => checkpointer,
++                Err(err) => {
++                    eprintln!("checkpoint: cannot use SORTNETOPT_CHECKPOINT_DIR: {}", err);
++                    log::error!("checkpoint: cannot use SORTNETOPT_CHECKPOINT_DIR: {}", err);
++                    std::process::exit(3);
+                 }
+-            }));
++            };
+ 
+-            let main_loop = pool.spawn(Box::pin(async {
+-                let mut state = search.states.get(initial.as_ref());
+-                loop {
+-                    if state.bounds[0] == state.bounds[1] || state.bounds[0] as usize >= limit {
+-                        break state.bounds[0] as usize;
++        // Restore before any worker starts. Refusal exits non-zero from inside;
++        // there is deliberately no fall-back-to-fresh and no override flag.
++        if let Some(checkpointer) = checkpointer.as_ref() {
++            checkpointer.resume_if_requested();
++        }
++
++        let shutdown = AtomicBool::new(false);
++        let interval = checkpoint::config().interval;
++
++        // The checkpointer runs on its own OS thread, not as a pool task: it
++        // must not occupy a worker, and an async task could be starved by the
++        // very saturation that makes checkpointing worth having.
++        let final_bound = std::thread::scope(|scope| {
++            let shutdown = &shutdown;
++            let checkpoint_thread = checkpointer
++                .as_ref()
++                .map(|checkpointer| scope.spawn(move || checkpointer.drive(shutdown, interval)));
++
++            let final_bound = ThreadPool::scope(|pool| {
++                let _info_thread = pool.spawn(Box::pin(async {
++                    let mut last_msg = Instant::now();
++                    loop {
++                        let next_msg = last_msg + Duration::from_secs(10);
++                        let sleep_for = next_msg.saturating_duration_since(Instant::now());
++                        last_msg = next_msg;
++                        sleep(sleep_for).await;
++                        search.log_stats();
+                     }
+-                    state = search.improve(pool, 0, state, initial.as_ref()).await;
+-                    log::info!("bounds: {:?}", state);
+-                    let census = search.log_stats();
+-                    instrument::record_bound_iteration(
+-                        state.bounds,
+-                        state.huffman_bounds,
+-                        &census,
+-                    );
+-                }
+-            }));
++                }));
+ 
+-            task::block_on(main_loop)
++                let main_loop = pool.spawn(Box::pin(async {
++                    let mut state = search.states.get(initial.as_ref());
++                    loop {
++                        if state.bounds[0] == state.bounds[1] || state.bounds[0] as usize >= limit {
++                            break state.bounds[0] as usize;
++                        }
++                        state = search.improve(pool, 0, state, initial.as_ref()).await;
++                        log::info!("bounds: {:?}", state);
++                        let census = search.log_stats();
++                        instrument::record_bound_iteration(
++                            state.bounds,
++                            state.huffman_bounds,
++                            &census,
++                        );
++                    }
++                }));
++
++                // TIER2b: capture the pool's park time and the search wall the
++                // instant the interval closes, while the workers are still
++                // running the search rather than idling out the 10-second
++                // stats-logger floor. `POOL_LOOP_NS` spans the whole thread
++                // lifetime and is therefore useless for a utilisation figure;
++                // these two are the ones the report quotes.
++                let pool_phase_start = Instant::now();
++                let park_before = crate::thread_pool::park_ns();
++                let result = task::block_on(main_loop);
++                instrument::record_pool_search_phase(
++                    crate::thread_pool::park_ns().saturating_sub(park_before),
++                    pool_phase_start.elapsed().as_nanos() as u64,
++                );
++                result
++            });
++
++            shutdown.store(true, Relaxed);
++            if let Some(checkpoint_thread) = checkpoint_thread {
++                let _ = checkpoint_thread.join();
++            }
++
++            final_bound
+         });
++
++        // A completed run leaves a resumable, verifiable artifact too.
++        if let Some(checkpointer) = checkpointer.as_ref() {
++            if checkpoint::config().final_write {
++                checkpointer.snapshot_logged(" [final]");
++            }
++        }
++        drop(checkpointer);
+ 
+         instrument::record_subsume_index(
+             search.states.subsume_mode().name(),
+diff -ruN a/src/thread_pool.rs b/src/thread_pool.rs
+--- a/src/thread_pool.rs	2026-08-17 19:10:34
++++ b/src/thread_pool.rs	2026-08-17 20:59:10
+@@ -1,14 +1,38 @@
++//! Work-stealing-free thread pool with a priority-ordered *pending* side queue.
++//!
++//! Tier-2b (descheduling fix). The upstream worker loop had three measured
++//! pathologies (`evidence/v3/m2b/perf-report.md` sections 2.1, 5.3, 8.1: 45.5 %
++//! of all thread samples in `__psynch_cvwait`, 4.6 % in `__psynch_mutexwait` on
++//! the global `pending` lock, and a collapse from ~900 % to ~426 % CPU during
++//! the deep final bound iteration of an n=11 run):
++//!
++//! * **P1, idle lock storm.** Every worker took the *global write* lock on
++//!   every loop iteration, even when the pending map and the pending channel
++//!   were both empty -- a provable no-op (see `POOL_LOCK_SKIPPED`).
++//! * **P2, one task per global lock.** Pending work became ready work at a rate
++//!   of one task per global-write-lock round trip, so N workers hunting for
++//!   work serialised completely.
++//! * **P3, the 10 ms dead park.** `add_pending` only sends on a channel;
++//!   nothing wakes parked workers, so a worker with pending-but-not-yet-
++//!   promoted work available slept the full 10 ms.
++//!
++//! All three fixes are env-gated so upstream scheduling is exactly recoverable
++//! for A/B measurement; see `PoolConfig`. Nothing here is ever consulted by the
++//! search: the scheduler decides *when* work runs, never *which* work exists,
++//! and promotion order is unchanged (strictly ascending `(Prio, id)`).
++
+ use std::{
+     collections::BTreeMap,
+     future::Future,
+     mem::{replace, transmute},
+     pin::Pin,
+     sync::{
+-        atomic::{AtomicUsize, Ordering},
++        atomic::{AtomicU64, AtomicUsize, Ordering, Ordering::Relaxed},
+         Arc, RwLock, Weak,
+     },
+     task::{Context, Poll},
+     thread,
++    time::{Duration, Instant},
+ };
+ 
+ use abort_on_panic::abort_on_panic;
+@@ -17,6 +41,192 @@
+ 
+ type WeakSchedule = Weak<RwLock<Option<Task<()>>>>;
+ 
++/// Upstream's park duration, kept as the fallback for a genuinely idle worker.
++const LONG_PARK: Duration = Duration::from_millis(10);
++
++// --- counters ----------------------------------------------------------------
++//
++// Same discipline as `crate::instrument`: `AtomicU64::fetch_add` with
++// `Ordering::Relaxed` only, no allocation, no locking, and never inside the
++// `pending` write critical section where it could lengthen it. These live here
++// rather than in `instrument` so this module stays a leaf and so `counters()`
++// needs no `Prio` type parameter.
++
++/// `task.run()` calls, from either the drain loop or a woken park.
++pub static POOL_TASKS_RUN: AtomicU64 = AtomicU64::new(0);
++/// Acquisitions of the global `pending` write lock.
++pub static POOL_LOCK_ACQUIRES: AtomicU64 = AtomicU64::new(0);
++/// P1: loop iterations that proved the lock block was a no-op and skipped it.
++pub static POOL_LOCK_SKIPPED: AtomicU64 = AtomicU64::new(0);
++/// Lock acquisitions that promoted at least one task.
++pub static POOL_PROMOTE_BATCHES: AtomicU64 = AtomicU64::new(0);
++/// Pending tasks actually scheduled (`POOL_PROMOTIONS / POOL_PROMOTE_BATCHES`
++/// is the realised batch factor; upstream it is exactly 1).
++pub static POOL_PROMOTIONS: AtomicU64 = AtomicU64::new(0);
++/// Pending entries discarded because the weak ref was dead or the task had
++/// already been scheduled. These do not count against the batch.
++pub static POOL_PROMOTE_DEAD: AtomicU64 = AtomicU64::new(0);
++/// Entries pulled off `pending_receiver` into the map.
++pub static POOL_INGESTED: AtomicU64 = AtomicU64::new(0);
++/// Self-tuning garbage collections of the pending map.
++pub static POOL_GC_RUNS: AtomicU64 = AtomicU64::new(0);
++/// P3: parks that used `SORTNETOPT_POOL_SPIN_US` because promotable work
++/// existed.
++pub static POOL_PARK_SHORT: AtomicU64 = AtomicU64::new(0);
++/// Parks that used the upstream 10 ms timeout.
++pub static POOL_PARK_LONG: AtomicU64 = AtomicU64::new(0);
++/// Measured park duration, summed over all threads.
++pub static POOL_PARK_NS: AtomicU64 = AtomicU64::new(0);
++/// Parks that returned `Ok(task)` rather than timing out.
++pub static POOL_PARK_WOKEN: AtomicU64 = AtomicU64::new(0);
++/// Wall lifetime of each worker thread, summed. The utilisation proxy is
++/// `(POOL_LOOP_NS - POOL_PARK_NS) / POOL_LOOP_NS`; deriving it this way costs
++/// two `Instant::now()` calls per *park* and two per *thread*, and nothing at
++/// all on the hot path -- `task.run()` is deliberately not timed.
++pub static POOL_LOOP_NS: AtomicU64 = AtomicU64::new(0);
++/// Worker thread count (stored, not accumulated).
++pub static POOL_THREADS: AtomicU64 = AtomicU64::new(0);
++
++static ALL_COUNTERS: [(&str, &AtomicU64); 13] = [
++    ("pool_tasks_run", &POOL_TASKS_RUN),
++    ("pool_lock_acquires", &POOL_LOCK_ACQUIRES),
++    ("pool_lock_skipped", &POOL_LOCK_SKIPPED),
++    ("pool_promote_batches", &POOL_PROMOTE_BATCHES),
++    ("pool_promotions", &POOL_PROMOTIONS),
++    ("pool_promote_dead", &POOL_PROMOTE_DEAD),
++    ("pool_ingested", &POOL_INGESTED),
++    ("pool_gc_runs", &POOL_GC_RUNS),
++    ("pool_park_short", &POOL_PARK_SHORT),
++    ("pool_park_long", &POOL_PARK_LONG),
++    ("pool_park_ns", &POOL_PARK_NS),
++    ("pool_park_woken", &POOL_PARK_WOKEN),
++    ("pool_loop_ns", &POOL_LOOP_NS),
++];
++
++/// Scheduler counters in a stable order, for the instrumentation report.
++pub fn counters() -> Vec<(&'static str, u64)> {
++    let mut lines = vec![("pool_threads", POOL_THREADS.load(Relaxed))];
++    lines.extend(
++        ALL_COUNTERS
++            .iter()
++            .map(|&(name, counter)| (name, counter.load(Relaxed))),
++    );
++    lines
++}
++
++/// Zero every counter except `pool_threads`, which describes the pool rather
++/// than a phase of its work. Used before a measured phase.
++pub fn reset_counters() {
++    for &(_name, counter) in ALL_COUNTERS.iter() {
++        counter.store(0, Relaxed);
++    }
++}
++
++/// Current summed park time. Sampled by `Search::search` at the start and end
++/// of the main loop so the utilisation figure covers the *search phase* rather
++/// than each worker's whole lifetime (which includes the ~10 s idle tail the
++/// stats logger imposes on every process).
++pub fn park_ns() -> u64 {
++    POOL_PARK_NS.load(Relaxed)
++}
++
++/// Fraction of worker wall time not spent parked, i.e. the CPU utilisation
++/// proxy `(POOL_LOOP_NS - POOL_PARK_NS) / POOL_LOOP_NS`. `None` before the
++/// workers have been joined (`POOL_LOOP_NS` is only published on thread exit).
++pub fn utilisation() -> Option<f64> {
++    let loop_ns = POOL_LOOP_NS.load(Relaxed);
++    if loop_ns == 0 {
++        return None;
++    }
++    let park_ns = POOL_PARK_NS.load(Relaxed).min(loop_ns);
++    Some((loop_ns - park_ns) as f64 / loop_ns as f64)
++}
++
++/// Write the counter block to stderr, alongside `crate::instrument`'s report.
++/// Off by default: the campaign driver wires these counters into the main
++/// instrumentation report, and this exists so the pool can be measured on its
++/// own without that wiring. Enabled by `SORTNETOPT_POOL_REPORT=1`.
++fn report_counters() {
++    match std::env::var("SORTNETOPT_POOL_REPORT") {
++        Ok(value) => {
++            let value = value.trim().to_ascii_lowercase();
++            if !(value == "1" || value == "true" || value == "yes") {
++                return;
++            }
++        }
++        Err(_) => return,
++    }
++
++    eprintln!("=== sortnetopt thread pool (v3 tier-2b) ===");
++    for (name, value) in counters() {
++        eprintln!("counter {:<22} {}", name, value);
++    }
++    if let Some(utilisation) = utilisation() {
++        eprintln!("pool utilisation_proxy {:.4}", utilisation);
++    }
++}
++
++// --- configuration -----------------------------------------------------------
++
++/// Read once in `ThreadPool::scope` and copied into every worker closure, so
++/// no worker ever touches the environment (or a `OnceLock`) on its loop path.
++#[derive(Clone, Copy, Debug)]
++struct PoolConfig {
++    /// `SORTNETOPT_POOL=upstream`: reproduce upstream scheduling byte for
++    /// byte (batch 1, no lock skip, always the 10 ms park).
++    upstream: bool,
++    /// P1: skip the global lock when it is provably a no-op.
++    skip_idle_lock: bool,
++    /// P2: max tasks promoted per global-lock acquisition. 1 == upstream.
++    batch: usize,
++    /// P3: short-park duration.
++    spin: Duration,
++    /// P3: max consecutive short parks before falling back to `LONG_PARK`.
++    /// 0 == upstream (never short-park).
++    spin_rounds: u32,
++}
++
++/// `name` parsed as `T`, or `default` if unset, empty, or unparseable. Parsing
++/// is deliberately forgiving: a typo in a campaign script must degrade to the
++/// default rather than change scheduling in a way nobody notices.
++fn env_parsed<T: std::str::FromStr>(name: &str, default: T) -> T {
++    std::env::var(name)
++        .ok()
++        .and_then(|value| value.trim().parse().ok())
++        .unwrap_or(default)
++}
++
++impl PoolConfig {
++    fn from_env(threads: usize) -> Self {
++        let upstream = std::env::var("SORTNETOPT_POOL")
++            .unwrap_or_default()
++            .trim()
++            .eq_ignore_ascii_case("upstream");
++
++        let batch = env_parsed("SORTNETOPT_POOL_BATCH", threads).max(1);
++        let spin_us = env_parsed::<u64>("SORTNETOPT_POOL_SPIN_US", 50);
++        let spin_rounds = env_parsed::<u32>("SORTNETOPT_POOL_SPIN_ROUNDS", 64);
++
++        if upstream {
++            PoolConfig {
++                upstream,
++                skip_idle_lock: false,
++                batch: 1,
++                spin: Duration::from_micros(spin_us),
++                spin_rounds: 0,
++            }
++        } else {
++            PoolConfig {
++                upstream,
++                skip_idle_lock: true,
++                batch,
++                spin: Duration::from_micros(spin_us),
++                spin_rounds,
++            }
++        }
++    }
++}
++
+ #[derive(Default)]
+ struct Pending<Prio: Ord + Copy + Send + Sync + 'static> {
+     next_gc: usize,
+@@ -27,6 +237,10 @@
+     queue: Sender<Task<()>>,
+     pending_queue: Sender<((Prio, usize), WeakSchedule)>,
+     pending: Arc<RwLock<Pending<Prio>>>,
++    /// P1: a lock-free mirror of `pending.queue.len()`, published (Relaxed) by
++    /// whichever worker holds the write lock. Only ever read as "is there
++    /// anything to promote?".
++    pending_len: Arc<AtomicUsize>,
+     pending_id: AtomicUsize,
+ }
+ 
+@@ -133,75 +347,204 @@
+                 next_gc: 0,
+                 queue: Default::default(),
+             })),
++            pending_len: Arc::new(AtomicUsize::new(0)),
+             pending_id: 0.into(),
+         };
+ 
+         let threads = num_cpus::get().max(1);
+ 
++        let config = PoolConfig::from_env(threads);
++        POOL_THREADS.store(threads as u64, Relaxed);
++        log::info!(
++            "pool: mode={} threads={} batch={} spin_us={} spin_rounds={} skip_idle_lock={}",
++            if config.upstream { "upstream" } else { "tier2b" },
++            threads,
++            config.batch,
++            config.spin.as_micros(),
++            config.spin_rounds,
++            config.skip_idle_lock,
++        );
++
+         let workers = (0..threads)
+             .map(|_worker| {
+                 let receiver = receiver.clone();
+                 let pending_receiver = pending_receiver.clone();
+                 let pending = pool.pending.clone();
+-                thread::spawn(move || 'outer: loop {
+-                    while let Ok(task) = receiver.try_recv() {
+-                        abort_on_panic!("task panicked", { task.run() });
+-                    }
++                let pending_len = pool.pending_len.clone();
++                thread::spawn(move || {
++                    let thread_start = Instant::now();
++                    // Consecutive short parks taken without running or
++                    // promoting anything, capped by `config.spin_rounds`.
++                    let mut short_parks: u32 = 0;
+ 
+-                    {
+-                        let mut pending_mut = pending.write().unwrap();
++                    'outer: loop {
++                        while let Ok(task) = receiver.try_recv() {
++                            POOL_TASKS_RUN.fetch_add(1, Relaxed);
++                            short_parks = 0;
++                            abort_on_panic!("task panicked", { task.run() });
++                        }
+ 
+-                        let queue_limit = pending_receiver.len() * 2;
++                        // P1. With the pending map empty *and* the pending
++                        // channel empty, the block below is a provable no-op:
++                        // the ingest `while let Ok(..)` body never executes and
++                        // the promote `while let Some(..)` loop never executes,
++                        // so all it does is acquire and release the global write
++                        // lock. A stale-high `pending_len` only costs one
++                        // unnecessary acquisition. A stale-low read cannot hide
++                        // work this worker must handle: `pending_receiver` is
++                        // checked too, and `add_pending` publishes to that
++                        // channel before any worker could be expected to see the
++                        // entry -- so an entry is always visible in exactly one
++                        // of the two places.
++                        let mut promoted = 0usize;
++                        let mut dead = 0usize;
+ 
+-                        let mut counter = 0;
+-                        while let Ok((prio, task)) = pending_receiver.try_recv() {
+-                            if pending_mut.queue.len() >= pending_mut.next_gc {
+-                                let old_queue = replace(&mut pending_mut.queue, Default::default());
++                        if config.skip_idle_lock
++                            && pending_len.load(Relaxed) == 0
++                            && pending_receiver.is_empty()
++                        {
++                            POOL_LOCK_SKIPPED.fetch_add(1, Relaxed);
++                        } else {
++                            POOL_LOCK_ACQUIRES.fetch_add(1, Relaxed);
+ 
+-                                pending_mut.queue = old_queue
+-                                    .into_iter()
+-                                    .filter(|(_prio, schedule)| {
+-                                        if let Some(schedule) = schedule.upgrade() {
+-                                            !(Schedule { task: schedule }).is_scheduled()
+-                                        } else {
+-                                            false
++                            let mut ingested = 0usize;
++                            let mut gc_runs = 0usize;
++
++                            {
++                                let mut pending_mut = pending.write().unwrap();
++
++                                let queue_limit = pending_receiver.len() * 2;
++
++                                while let Ok((prio, task)) = pending_receiver.try_recv() {
++                                    if pending_mut.queue.len() >= pending_mut.next_gc {
++                                        gc_runs += 1;
++                                        let old_queue =
++                                            replace(&mut pending_mut.queue, Default::default());
++
++                                        pending_mut.queue = old_queue
++                                            .into_iter()
++                                            .filter(|(_prio, schedule)| {
++                                                if let Some(schedule) = schedule.upgrade() {
++                                                    !(Schedule { task: schedule }).is_scheduled()
++                                                } else {
++                                                    false
++                                                }
++                                            })
++                                            .collect();
++
++                                        pending_mut.next_gc =
++                                            pending_mut.queue.len().max(5000) * 2;
++                                    }
++
++                                    pending_mut.queue.insert(prio, task);
++                                    ingested += 1;
++                                    if ingested >= queue_limit {
++                                        break;
++                                    }
++                                }
++
++                                // P2. Promotion order is unchanged: still
++                                // strictly ascending `(Prio, id)` off the
++                                // `BTreeMap`. Promoting the top-B is exactly
++                                // what B successive upstream acquisitions by B
++                                // different workers would have produced, minus
++                                // the serialisation. `Schedule::schedule()`
++                                // sends to the crossbeam ready channel, which
++                                // wakes blocked receivers, so one worker's lock
++                                // acquisition now becomes wake-ups for several
++                                // others. Dead / already-scheduled entries are
++                                // consumed and discarded as upstream does, and
++                                // do not count against the batch.
++                                //
++                                // This loop cannot spin a core forever: it
++                                // *removes* every entry it walks, dead ones
++                                // included, so a map full of stale weak refs
++                                // drains to empty within a bounded number of
++                                // acquisitions and `pending_len` then reads 0.
++                                // `spin_rounds` is belt and braces on top.
++                                while let Some(&prio) = pending_mut.queue.keys().next() {
++                                    let schedule = pending_mut.queue.remove(&prio).unwrap();
++                                    if let Some(schedule) = schedule.upgrade() {
++                                        if (Schedule { task: schedule }).schedule() {
++                                            promoted += 1;
++                                            if promoted >= config.batch {
++                                                break;
++                                            }
++                                            continue;
+                                         }
+-                                    })
+-                                    .collect();
++                                    }
++                                    dead += 1;
++                                }
+ 
+-                                pending_mut.next_gc = pending_mut.queue.len().max(5000) * 2;
++                                pending_len.store(pending_mut.queue.len(), Relaxed);
+                             }
+ 
+-                            pending_mut.queue.insert(prio, task);
+-                            counter += 1;
+-                            if counter >= queue_limit {
+-                                break;
++                            if ingested != 0 {
++                                POOL_INGESTED.fetch_add(ingested as u64, Relaxed);
+                             }
++                            if gc_runs != 0 {
++                                POOL_GC_RUNS.fetch_add(gc_runs as u64, Relaxed);
++                            }
+                         }
+ 
+-                        while let Some(&prio) = pending_mut.queue.keys().next() {
+-                            let schedule = pending_mut.queue.remove(&prio).unwrap();
+-                            if let Some(schedule) = schedule.upgrade() {
+-                                if (Schedule { task: schedule }).schedule() {
+-                                    continue 'outer;
+-                                }
+-                            }
++                        if dead != 0 {
++                            POOL_PROMOTE_DEAD.fetch_add(dead as u64, Relaxed);
+                         }
+-                    }
+ 
+-                    match receiver.recv_timeout(std::time::Duration::from_millis(10)) {
+-                        Ok(task) => {
+-                            abort_on_panic!("task panicked", { task.run() });
++                        if promoted != 0 {
++                            POOL_PROMOTE_BATCHES.fetch_add(1, Relaxed);
++                            POOL_PROMOTIONS.fetch_add(promoted as u64, Relaxed);
++                            short_parks = 0;
++                            continue 'outer;
+                         }
+-                        Err(err) => {
+-                            if err.is_disconnected() {
+-                                break;
++
++                        // P3. Never take the 10 ms park while promotable work
++                        // exists -- upstream did, because nothing wakes a parked
++                        // worker when `add_pending` merely sends on the pending
++                        // channel. `spin_rounds == 0` restores upstream.
++                        let timeout = if short_parks < config.spin_rounds
++                            && (pending_len.load(Relaxed) > 0 || !pending_receiver.is_empty())
++                        {
++                            short_parks += 1;
++                            POOL_PARK_SHORT.fetch_add(1, Relaxed);
++                            config.spin
++                        } else {
++                            POOL_PARK_LONG.fetch_add(1, Relaxed);
++                            LONG_PARK
++                        };
++
++                        // Two `Instant::now()` calls per park. Parks are bounded
++                        // at roughly 20 k/s/thread in the worst spin case
++                        // (50 us), so this is under 0.1 % of a worker's time and
++                        // nothing on the task path.
++                        let park_start = Instant::now();
++                        let received = receiver.recv_timeout(timeout);
++                        POOL_PARK_NS
++                            .fetch_add(park_start.elapsed().as_nanos() as u64, Relaxed);
++
++                        match received {
++                            Ok(task) => {
++                                POOL_PARK_WOKEN.fetch_add(1, Relaxed);
++                                POOL_TASKS_RUN.fetch_add(1, Relaxed);
++                                short_parks = 0;
++                                abort_on_panic!("task panicked", { task.run() });
+                             }
++                            Err(err) => {
++                                if err.is_disconnected() {
++                                    break;
++                                }
++                            }
+                         }
+                     }
++
++                    POOL_LOOP_NS.fetch_add(thread_start.elapsed().as_nanos() as u64, Relaxed);
+                 })
+             })
+             .collect::<Vec<_>>();
++
++        // Declared before the join guard so it drops *after* it: `POOL_LOOP_NS`
++        // is only published as each worker thread exits.
++        let _report = scopeguard::guard((), |_| report_counters());
+ 
+         let _guard = scopeguard::guard((), |_| {
+             for worker in workers {
