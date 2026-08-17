@@ -495,7 +495,14 @@ is startlingly weak:
 
 | shape | class | `f(B)` | deficit `512-f` | `nc(c_j)` multiset | smallest `nc` for which **one** pair with `b_j >= 36` suffices |
 |---|---|---|---|---|---|
-| S1 | C1 | 392 | 120 | 3,4,4,4,4,4,4,5,5,5,6,**7** | 7 (the root pair only) |
+| S1 | C2 | 392 | 120 | 3,4,4,4,4,4,4,5,5,5,6,**7** | 7 (the root pair only) |
+
+<!-- CORRECTION 2026-08-18: S1 was mislabeled C1 (adjudicated: the two
+verifier scripts break the 392-count S1/S2 tie in opposite order;
+tools/verify_shape_case_split.py is the designated authority: S1=6|7=C2,
+S2=5|8=C1. verify_huffman2.py's admissible_13() ordering should be
+harmonized in its next revision.) -->
+
 | S2 | C1 | 392 | 120 | 3,4,4,4,4,4,4,5,5,5,6,**7** | 7 (root pair only) |
 | S3 | C1 | 400 | 112 | 4,4,4,4,4,4,4,5,5,5,6,**7** | 7 (root pair only) |
 | S4 | C2 | 416 | 96 | 4,4,4,4,4,4,4,4,5,6,6,**7** | 7 (root pair only) |
