@@ -1,0 +1,3199 @@
+# ZM-V3: Lemma Z (zeta-based abstraction) and Lemma M (bipartite-matching
+# index filter), plus the `filter_exact_hits` counter.
+#
+# Implements the two PROMOTED lemmas of docs/transforms-assessment.md
+# (§1.5 Lemma Z, §4.4 Lemma M) and the one instrumentation ask of §4.3.
+#
+# Applies on top of, in order:
+#   tools/patches/sortnetopt-macos-proc.patch
+#   tools/patches/sortnetopt-instrumentation-v3.patch
+#   tools/patches/sortnetopt-online-subsumption-v3.patch
+#   tools/patches/sortnetopt-perf-v3.patch
+#   tools/patches/sortnetopt-tier1-v3.patch
+#   tools/patches/sortnetopt-tier2a-v3.patch
+#   tools/patches/sortnetopt-tier2b-v3.patch
+#   tools/patches/sortnetopt-limits-v3.patch
+# against the pinned upstream commit 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+# Apply with:  patch -V none -p1 -i <this file>
+#
+# checker/ is NOT touched. Neither are src/search.rs, src/search/states.rs,
+# src/search/subsume.rs, src/search/checkpoint.rs, src/prune.rs, src/proof.rs,
+# src/thread_pool.rs, src/output_set/canon.rs, src/output_set/subsume.rs or
+# Cargo.toml. Eight files change or appear:
+#
+#   src/output_set/zeta.rs      (new)  Lemma Z + the per-channel blocks
+#   src/output_set/matching.rs  (new)  Lemma M: Hall / Kuhn perfect matching
+#   src/output_set.rs                  `pub mod` lines; `write_abstraction_into`
+#                                      routed through zeta; the old body kept
+#                                      verbatim as `..._reference` (the
+#                                      differential oracle); two packed-input
+#                                      abstraction entry points
+#   src/output_set/packed.rs           `PackedSet::from_bitmap` byte-at-a-time
+#   src/output_set/index.rs            `SubsumeFilter::blocks`,
+#                                      `match_filter_enabled()`, the six
+#                                      per-branch Lemma M guards, the audit
+#                                      path, `FILTER_EXACT_HITS`
+#   src/instrument.rs                  four new counters
+#   src/bin/zeta_diff.rs        (new)  randomized bit-identity harness
+#   src/bin/zm_bench.rs         (new)  single-threaded microbenchmark
+#
+# ---------------------------------------------------------------------------
+# LEMMA Z
+#
+# `OutputSet::channel_pair_abstraction([i,j])` counts the four quadrants of a
+# channel pair, which are exactly the rank-<=2 superset-zeta transform of the
+# output set read through inclusion-exclusion:
+#
+#   group 0 = zeta({i,j})
+#   group 1 = zeta({j}) - zeta({i,j})
+#   group 2 = zeta({i}) - zeta({i,j})
+#   group 3 = |X| - zeta({i}) - zeta({j}) + zeta({i,j})
+#
+# So the whole abstraction vector, and hence the whole `Lower`/`LowerInvert`
+# index filter, is a function of (|X|, zeta({i}), zeta({i,j})) alone. Upstream
+# recomputes it with n(n-1) stride-2^k gathers over the dense `[bool]` bitmap;
+# this patch computes the rank-<=2 truncation once, in a single contiguous
+# masked-popcount pass over the packed `u64` bitmap that TIER1's `PackedSet`
+# already provides, and derives all n(n-1) quadruples arithmetically.
+#
+# The emitted `u16` vector is BIT-IDENTICAL. The pre-ZM route is retained as
+# `write_abstraction_into_reference` / `abstraction_reference` and is the
+# oracle for the unit tests and for `src/bin/zeta_diff.rs`.
+#
+# ---------------------------------------------------------------------------
+# LEMMA M
+#
+# For channel i let v_i(X) be the four `channel_pair_abstraction([i,j])` groups
+# over j != i, each sorted descending. If pi(A) is a subset of B for a channel
+# permutation pi then v_i(A) <= v_{pi(i)}(B) coordinatewise for every i, so
+# pi is a perfect matching in Gamma(A,B) = { (i,j) : v_i(A) <= v_j(B) }.
+# "Gamma(A,B) has no perfect matching" is therefore a SOUND one-sided rejection
+# of permuted containment, strictly stronger than `Dir::test_abstraction`,
+# which is the across-channel-sorted relaxation of the same data.
+#
+# The test is placed AFTER the existing signature + coordinatewise-abstraction
+# + histogram chain and IMMEDIATELY BEFORE the `subsumes_permuted_packed` it
+# guards, once per branch (the identity and complement branches of
+# `LowerInvert` keep separate guards; merging them would be sound but strictly
+# weaker). Complementing acts on a block row as the index permutation
+# `t |-> t ^ 3`, so the complement polarity needs no second construction.
+#
+# Env gate `SORTNETOPT_MATCH_FILTER`, default ON. Under
+# `SORTNETOPT_FILTER_AUDIT=1` a match-filter rejection does not skip the exact
+# test: the exact test runs anyway and any disagreement bumps
+# `filter_match_audit_violations`, logs both block matrices and panics.
+#
+# ---------------------------------------------------------------------------
+# NEW COUNTERS
+#
+#   filter_exact_hits              exact tests that returned a match (the
+#                                  §4.3 ask: makes the ceiling fraction
+#                                  measurable in-engine)
+#   filter_match_calls             Lemma M evaluations
+#   filter_match_rejects           Lemma M rejections
+#   filter_match_audit_violations  must be 0
+#
+# ---------------------------------------------------------------------------
+diff -ruN a/src/bin/zeta_diff.rs b/src/bin/zeta_diff.rs
+--- a/src/bin/zeta_diff.rs	1970-01-01 07:30:00
++++ b/src/bin/zeta_diff.rs	2026-08-18 04:34:41
+@@ -0,0 +1,464 @@
++//! ZM-V3, Lemma Z: standalone randomized differential harness.
++//!
++//! Checks, over randomly generated *reachable* output sets at every width in a
++//! range, that the Lemma Z route to the abstraction vector
++//! (`OutputSet::abstraction`, now `zeta::write_abstraction_from_counts` over
++//! `zeta::PairCounts::from_packed`) is **bit-identical** to the pre-ZM upstream
++//! route (`OutputSet::abstraction_reference`), and that
++//! `zeta::PairCounts::quadrants` reproduces `OutputSet::channel_pair_abstraction`
++//! for every ordered channel pair.
++//!
++//! Sets are generated and checked in bounded batches (`--batch`, default 4096)
++//! that are dropped between batches, so peak RSS stays in the tens of
++//! megabytes even at `MAX_CHANNELS` (4096 x 2^13 `bool`s is 33 MB).
++//!
++//! Only sets obtained from `OutputSet::all_values` by `apply_comparator`,
++//! `prune_extremal_channel_into`, `swap_channels` and `invert` are generated,
++//! per the repo rule that nothing else is a genuine output set. Note that this
++//! rules out the "single vector" pathological case the abstract asks for:
++//! comparators preserve the all-zeros and all-ones vectors, so every genuine
++//! output set has at least two elements. The minimal genuine sets are the
++//! fully sorted ones (`channels + 1` elements), which are generated instead.
++//!
++//! ```text
++//! zeta_diff --channels-min 3 --channels-max 11 --sets 20000 --seed 1
++//! zeta_diff --channels-min 3 --channels-max 11 --seed 1 --timing
++//! ```
++
++use std::{hint::black_box, process::exit, time::Instant};
++
++use structopt::StructOpt;
++
++use sortnetopt::output_set::{
++    packed::PackedSet,
++    zeta::{abstraction_from_packed, PairCounts},
++    OutputSet, MAX_CHANNELS,
++};
++
++#[derive(Debug, StructOpt)]
++#[structopt(
++    name = "zeta_diff",
++    about = "ZM-V3 Lemma Z differential harness: abstraction() vs abstraction_reference()"
++)]
++struct Opt {
++    /// Lowest width to test (the abstraction is only defined for >= 2, and the
++    /// search never sees fewer than 3 channels)
++    #[structopt(long, default_value = "3")]
++    channels_min: usize,
++    /// Highest width to test; capped at this build's MAX_CHANNELS
++    #[structopt(long, default_value = "13")]
++    channels_max: usize,
++    /// Number of output sets to check per width
++    #[structopt(long, default_value = "10000")]
++    sets: usize,
++    /// PRNG seed
++    #[structopt(long, default_value = "1")]
++    seed: u64,
++    /// Number of sets held in memory at once
++    #[structopt(long, default_value = "4096")]
++    batch: usize,
++    /// Instead of differential checking, report ns/call for both abstraction
++    /// routes at each width over a fixed corpus
++    #[structopt(long)]
++    timing: bool,
++    /// Corpus size for --timing
++    #[structopt(long, default_value = "256")]
++    timing_corpus: usize,
++    /// Number of passes over the timing corpus per route
++    #[structopt(long, default_value = "20")]
++    timing_reps: usize,
++}
++
++// ---------------------------------------------------------------------------
++// PRNG
++// ---------------------------------------------------------------------------
++
++/// Marsaglia xorshift64, same shift triple as the one used by the unit tests
++/// in `output_set::packed` and `output_set::zeta`.
++struct Xorshift64(u64);
++
++impl Xorshift64 {
++    fn new(seed: u64) -> Self {
++        Self(seed | 1)
++    }
++
++    fn next(&mut self) -> u64 {
++        let mut x = self.0;
++        x ^= x << 13;
++        x ^= x >> 7;
++        x ^= x << 17;
++        self.0 = x;
++        x
++    }
++
++    fn below(&mut self, bound: usize) -> usize {
++        (self.next() % bound as u64) as usize
++    }
++}
++
++// ---------------------------------------------------------------------------
++// Reachable-output-set generation
++// ---------------------------------------------------------------------------
++
++/// A stateful stream of genuine output sets at one width.
++///
++/// The first few sets are the pathological ones (full cube, fully sorted,
++/// pruned-from-above); after that it is a random walk that applies a
++/// comparator / channel swap / inversion to the running set and restarts from
++/// the full cube periodically, so the stream keeps hitting the whole density
++/// range rather than converging on sorted sets.
++struct SetGen {
++    channels: usize,
++    rng: Xorshift64,
++    current: OutputSet<Vec<bool>>,
++    emitted: usize,
++    since_restart: usize,
++    restart_period: usize,
++}
++
++impl SetGen {
++    fn new(channels: usize, seed: u64) -> Self {
++        Self {
++            channels,
++            rng: Xorshift64::new(seed),
++            current: OutputSet::all_values(channels),
++            emitted: 0,
++            since_restart: 0,
++            restart_period: 3 * channels + 8,
++        }
++    }
++
++    /// The fully sorted set: bubble sort is a sorting network, so this is
++    /// reachable by comparators alone.
++    fn sorted(channels: usize) -> OutputSet<Vec<bool>> {
++        let mut set = OutputSet::all_values(channels);
++        for i in 0..channels {
++            for j in 0..channels.saturating_sub(1 + i) {
++                set.apply_comparator([j + 1, j]);
++            }
++        }
++        debug_assert!(set.is_sorted());
++        set
++    }
++
++    /// A `channels`-wide set obtained by pruning an extremal channel off a
++    /// `channels + 1`-wide one, exercising the only other set-producing
++    /// operation the search uses.
++    fn pruned(channels: usize, rng: &mut Xorshift64) -> Option<OutputSet<Vec<bool>>> {
++        if channels + 1 > MAX_CHANNELS {
++            return None;
++        }
++        let big_channels = channels + 1;
++        let mut big = OutputSet::all_values(big_channels);
++        for _ in 0..(2 * big_channels) {
++            let a = rng.below(big_channels);
++            let b = rng.below(big_channels);
++            if a != b {
++                big.apply_comparator([a.max(b), a.min(b)]);
++            }
++        }
++        let polarity = rng.next() & 1 != 0;
++        let channel = rng.below(big_channels);
++        if !big.channel_is_extremal(polarity, channel) {
++            return None;
++        }
++        let mut small = OutputSet::all_values(channels);
++        big.prune_extremal_channel_into(polarity, channel, small.as_mut());
++        Some(small)
++    }
++
++    fn step(&mut self) {
++        if self.since_restart >= self.restart_period {
++            self.current = OutputSet::all_values(self.channels);
++            self.since_restart = 0;
++            return;
++        }
++        self.since_restart += 1;
++
++        match self.rng.below(16) {
++            14 => {
++                let a = self.rng.below(self.channels);
++                let b = self.rng.below(self.channels);
++                self.current.swap_channels([a, b]);
++            }
++            15 => self.current.invert(),
++            _ => {
++                let a = self.rng.below(self.channels);
++                let b = self.rng.below(self.channels);
++                if a != b {
++                    self.current.apply_comparator([a.max(b), a.min(b)]);
++                }
++            }
++        }
++    }
++
++    fn next_set(&mut self) -> OutputSet<Vec<bool>> {
++        let index = self.emitted;
++        self.emitted += 1;
++
++        match index {
++            0 => return OutputSet::all_values(self.channels),
++            1 => return Self::sorted(self.channels),
++            2 => {
++                if let Some(set) = Self::pruned(self.channels, &mut self.rng) {
++                    return set;
++                }
++            }
++            _ => (),
++        }
++
++        self.step();
++        self.current.clone()
++    }
++}
++
++// ---------------------------------------------------------------------------
++// Checking
++// ---------------------------------------------------------------------------
++
++#[derive(Default, Clone, Copy)]
++struct WidthStats {
++    sets: u64,
++    abstraction_mismatches: u64,
++    quadrant_mismatches: u64,
++}
++
++/// Returns `(abstraction_mismatches, quadrant_mismatches)` for one set, and
++/// prints up to `report_budget` mismatches in full.
++fn check_set(set: &OutputSet<Vec<bool>>, report_budget: &mut usize) -> (u64, u64) {
++    let channels = set.channels();
++    let packed = PackedSet::from_bitmap(set.as_ref());
++
++    let mut abstraction_mismatches = 0u64;
++    let mut quadrant_mismatches = 0u64;
++
++    let want = set.abstraction_reference();
++    let got = set.abstraction();
++    let got_packed = abstraction_from_packed(&packed);
++
++    if want[..] != got[..] || want[..] != got_packed[..] {
++        abstraction_mismatches += 1;
++        if *report_budget > 0 {
++            *report_budget -= 1;
++            eprintln!(
++                "MISMATCH abstraction channels={} packed={:?}\n  reference     = {:?}\n  abstraction() = {:?}\n  from_packed() = {:?}",
++                channels,
++                set.packed(),
++                &want[..],
++                &got[..],
++                &got_packed[..],
++            );
++        }
++    }
++
++    let counts = PairCounts::from_packed(&packed);
++    if counts.total() as usize != set.len() {
++        quadrant_mismatches += 1;
++        if *report_budget > 0 {
++            *report_budget -= 1;
++            eprintln!(
++                "MISMATCH total channels={} packed={:?} zeta_total={} len={}",
++                channels,
++                set.packed(),
++                counts.total(),
++                set.len(),
++            );
++        }
++    }
++
++    for i in 0..channels {
++        for j in 0..channels {
++            if i == j {
++                continue;
++            }
++            let want = set.channel_pair_abstraction([i, j]);
++            let got = counts.quadrants(i, j);
++            let got = [
++                got[0] as usize,
++                got[1] as usize,
++                got[2] as usize,
++                got[3] as usize,
++            ];
++            if got != want {
++                quadrant_mismatches += 1;
++                if *report_budget > 0 {
++                    *report_budget -= 1;
++                    eprintln!(
++                        "MISMATCH quadrants channels={} pair=({},{}) packed={:?} want={:?} got={:?}",
++                        channels,
++                        i,
++                        j,
++                        set.packed(),
++                        want,
++                        got,
++                    );
++                }
++            }
++        }
++    }
++
++    (abstraction_mismatches, quadrant_mismatches)
++}
++
++fn run_diff(opt: &Opt, channels_max: usize) -> i32 {
++    let batch_size = opt.batch.max(1);
++    let mut report_budget = 20usize;
++
++    let mut per_width: Vec<(usize, WidthStats)> = vec![];
++
++    for channels in opt.channels_min..=channels_max {
++        let mut gen = SetGen::new(
++            channels,
++            opt.seed ^ (0x9E37_79B9_7F4A_7C15u64 * channels as u64),
++        );
++        let mut stats = WidthStats::default();
++
++        let mut remaining = opt.sets;
++        while remaining > 0 {
++            let this_batch = remaining.min(batch_size);
++
++            // Bounded batch: built, checked, then dropped before the next one.
++            let mut batch: Vec<OutputSet<Vec<bool>>> = Vec::with_capacity(this_batch);
++            for _ in 0..this_batch {
++                batch.push(gen.next_set());
++            }
++
++            for set in &batch {
++                let (a, q) = check_set(set, &mut report_budget);
++                stats.sets += 1;
++                stats.abstraction_mismatches += a;
++                stats.quadrant_mismatches += q;
++            }
++
++            drop(batch);
++            remaining -= this_batch;
++        }
++
++        per_width.push((channels, stats));
++    }
++
++    let mut total_sets = 0u64;
++    let mut total_mismatches = 0u64;
++    for &(channels, stats) in &per_width {
++        println!(
++            "width={} sets={} abstraction_mismatches={} quadrant_mismatches={}",
++            channels, stats.sets, stats.abstraction_mismatches, stats.quadrant_mismatches
++        );
++        total_sets += stats.sets;
++        total_mismatches += stats.abstraction_mismatches + stats.quadrant_mismatches;
++    }
++    println!("TOTAL sets={} mismatches={}", total_sets, total_mismatches);
++
++    (total_mismatches != 0) as i32
++}
++
++fn run_timing(opt: &Opt, channels_max: usize) -> i32 {
++    let corpus_size = opt.timing_corpus.max(1);
++    let reps = opt.timing_reps.max(1);
++
++    println!(
++        "# timing: corpus={} sets/width, {} passes/route",
++        corpus_size, reps
++    );
++
++    for channels in opt.channels_min..=channels_max {
++        let mut gen = SetGen::new(
++            channels,
++            opt.seed ^ (0x9E37_79B9_7F4A_7C15u64 * channels as u64),
++        );
++        let corpus: Vec<OutputSet<Vec<bool>>> = (0..corpus_size).map(|_| gen.next_set()).collect();
++
++        // Warm up both routes (page-in, branch predictor, caches).
++        for set in &corpus {
++            black_box(set.abstraction_reference());
++            black_box(set.abstraction());
++        }
++
++        let calls = (corpus.len() * reps) as f64;
++
++        let start = Instant::now();
++        for _ in 0..reps {
++            for set in &corpus {
++                black_box(set.abstraction_reference());
++            }
++        }
++        let old_ns = start.elapsed().as_nanos() as f64 / calls;
++
++        let start = Instant::now();
++        for _ in 0..reps {
++            for set in &corpus {
++                black_box(set.abstraction());
++            }
++        }
++        let new_ns = start.elapsed().as_nanos() as f64 / calls;
++
++        // The `&self` route also pays for the `[bool]` -> `PackedSet` pack on
++        // every call; callers that already hold a `PackedSet` (the search's
++        // hot path) skip that, so time it separately.
++        let packed_corpus: Vec<PackedSet> = corpus
++            .iter()
++            .map(|set| PackedSet::from_bitmap(set.as_ref()))
++            .collect();
++        let start = Instant::now();
++        for _ in 0..reps {
++            for packed in &packed_corpus {
++                black_box(abstraction_from_packed(packed));
++            }
++        }
++        let packed_ns = start.elapsed().as_nanos() as f64 / calls;
++
++        println!(
++            "width={} reference_ns={:.1} zeta_ns={:.1} zeta_from_packed_ns={:.1} \
++             speedup={:.2}x speedup_from_packed={:.2}x",
++            channels,
++            old_ns,
++            new_ns,
++            packed_ns,
++            old_ns / new_ns,
++            old_ns / packed_ns,
++        );
++    }
++
++    0
++}
++
++fn main() {
++    let opt = Opt::from_args();
++
++    assert!(
++        opt.channels_min >= 2,
++        "the abstraction is empty below 2 channels (requested --channels-min {})",
++        opt.channels_min
++    );
++    assert!(
++        opt.channels_min <= opt.channels_max,
++        "--channels-min {} exceeds --channels-max {}",
++        opt.channels_min,
++        opt.channels_max
++    );
++
++    // Silently clamp rather than fail: the default `--channels-max 13` is meant
++    // to mean "as wide as this build goes".
++    let channels_max = opt.channels_max.min(MAX_CHANNELS);
++    if channels_max < opt.channels_max {
++        eprintln!(
++            "# this build supports at most {} channels; capping --channels-max {} to {}",
++            MAX_CHANNELS, opt.channels_max, channels_max
++        );
++    }
++    assert!(
++        opt.channels_min <= channels_max,
++        "this build supports at most {} channels (requested --channels-min {}); \
++         rebuild with `--features wide12` or `--features wide13`",
++        MAX_CHANNELS,
++        opt.channels_min,
++    );
++
++    let status = if opt.timing {
++        run_timing(&opt, channels_max)
++    } else {
++        run_diff(&opt, channels_max)
++    };
++
++    exit(status);
++}
+diff -ruN a/src/bin/zm_bench.rs b/src/bin/zm_bench.rs
+--- a/src/bin/zm_bench.rs	1970-01-01 07:30:00
++++ b/src/bin/zm_bench.rs	2026-08-18 05:01:36
+@@ -0,0 +1,397 @@
++//! ZM-V3: single-threaded deterministic microbenchmark for the Lemma Z /
++//! Lemma M kernels.
++//!
++//! In-engine the Lemma M filter removes 91% of the exact
++//! `subsumes_permuted_packed` calls but costs nearly as much per call, so the
++//! net instruction win does not show up in cycles. This harness isolates the
++//! five kernels that decide that trade so a change can be attributed to one of
++//! them:
++//!
++//! ```text
++//! a  abstraction            OutputSet::abstraction()            (Lemma Z route)
++//! b  abstraction_reference  OutputSet::abstraction_reference()  (upstream route)
++//! c  blocks_from_packed     zeta::ChannelBlocks::from_packed
++//! d  gamma_has_matching     matching::gamma_has_matching        (both polarities)
++//! e  subsumes_permuted      output_set::subsumes_permuted_packed  <- must beat
++//! ```
++//!
++//! plus the derived `match_allows = c + d`, which is what the guard in
++//! `index.rs` actually pays per candidate, and which is the thing that has to
++//! come out an order of magnitude under `e`.
++//!
++//! Everything is driven by one xorshift64 stream from a fixed seed, so two
++//! runs of the same binary options see byte-identical inputs. The printed
++//! `corpus_checksum` proves that across a code change: it hashes the packed
++//! bitmap of every corpus set and the whole pair list, and it must not move.
++//!
++//! Rounds are *interleaved* (one pass of every kernel, then the next round)
++//! rather than batched per kernel, so a thermal or frequency excursion hits
++//! all five roughly equally instead of penalising whichever kernel happened to
++//! run during it. `min` is the least contaminated estimate; `median` is
++//! reported alongside so a suspiciously lucky `min` is visible.
++//!
++//! Memory is deliberately tiny: a few hundred sets per width, one width live
++//! at a time, so this can run next to a search without disturbing it.
++//!
++//! ```text
++//! zm_bench                                     # widths 8..=11, defaults
++//! zm_bench --channels-min 9 --channels-max 9 --corpus 512 --rounds 9
++//! ```
++
++use std::{hint::black_box, time::Instant};
++
++use structopt::StructOpt;
++
++use sortnetopt::output_set::{
++    matching::gamma_has_matching,
++    packed::PackedSet,
++    subsumes_permuted_packed,
++    zeta::{ChannelBlocks, PairCounts},
++    OutputSet, MAX_CHANNELS,
++};
++
++#[derive(Debug, StructOpt)]
++#[structopt(
++    name = "zm_bench",
++    about = "ZM-V3 microbenchmark: Lemma Z / Lemma M kernels vs the exact arbiter"
++)]
++struct Opt {
++    /// Lowest width to benchmark
++    #[structopt(long, default_value = "8")]
++    channels_min: usize,
++    /// Highest width to benchmark; capped at this build's MAX_CHANNELS
++    #[structopt(long, default_value = "11")]
++    channels_max: usize,
++    /// Output sets per width
++    #[structopt(long, default_value = "256")]
++    corpus: usize,
++    /// `(a, b)` pairs per width for the matching / exact kernels
++    #[structopt(long, default_value = "256")]
++    pairs: usize,
++    /// Interleaved timing rounds; min and median over these are reported
++    #[structopt(long, default_value = "7")]
++    rounds: usize,
++    /// PRNG seed
++    #[structopt(long, default_value = "1")]
++    seed: u64,
++}
++
++// ---------------------------------------------------------------------------
++// PRNG
++// ---------------------------------------------------------------------------
++
++/// Marsaglia xorshift64, same shift triple as `bin/zeta_diff` and the unit
++/// tests in `output_set::{packed, zeta, matching}`.
++struct Xorshift64(u64);
++
++impl Xorshift64 {
++    fn new(seed: u64) -> Self {
++        Self(seed | 1)
++    }
++
++    fn next(&mut self) -> u64 {
++        let mut x = self.0;
++        x ^= x << 13;
++        x ^= x >> 7;
++        x ^= x << 17;
++        self.0 = x;
++        x
++    }
++
++    fn below(&mut self, bound: usize) -> usize {
++        (self.next() % bound as u64) as usize
++    }
++}
++
++// ---------------------------------------------------------------------------
++// Corpus
++// ---------------------------------------------------------------------------
++
++/// Reachable output sets: random comparator chains from the full cube, keeping
++/// every intermediate set, restarting periodically so the stream keeps hitting
++/// the whole density range instead of converging on sorted sets. Same shape as
++/// the `zeta` / `matching` unit-test corpora and `zeta_diff`'s `SetGen`.
++fn build_corpus(channels: usize, size: usize, rng: &mut Xorshift64) -> Vec<OutputSet<Vec<bool>>> {
++    let restart_period = 3 * channels + 8;
++    let mut out = Vec::with_capacity(size);
++    let mut current = OutputSet::all_values(channels);
++    let mut since_restart = 0usize;
++
++    while out.len() < size {
++        out.push(current.clone());
++        if since_restart >= restart_period {
++            current = OutputSet::all_values(channels);
++            since_restart = 0;
++            continue;
++        }
++        since_restart += 1;
++        let a = rng.below(channels);
++        let b = rng.below(channels);
++        if a != b {
++            current.apply_comparator([a.max(b), a.min(b)]);
++        }
++    }
++
++    out
++}
++
++/// FNV-1a over the packed bitmaps and the pair list. Any change to the inputs
++/// moves this; no change to the *code under test* may.
++fn checksum(packed: &[PackedSet], pairs: &[(usize, usize, bool)]) -> u64 {
++    let mut h = 0xcbf2_9ce4_8422_2325u64;
++    let mut eat = |v: u64| {
++        h ^= v;
++        h = h.wrapping_mul(0x100_0000_01b3);
++    };
++    for set in packed {
++        eat(set.channels() as u64);
++        for &word in set.bits() {
++            eat(word);
++        }
++    }
++    for &(a, b, inv) in pairs {
++        eat(a as u64);
++        eat(b as u64);
++        eat(inv as u64);
++    }
++    h
++}
++
++// ---------------------------------------------------------------------------
++// Timing
++// ---------------------------------------------------------------------------
++
++/// Per-kernel per-round nanoseconds-per-call samples.
++struct Samples {
++    label: &'static str,
++    ns: Vec<f64>,
++}
++
++impl Samples {
++    fn new(label: &'static str, rounds: usize) -> Self {
++        Self {
++            label,
++            ns: Vec::with_capacity(rounds),
++        }
++    }
++
++    fn min(&self) -> f64 {
++        self.ns.iter().cloned().fold(f64::INFINITY, f64::min)
++    }
++
++    fn median(&self) -> f64 {
++        let mut sorted = self.ns.clone();
++        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
++        sorted[sorted.len() / 2]
++    }
++}
++
++fn time<F: FnMut()>(calls: usize, mut body: F) -> f64 {
++    let start = Instant::now();
++    body();
++    start.elapsed().as_nanos() as f64 / calls as f64
++}
++
++fn run_width(opt: &Opt, channels: usize) {
++    let mut rng = Xorshift64::new(opt.seed ^ (0x9E37_79B9_7F4A_7C15u64.wrapping_mul(channels as u64)));
++
++    let sets = build_corpus(channels, opt.corpus.max(1), &mut rng);
++    let packed: Vec<PackedSet> = sets
++        .iter()
++        .map(|set| PackedSet::from_bitmap(set.as_ref()))
++        .collect();
++    let blocks: Vec<ChannelBlocks> = packed.iter().map(ChannelBlocks::from_packed).collect();
++
++    // Pairs are drawn once and reused by kernels d and e, so the matching
++    // filter and the exact arbiter are compared on identical work. The
++    // `invert_a` polarity is drawn too, since `LowerInvert` exercises both.
++    let pairs: Vec<(usize, usize, bool)> = (0..opt.pairs.max(1))
++        .map(|_| {
++            let a = rng.below(sets.len());
++            let b = rng.below(sets.len());
++            let inv = rng.next() & 1 != 0;
++            (a, b, inv)
++        })
++        .collect();
++
++    // `subsumes_permuted_packed(A, B)` with `A` complemented, matching
++    // `match_allows(.., invert_a)`'s orientation: only the `a` side inverts.
++    let inverted: Vec<PackedSet> = packed
++        .iter()
++        .map(|set| {
++            let mut copy = *set;
++            copy.invert();
++            copy
++        })
++        .collect();
++
++    println!(
++        "# width={} corpus={} pairs={} rounds={} corpus_checksum=0x{:016x}",
++        channels,
++        sets.len(),
++        pairs.len(),
++        opt.rounds.max(1),
++        checksum(&packed, &pairs),
++    );
++
++    // Warm up every kernel once (page-in, branch predictors, the thread-local
++    // caches inside `subsume.rs`) so round 0 is not systematically the slowest.
++    for set in &sets {
++        black_box(set.abstraction());
++        black_box(set.abstraction_reference());
++    }
++    for set in &packed {
++        black_box(ChannelBlocks::from_packed(set));
++    }
++    for &(a, b, inv) in &pairs {
++        black_box(gamma_has_matching(&blocks[a], &blocks[b], inv));
++        let left = if inv { &inverted[a] } else { &packed[a] };
++        black_box(subsumes_permuted_packed(left, &packed[b]).is_some());
++    }
++
++    let rounds = opt.rounds.max(1);
++    let n_sets = sets.len();
++    let n_pairs = pairs.len();
++
++    let mut abstraction = Samples::new("abstraction", rounds);
++    let mut reference = Samples::new("abstraction_reference", rounds);
++    let mut from_packed = Samples::new("blocks_from_packed", rounds);
++    let mut gamma = Samples::new("gamma_has_matching", rounds);
++    let mut exact = Samples::new("subsumes_permuted", rounds);
++    let mut allows = Samples::new("match_allows", rounds);
++    // Diagnostic split of `blocks_from_packed` into its two halves, so a
++    // regression can be attributed to the popcount pass or to the sort/scatter.
++    let mut counts_only = Samples::new("  .paircounts_packed", rounds);
++    let mut blocks_only = Samples::new("  .blocks_from_counts", rounds);
++
++    let counts: Vec<PairCounts> = packed.iter().map(PairCounts::from_packed).collect();
++
++    for _ in 0..rounds {
++        abstraction.ns.push(time(n_sets, || {
++            for set in &sets {
++                black_box(black_box(set).abstraction());
++            }
++        }));
++        reference.ns.push(time(n_sets, || {
++            for set in &sets {
++                black_box(black_box(set).abstraction_reference());
++            }
++        }));
++        from_packed.ns.push(time(n_sets, || {
++            for set in &packed {
++                black_box(ChannelBlocks::from_packed(black_box(set)));
++            }
++        }));
++        counts_only.ns.push(time(n_sets, || {
++            for set in &packed {
++                black_box(PairCounts::from_packed(black_box(set)));
++            }
++        }));
++        blocks_only.ns.push(time(n_sets, || {
++            for c in &counts {
++                black_box(ChannelBlocks::from_counts(black_box(c)));
++            }
++        }));
++        gamma.ns.push(time(n_pairs, || {
++            for &(a, b, inv) in &pairs {
++                black_box(gamma_has_matching(
++                    black_box(&blocks[a]),
++                    black_box(&blocks[b]),
++                    inv,
++                ));
++            }
++        }));
++        exact.ns.push(time(n_pairs, || {
++            for &(a, b, inv) in &pairs {
++                let left = if inv { &inverted[a] } else { &packed[a] };
++                black_box(subsumes_permuted_packed(black_box(left), black_box(&packed[b])).is_some());
++            }
++        }));
++        // What the `index.rs` guard actually pays per candidate: build the
++        // candidate's blocks, then run the matching. Timed as one body rather
++        // than added up afterwards so the `ChannelBlocks` really does travel
++        // from producer to consumer the way it does in the engine.
++        allows.ns.push(time(n_pairs, || {
++            for &(a, b, inv) in &pairs {
++                let cand = ChannelBlocks::from_packed(black_box(&packed[a]));
++                black_box(gamma_has_matching(&cand, black_box(&blocks[b]), inv));
++            }
++        }));
++    }
++
++    let baseline = exact.min();
++    for s in [
++        &abstraction,
++        &reference,
++        &from_packed,
++        &counts_only,
++        &blocks_only,
++        &gamma,
++        &allows,
++        &exact,
++    ] {
++        println!(
++            "width={} kernel={:<21} min_ns={:>9.2} median_ns={:>9.2} vs_exact={:>7.2}x",
++            channels,
++            s.label,
++            s.min(),
++            s.median(),
++            baseline / s.min(),
++        );
++    }
++}
++
++fn main() {
++    let opt = Opt::from_args();
++
++    assert!(
++        opt.channels_min >= 3,
++        "the search never sees fewer than 3 channels (requested --channels-min {})",
++        opt.channels_min
++    );
++    assert!(
++        opt.channels_min <= opt.channels_max,
++        "--channels-min {} exceeds --channels-max {}",
++        opt.channels_min,
++        opt.channels_max
++    );
++
++    let channels_max = opt.channels_max.min(MAX_CHANNELS);
++    if channels_max < opt.channels_max {
++        eprintln!(
++            "# this build supports at most {} channels; capping --channels-max {} to {}",
++            MAX_CHANNELS, opt.channels_max, channels_max
++        );
++    }
++    assert!(
++        opt.channels_min <= channels_max,
++        "this build supports at most {} channels (requested --channels-min {}); \
++         rebuild with `--features wide12` or `--features wide13`",
++        MAX_CHANNELS,
++        opt.channels_min,
++    );
++
++    println!("# zm_bench seed={} (single-threaded, deterministic)", opt.seed);
++
++    // Global warm-up: the first width measured was otherwise systematically
++    // slow and noisy (median well above min) because the core had not yet
++    // ramped. Burn a fixed wall-clock budget on the real kernels first.
++    {
++        let mut rng = Xorshift64::new(opt.seed);
++        let sets = build_corpus(opt.channels_min, 64, &mut rng);
++        let packed: Vec<PackedSet> = sets
++            .iter()
++            .map(|set| PackedSet::from_bitmap(set.as_ref()))
++            .collect();
++        let start = Instant::now();
++        while start.elapsed().as_millis() < 200 {
++            for set in &packed {
++                black_box(ChannelBlocks::from_packed(black_box(set)));
++            }
++        }
++    }
++
++    for channels in opt.channels_min..=channels_max {
++        run_width(&opt, channels);
++    }
++}
+diff -ruN a/src/instrument.rs b/src/instrument.rs
+--- a/src/instrument.rs	2026-08-18 04:42:57
++++ b/src/instrument.rs	2026-08-18 06:36:53
+@@ -228,12 +228,33 @@
+ pub static FILTER_HIST_REJECTS: AtomicU64 = AtomicU64::new(0);
+ /// Calls to `subsumes_permuted_packed`, the exact (expensive) arbiter.
+ pub static FILTER_EXACT_CALLS: AtomicU64 = AtomicU64::new(0);
++/// ... of which returned a match. `filter_exact_calls - filter_exact_hits` is
++/// the exact arbiter's wasted work, i.e. the headroom any further necessary
++/// condition (Lemma M and successors) can possibly reclaim.
++pub static FILTER_EXACT_HITS: AtomicU64 = AtomicU64::new(0);
+ /// `SORTNETOPT_FILTER_AUDIT` violations: the exact arbiter accepted a pair
+ /// that a signature or histogram filter rejected. Must always be 0; a
+ /// nonzero value is a soundness bug in the filters and the process panics
+ /// before this counter can be reported.
+ pub static FILTER_AUDIT_VIOLATIONS: AtomicU64 = AtomicU64::new(0);
+ 
++// --- ZM-V3 Lemma M: the bipartite matching filter ----------------------------
++
++/// Evaluations of the Lemma M bipartite matching test
++/// (`output_set::matching::gamma_has_matching`), one per branch guarded. Only
++/// counted when the test actually ran, i.e. when `SubsumeFilter::blocks` was
++/// populated (`SORTNETOPT_MATCH_FILTER` on, or audit mode).
++pub static FILTER_MATCH_CALLS: AtomicU64 = AtomicU64::new(0);
++/// ... of which found no perfect matching in `Gamma`, proving no channel
++/// permutation can relate the pair. Outside audit mode each of these skips one
++/// `subsumes_permuted_packed` call.
++pub static FILTER_MATCH_REJECTS: AtomicU64 = AtomicU64::new(0);
++/// `SORTNETOPT_FILTER_AUDIT` violations attributable to Lemma M: the exact
++/// arbiter accepted a pair whose `Gamma` had no perfect matching. Must always
++/// be 0; a nonzero value is a soundness bug in Lemma M and the process panics
++/// before this counter can be reported.
++pub static FILTER_MATCH_AUDIT_VIOLATIONS: AtomicU64 = AtomicU64::new(0);
++
+ // --- TIER2b: checkpoint / restart --------------------------------------------
+ 
+ /// Snapshots successfully written (periodic plus the final one).
+@@ -607,6 +628,16 @@
+             "tier1_hist_filter",
+             crate::output_set::index::hist_filter_enabled() as u64,
+         ),
++        // ZM-V3: the two Lemma M gate settings, echoed so a run's own
++        // instrument output records the configuration it was taken under.
++        (
++            "zm_match_filter",
++            crate::output_set::index::match_filter_enabled() as u64,
++        ),
++        (
++            "zm_match_filter_min_width",
++            crate::output_set::index::match_filter_min_width() as u64,
++        ),
+         ("filter_candidates", FILTER_CANDIDATES.load(Relaxed)),
+         ("filter_sig_rejects", FILTER_SIG_REJECTS.load(Relaxed)),
+         (
+@@ -615,9 +646,16 @@
+         ),
+         ("filter_hist_rejects", FILTER_HIST_REJECTS.load(Relaxed)),
+         ("filter_exact_calls", FILTER_EXACT_CALLS.load(Relaxed)),
++        ("filter_exact_hits", FILTER_EXACT_HITS.load(Relaxed)),
+         (
+             "filter_audit_violations",
+             FILTER_AUDIT_VIOLATIONS.load(Relaxed),
++        ),
++        ("filter_match_calls", FILTER_MATCH_CALLS.load(Relaxed)),
++        ("filter_match_rejects", FILTER_MATCH_REJECTS.load(Relaxed)),
++        (
++            "filter_match_audit_violations",
++            FILTER_MATCH_AUDIT_VIOLATIONS.load(Relaxed),
+         ),
+         ("ckpt_writes", CKPT_WRITES.load(Relaxed)),
+         ("ckpt_bytes", CKPT_BYTES.load(Relaxed)),
+diff -ruN a/src/output_set/index.rs b/src/output_set/index.rs
+--- a/src/output_set/index.rs	2026-08-18 04:42:57
++++ b/src/output_set/index.rs	2026-08-18 06:36:17
+@@ -1,14 +1,16 @@
+ use std::{cmp::Reverse, iter::repeat, mem::replace, sync::OnceLock};
+ 
+ use super::{
+-    packed, packed::PackedSet, subsumes_permuted_packed, BVec, CVec, OutputSet, WVec,
+-    PAIR_ABSTRACTION_GROUPS,
++    packed, packed::PackedSet, subsumes_permuted_packed, zeta::ChannelBlocks, BVec, CVec, OutputSet,
++    WVec, PAIR_ABSTRACTION_GROUPS,
+ };
+ 
+ use crate::instrument;
+ 
+ mod tree;
+ 
++use super::matching::gamma_has_matching;
++
+ use tree::{TraversalMut, Tree};
+ 
+ pub use tree::Augmentation;
+@@ -31,6 +33,11 @@
+     pub hist_rev: WVec<u32>,
+     pub sig: u64,
+     pub sig_rev: u64,
++    /// ZM-V3 Lemma M: the query's per-channel abstraction blocks, built once
++    /// per query. `None` when neither the Lemma M filter nor the audit needs
++    /// them, in which case every matching guard short-circuits to "accept"
++    /// without touching a candidate.
++    pub blocks: Option<ChannelBlocks>,
+ }
+ 
+ impl SubsumeFilter {
+@@ -40,12 +47,18 @@
+         let hist_rev = packed::reverse_histogram(&hist);
+         let sig = packed::histogram_signature(channels, &hist);
+         let sig_rev = packed::histogram_signature(channels, &hist_rev);
++        let blocks = if match_filter_active(channels) || audit_enabled() {
++            Some(ChannelBlocks::from_packed(&packed))
++        } else {
++            None
++        };
+         Self {
+             packed,
+             hist,
+             hist_rev,
+             sig,
+             sig_rev,
++            blocks,
+         }
+     }
+ 
+@@ -150,6 +163,150 @@
+     *TIER1_HIST.get_or_init(|| env_flag_default_on("SORTNETOPT_TIER1_HIST"))
+ }
+ 
++static ZM_MATCH: OnceLock<bool> = OnceLock::new();
++
++/// ZM-V3 campaign attribution gate for the Lemma M bipartite matching
++/// pre-filter, read from `SORTNETOPT_MATCH_FILTER` exactly once. Default on;
++/// see [`sig_filter_enabled`] for the off-switch string convention.
++///
++/// When off, `SubsumeFilter::from_packed` leaves `blocks` as `None` (unless
++/// audit mode wants them anyway), and every matching guard in
++/// `Dir::test_precise_packed` / `Dir::test_precise_packed_update` then
++/// short-circuits to "accept" *before* the candidate's own `ChannelBlocks` are
++/// built, so neither the O(n^2 * block) graph construction nor the augmenting
++/// search runs and `FILTER_MATCH_CALLS` stays exact.
++///
++/// With the gate off but `SORTNETOPT_FILTER_AUDIT` on, `blocks` is still
++/// populated and the guard still runs -- purely as a diagnostic, since in
++/// audit mode a rejection never skips the exact test. `FILTER_MATCH_REJECTS`
++/// then counts rejections the filter *would* have made.
++pub fn match_filter_enabled() -> bool {
++    *ZM_MATCH.get_or_init(|| env_flag_default_on("SORTNETOPT_MATCH_FILTER"))
++}
++
++static ZM_MATCH_MIN_WIDTH: OnceLock<usize> = OnceLock::new();
++
++/// ZM-V3 operating knob: the smallest indexed channel count at which the
++/// Lemma M guard is evaluated. Read from `SORTNETOPT_MATCH_FILTER_MIN_WIDTH`
++/// exactly once; **default 0**, i.e. every width, which is the configuration
++/// the campaign validated end to end.
++///
++/// Raising it is always sound in the one direction that matters: skipping the
++/// guard can only let *more* pairs through to the exact arbiter, never fewer,
++/// so no answer can change. It exists because the guard's *economics* are
++/// width-dependent while its *power* is not.
++///
++/// Measured in-engine (n=11 `--limit 33`, `evict`, `DIMS=4`, one indexed
++/// width, 8 rounds each), as the change in total index thread time per
++/// Lemma M evaluation that replaces an exact call:
++///
++/// ```text
++/// indexed width 7:  +320 ns   (exact calls 46x fewer, wall 1.115x SLOWER)
++/// indexed width 8:  +433 ns   (exact calls 70x fewer, wall 1.172x SLOWER)
++/// indexed width 9:  -648 ns   (exact calls 27x fewer, wall 0.926x FASTER)
++/// ```
++///
++/// The crossover is between 8 and 9 and the margin keeps widening: the
++/// isolated ratio `subsumes_permuted / match_allows` (`src/bin/zm_bench.rs`)
++/// is 12.2x at width 8, 17.8x at 9, 24.7x at 10, 38.2x at 11, 59.7x at 12 and
++/// 63.4x at 13, because the exact test's cost is driven by `2^k` while the
++/// guard's is driven by `n^2` plus one `2^k/64`-word popcount pass.
++///
++/// **Recommended operating value: 9.** At widths <= 8 the deployed exact test
++/// almost always rejects inside its own root `Subsume::filter_matching`
++/// (TIER2a), so the guard duplicates work that was already cheap; from width 9
++/// up it does not.
++pub fn match_filter_min_width() -> usize {
++    *ZM_MATCH_MIN_WIDTH.get_or_init(|| {
++        std::env::var("SORTNETOPT_MATCH_FILTER_MIN_WIDTH")
++            .ok()
++            .and_then(|v| v.trim().parse::<usize>().ok())
++            .unwrap_or(0)
++    })
++}
++
++/// Whether the Lemma M guard should run for an index over `channels`-channel
++/// sets. Consulted once per `SubsumeFilter` construction, not per candidate:
++/// when it is false the query's `blocks` stay `None` and every `match_allows`
++/// short-circuits without building anything or touching a counter.
++fn match_filter_active(channels: usize) -> bool {
++    match_filter_enabled() && channels >= match_filter_min_width()
++}
++
++/// ZM-V3 Lemma M guard. `true` means "the matching test does not reject this
++/// pair" -- either because it found a perfect matching in `Gamma(A, B)`, or
++/// because the filter is off and there is nothing to run.
++///
++/// `a` / `b` follow the lemma's orientation: the guarded call is
++/// `subsumes_permuted_packed(A, B)` = "exists pi: pi(A) subset-of B", and
++/// `invert_a` selects the complement of `A` (never of `B`).
++#[inline]
++fn match_allows(
++    a: Option<&ChannelBlocks>,
++    b: Option<&ChannelBlocks>,
++    invert_a: bool,
++) -> bool {
++    let (a, b) = match (a, b) {
++        (Some(a), Some(b)) => (a, b),
++        _ => return true,
++    };
++    instrument::bump(&instrument::FILTER_MATCH_CALLS);
++    let ok = gamma_has_matching(a, b, invert_a);
++    if !ok {
++        instrument::bump(&instrument::FILTER_MATCH_REJECTS);
++    }
++    ok
++}
++
++/// Builds the candidate's `ChannelBlocks` on first use and caches them in
++/// `slot`, so both `LowerInvert` branches share one construction and a query
++/// with the filter off never builds any.
++#[inline]
++fn candidate_blocks<'a>(
++    slot: &'a mut Option<ChannelBlocks>,
++    candidate: &PackedSet,
++    q: &SubsumeFilter,
++) -> Option<&'a ChannelBlocks> {
++    if q.blocks.is_none() {
++        return None;
++    }
++    if slot.is_none() {
++        *slot = Some(ChannelBlocks::from_packed(candidate));
++    }
++    slot.as_ref()
++}
++
++/// Renders a `ChannelBlocks` as one `Vec` per channel, for audit diagnostics.
++fn blocks_debug(blocks: &ChannelBlocks) -> Vec<Vec<u16>> {
++    (0..blocks.channels())
++        .map(|i| blocks.row(i).to_vec())
++        .collect()
++}
++
++/// Mirrors the TIER1 audit behaviour for Lemma M: the exact arbiter accepted a
++/// pair whose `Gamma` had no perfect matching, which is a soundness bug in the
++/// lemma or its implementation. Count, log, die.
++#[cold]
++#[inline(never)]
++fn match_audit_violation<Dir: IndexDirection>(
++    variant: &str,
++    branch: &str,
++    a: &ChannelBlocks,
++    b: &ChannelBlocks,
++) -> ! {
++    instrument::bump(&instrument::FILTER_MATCH_AUDIT_VIOLATIONS);
++    log::error!(
++        "ZM MATCH FILTER AUDIT VIOLATION ({}): dir={} branch={} channels={} a_blocks={:?} b_blocks={:?}",
++        variant,
++        Dir::dir_name(),
++        branch,
++        a.channels(),
++        blocks_debug(a),
++        blocks_debug(b),
++    );
++    panic!("ZM MATCH FILTER AUDIT VIOLATION");
++}
++
+ pub trait IndexDirection {
+     type Perm;
+ 
+@@ -301,8 +458,29 @@
+         if apply_hist_filter && !packed::hist_subsumes(candidate_hist, &q.hist) {
+             return None;
+         }
++        // ZM-V3 Lemma M. The guarded call is
++        // `subsumes_permuted_packed(candidate, q)` = "exists pi:
++        // pi(candidate) subset-of query", so A = candidate, B = query.
++        let mut slot = None;
++        let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++        let match_ok = match_allows(cand_blocks, q.blocks.as_ref(), false);
++        if !match_ok && !audit_enabled() {
++            return None;
++        }
+         instrument::bump(&instrument::FILTER_EXACT_CALLS);
+-        subsumes_permuted_packed(candidate, &q.packed)
++        let perm = subsumes_permuted_packed(candidate, &q.packed);
++        if perm.is_some() {
++            instrument::bump(&instrument::FILTER_EXACT_HITS);
++            if !match_ok {
++                match_audit_violation::<Self>(
++                    "lookup",
++                    "identity",
++                    cand_blocks.unwrap(),
++                    q.blocks.as_ref().unwrap(),
++                );
++            }
++        }
++        perm
+     }
+ 
+     fn test_precise_packed_update(
+@@ -316,8 +494,29 @@
+         if apply_hist_filter && !packed::hist_subsumes(&q.hist, candidate_hist) {
+             return false;
+         }
++        // ZM-V3 Lemma M. The guarded call is
++        // `subsumes_permuted_packed(q, candidate)`, so A = query,
++        // B = candidate -- the roles are swapped relative to the lookup.
++        let mut slot = None;
++        let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++        let match_ok = match_allows(q.blocks.as_ref(), cand_blocks, false);
++        if !match_ok && !audit_enabled() {
++            return false;
++        }
+         instrument::bump(&instrument::FILTER_EXACT_CALLS);
+-        subsumes_permuted_packed(&q.packed, candidate).is_some()
++        let hit = subsumes_permuted_packed(&q.packed, candidate).is_some();
++        if hit {
++            instrument::bump(&instrument::FILTER_EXACT_HITS);
++            if !match_ok {
++                match_audit_violation::<Self>(
++                    "update",
++                    "identity",
++                    q.blocks.as_ref().unwrap(),
++                    cand_blocks.unwrap(),
++                );
++            }
++        }
++        hit
+     }
+ 
+     fn id_perm(channels: usize) -> Self::Perm {
+@@ -424,11 +623,29 @@
+         lookup_abstraction: &[u16],
+         apply_hist_filter: bool,
+     ) -> Option<Self::Perm> {
++        // ZM-V3 Lemma M: shared by both branches, built at most once, and only
++        // if the query carries `blocks` (filter on, or audit mode).
++        let mut slot = None;
+         let id_ok = !apply_hist_filter || packed::hist_subsumes(candidate_hist, &q.hist);
+         if id_ok && Lower::test_abstraction(candidate_abstraction, lookup_abstraction) {
+-            instrument::bump(&instrument::FILTER_EXACT_CALLS);
+-            if let Some(perm) = subsumes_permuted_packed(candidate, &q.packed) {
+-                return Some((false, perm));
++            // Identity branch: `subsumes_permuted_packed(candidate, q)`, so
++            // A = candidate, B = query, no complement.
++            let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++            let match_ok = match_allows(cand_blocks, q.blocks.as_ref(), false);
++            if match_ok || audit_enabled() {
++                instrument::bump(&instrument::FILTER_EXACT_CALLS);
++                if let Some(perm) = subsumes_permuted_packed(candidate, &q.packed) {
++                    instrument::bump(&instrument::FILTER_EXACT_HITS);
++                    if !match_ok {
++                        match_audit_violation::<Self>(
++                            "lookup",
++                            "identity",
++                            cand_blocks.unwrap(),
++                            q.blocks.as_ref().unwrap(),
++                        );
++                    }
++                    return Some((false, perm));
++                }
+             }
+         }
+         // M2b: the complement branch gets its own necessary condition.
+@@ -464,10 +681,31 @@
+         if apply_hist_filter && !packed::hist_subsumes(candidate_hist, &q.hist_rev) {
+             return None;
+         }
++        // Complement branch: `subsumes_permuted_packed(complement(candidate),
++        // q)`, so A = complement(candidate), B = query. Lemma M is applied
++        // with `invert_a = true`, which relabels only the candidate's rows by
++        // `t |-> t ^ 3`. Kept as its own guard rather than folded into a
++        // disjunction with the identity branch: the two branches have
++        // different necessary conditions and merging them would be sound but
++        // strictly weaker (the M2b lesson).
++        let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++        let match_ok = match_allows(cand_blocks, q.blocks.as_ref(), true);
++        if !match_ok && !audit_enabled() {
++            return None;
++        }
+         let mut inverted = *candidate;
+         inverted.invert();
+         instrument::bump(&instrument::FILTER_EXACT_CALLS);
+         if let Some(perm) = subsumes_permuted_packed(&inverted, &q.packed) {
++            instrument::bump(&instrument::FILTER_EXACT_HITS);
++            if !match_ok {
++                match_audit_violation::<Self>(
++                    "lookup",
++                    "complement",
++                    cand_blocks.unwrap(),
++                    q.blocks.as_ref().unwrap(),
++                );
++            }
+             return Some((true, perm));
+         }
+         None
+@@ -489,11 +727,28 @@
+         lookup_abstraction: &[u16],
+         apply_hist_filter: bool,
+     ) -> bool {
++        // ZM-V3 Lemma M: shared by both branches, built at most once.
++        let mut slot = None;
+         let id_ok = !apply_hist_filter || packed::hist_subsumes(&q.hist, candidate_hist);
+         if id_ok && Lower::test_abstraction(lookup_abstraction, candidate_abstraction) {
+-            instrument::bump(&instrument::FILTER_EXACT_CALLS);
+-            if subsumes_permuted_packed(&q.packed, candidate).is_some() {
+-                return true;
++            // Identity branch: `subsumes_permuted_packed(q, candidate)`, so
++            // A = query, B = candidate, no complement.
++            let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++            let match_ok = match_allows(q.blocks.as_ref(), cand_blocks, false);
++            if match_ok || audit_enabled() {
++                instrument::bump(&instrument::FILTER_EXACT_CALLS);
++                if subsumes_permuted_packed(&q.packed, candidate).is_some() {
++                    instrument::bump(&instrument::FILTER_EXACT_HITS);
++                    if !match_ok {
++                        match_audit_violation::<Self>(
++                            "update",
++                            "identity",
++                            q.blocks.as_ref().unwrap(),
++                            cand_blocks.unwrap(),
++                        );
++                    }
++                    return true;
++                }
+             }
+         }
+         let dims = candidate_abstraction.len().min(lookup_abstraction.len()) & !3;
+@@ -506,10 +761,31 @@
+         if apply_hist_filter && !packed::hist_subsumes(&q.hist_rev, candidate_hist) {
+             return false;
+         }
++        // Complement branch: `subsumes_permuted_packed(complement(q),
++        // candidate)`, so A = complement(query), B = candidate. Note it is the
++        // *query* that is complemented here, not the candidate: `invert_a` is
++        // applied to the `q.blocks` argument, which is the `a` side.
++        let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++        let match_ok = match_allows(q.blocks.as_ref(), cand_blocks, true);
++        if !match_ok && !audit_enabled() {
++            return false;
++        }
+         let mut inverted = q.packed;
+         inverted.invert();
+         instrument::bump(&instrument::FILTER_EXACT_CALLS);
+-        subsumes_permuted_packed(&inverted, candidate).is_some()
++        let hit = subsumes_permuted_packed(&inverted, candidate).is_some();
++        if hit {
++            instrument::bump(&instrument::FILTER_EXACT_HITS);
++            if !match_ok {
++                match_audit_violation::<Self>(
++                    "update",
++                    "complement",
++                    q.blocks.as_ref().unwrap(),
++                    cand_blocks.unwrap(),
++                );
++            }
++        }
++        hit
+     }
+ 
+     fn id_perm(channels: usize) -> Self::Perm {
+@@ -608,8 +884,29 @@
+         if apply_hist_filter && !packed::hist_subsumes(&q.hist, candidate_hist) {
+             return None;
+         }
++        // ZM-V3 Lemma M. The guarded call is
++        // `subsumes_permuted_packed(q, candidate)`, so A = query,
++        // B = candidate (`Upper` is the mirror of `Lower`).
++        let mut slot = None;
++        let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++        let match_ok = match_allows(q.blocks.as_ref(), cand_blocks, false);
++        if !match_ok && !audit_enabled() {
++            return None;
++        }
+         instrument::bump(&instrument::FILTER_EXACT_CALLS);
+-        subsumes_permuted_packed(&q.packed, candidate)
++        let perm = subsumes_permuted_packed(&q.packed, candidate);
++        if perm.is_some() {
++            instrument::bump(&instrument::FILTER_EXACT_HITS);
++            if !match_ok {
++                match_audit_violation::<Self>(
++                    "lookup",
++                    "identity",
++                    q.blocks.as_ref().unwrap(),
++                    cand_blocks.unwrap(),
++                );
++            }
++        }
++        perm
+     }
+ 
+     fn test_precise_packed_update(
+@@ -623,8 +920,29 @@
+         if apply_hist_filter && !packed::hist_subsumes(candidate_hist, &q.hist) {
+             return false;
+         }
++        // ZM-V3 Lemma M. The guarded call is
++        // `subsumes_permuted_packed(candidate, q)`, so A = candidate,
++        // B = query.
++        let mut slot = None;
++        let cand_blocks = candidate_blocks(&mut slot, candidate, q);
++        let match_ok = match_allows(cand_blocks, q.blocks.as_ref(), false);
++        if !match_ok && !audit_enabled() {
++            return false;
++        }
+         instrument::bump(&instrument::FILTER_EXACT_CALLS);
+-        subsumes_permuted_packed(candidate, &q.packed).is_some()
++        let hit = subsumes_permuted_packed(candidate, &q.packed).is_some();
++        if hit {
++            instrument::bump(&instrument::FILTER_EXACT_HITS);
++            if !match_ok {
++                match_audit_violation::<Self>(
++                    "update",
++                    "identity",
++                    cand_blocks.unwrap(),
++                    q.blocks.as_ref().unwrap(),
++                );
++            }
++        }
++        hit
+     }
+ 
+     fn id_perm(channels: usize) -> Self::Perm {
+@@ -1416,5 +1734,139 @@
+         }
+         writeln!(output, "}}")?;
+         Ok(())
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    struct Xs(u64);
++    impl Xs {
++        fn next(&mut self) -> u64 {
++            let mut x = self.0;
++            x ^= x << 13;
++            x ^= x >> 7;
++            x ^= x << 17;
++            self.0 = x;
++            x
++        }
++    }
++
++    fn corpus(channels: usize, limit: usize, seed: u64) -> Vec<PackedSet> {
++        let mut rng = Xs(seed);
++        let mut out = vec![];
++        while out.len() < limit {
++            let mut set = OutputSet::all_values(channels);
++            out.push(PackedSet::from_bitmap(set.as_ref()));
++            for _ in 0..(channels * 2) {
++                if out.len() >= limit {
++                    break;
++                }
++                let i = (rng.next() as usize) % channels;
++                let j = (rng.next() as usize) % channels;
++                if i == j {
++                    continue;
++                }
++                if set.apply_comparator([i.max(j), i.min(j)]) {
++                    out.push(PackedSet::from_bitmap(set.as_ref()));
++                }
++            }
++        }
++        out.truncate(limit);
++        out
++    }
++
++    fn invert(set: &PackedSet) -> PackedSet {
++        let mut copy = *set;
++        copy.invert();
++        copy
++    }
++
++    /// ZM-V3 Lemma M direction bookkeeping.
++    ///
++    /// Every `test_precise_packed*` is an *exact* decision procedure -- every
++    /// pre-filter in it is a sound necessary condition -- so its answer must
++    /// equal the raw `subsumes_permuted_packed` answer for the pair it
++    /// arbitrates. With the matching filter on by default, a guard wired to
++    /// the wrong side (or the wrong polarity) rejects true positives and this
++    /// test fails. It is the regression bar for the six guards.
++    #[test]
++    fn precise_packed_is_exact_in_every_direction() {
++        assert!(match_filter_enabled(), "gate must default on");
++
++        for channels in 4..=7 {
++            let sets = corpus(channels, 14, 0x2ea7_1000 + channels as u64);
++            let abstractions = sets
++                .iter()
++                .map(|set| set.to_output_set().abstraction())
++                .collect::<Vec<_>>();
++            let hists = sets
++                .iter()
++                .map(|set| set.weight_histogram())
++                .collect::<Vec<_>>();
++
++            for (qi, q_packed) in sets.iter().enumerate() {
++                let q = SubsumeFilter::from_packed(*q_packed);
++                assert!(q.blocks.is_some());
++                let q_abs = &abstractions[qi];
++
++                for (ci, candidate) in sets.iter().enumerate() {
++                    let c_abs = &abstractions[ci];
++                    let c_hist = &hists[ci];
++
++                    let c_in_q = subsumes_permuted_packed(candidate, q_packed).is_some();
++                    let q_in_c = subsumes_permuted_packed(q_packed, candidate).is_some();
++                    let inv_c_in_q =
++                        subsumes_permuted_packed(&invert(candidate), q_packed).is_some();
++                    let inv_q_in_c =
++                        subsumes_permuted_packed(&invert(q_packed), candidate).is_some();
++
++                    let ctx = format!("channels={} c={} q={}", channels, ci, qi);
++
++                    assert_eq!(
++                        Lower::test_precise_packed(candidate, c_hist, c_abs, &q, q_abs, true)
++                            .is_some(),
++                        c_in_q,
++                        "Lower lookup {}",
++                        ctx
++                    );
++                    assert_eq!(
++                        Lower::test_precise_packed_update(candidate, c_hist, c_abs, &q, q_abs, true),
++                        q_in_c,
++                        "Lower update {}",
++                        ctx
++                    );
++                    assert_eq!(
++                        Upper::test_precise_packed(candidate, c_hist, c_abs, &q, q_abs, true)
++                            .is_some(),
++                        q_in_c,
++                        "Upper lookup {}",
++                        ctx
++                    );
++                    assert_eq!(
++                        Upper::test_precise_packed_update(candidate, c_hist, c_abs, &q, q_abs, true),
++                        c_in_q,
++                        "Upper update {}",
++                        ctx
++                    );
++                    assert_eq!(
++                        LowerInvert::test_precise_packed(candidate, c_hist, c_abs, &q, q_abs, true)
++                            .is_some(),
++                        c_in_q || inv_c_in_q,
++                        "LowerInvert lookup {}",
++                        ctx
++                    );
++                    assert_eq!(
++                        LowerInvert::test_precise_packed_update(
++                            candidate, c_hist, c_abs, &q, q_abs, true
++                        ),
++                        q_in_c || inv_q_in_c,
++                        "LowerInvert update {}",
++                        ctx
++                    );
++                }
++            }
++        }
+     }
+ }
+diff -ruN a/src/output_set/matching.rs b/src/output_set/matching.rs
+--- a/src/output_set/matching.rs	1970-01-01 07:30:00
++++ b/src/output_set/matching.rs	2026-08-18 04:37:29
+@@ -0,0 +1,400 @@
++//! ZM-V3, Lemma M: the bipartite matching filter over the per-channel
++//! abstraction blocks of [`super::zeta::ChannelBlocks`].
++//!
++//! # The lemma
++//!
++//! For an output set `X` and a channel `i`, let
++//! `v_i(X) in Z^{4(n-1)}` be the per-channel abstraction block: the four
++//! `channel_pair_abstraction([i, j])` groups over `j != i`, each sorted
++//! descending. That is exactly `ChannelBlocks::row(i)`.
++//!
++//! Suppose `pi` is a channel permutation with `pi(A) subset-of B`. Applying
++//! `pi` renames channels, so the quadrant counts of `pi(A)` at the pair
++//! `(pi(i), pi(j))` equal those of `A` at `(i, j)`, and `pi(A) subset-of B`
++//! makes every quadrant count of `pi(A)` at most the corresponding count of
++//! `B`. Hence
++//!
++//! ```text
++//! for all i, all j != i, all groups g:
++//!     quadrant_A(i, j)[g] <= quadrant_B(pi(i), pi(j))[g].
++//! ```
++//!
++//! For fixed `i` and `g`, `j |-> pi(j)` is a bijection from `{j : j != i}` onto
++//! `{j' : j' != pi(i)}` under which each entry of the first multiset is
++//! dominated by its image; sorting both multisets descending therefore
++//! preserves the domination rank by rank. So `v_i(A) <= v_{pi(i)}(B)`
++//! coordinatewise, for *every* `i`.
++//!
++//! In other words `pi` is a perfect matching in the bipartite graph
++//!
++//! ```text
++//! Gamma(A, B) = { (i, j) : v_i(A) <= v_j(B) coordinatewise }.
++//! ```
++//!
++//! Contrapositive: **if `Gamma(A, B)` has no perfect matching then no channel
++//! permutation `pi` satisfies `pi(A) subset-of B`**. That is a sound rejection
++//! of the exact arbiter `subsumes_permuted_packed(A, B)`, and it is one-sided:
++//! it can only ever reject pairs the exact test would also reject.
++//!
++//! # Why it is strictly stronger than the deployed coordinatewise filter
++//!
++//! `OutputSet::abstraction` takes exactly this data and, at each
++//! `(group, rank)` coordinate, sorts the values *across channels*. The
++//! deployed `Lower::test_abstraction` then compares the two sorted vectors
++//! coordinatewise. A perfect matching `pi` of `Gamma` dominates, coordinate by
++//! coordinate, one multiset over channels by the other under a *single*
++//! bijection, which implies the sorted vectors dominate at every coordinate.
++//! So
++//!
++//! ```text
++//! Gamma(A, B) has a perfect matching  ==>  test_abstraction(abs(A), abs(B)),
++//! ```
++//!
++//! i.e. Lemma M rejects everything the coordinatewise test rejects and
++//! sometimes more: the coordinatewise test is free to use a *different*
++//! bijection at each coordinate, Lemma M insists on one bijection for all of
++//! them. The implication is asserted on a random reachable corpus by
++//! [`tests::gamma_implies_coordinatewise`], and the strictness is measured by
++//! the same test.
++//!
++//! # Complement polarity
++//!
++//! Complementing the cube swaps the quadrants `(1,1) <-> (0,0)` and
++//! `(0,1) <-> (1,0)` and leaves the descending order within a group alone, so
++//! it acts on a row as the index permutation `t |-> t ^ 3` (see
++//! `ChannelBlocks`). `invert_a` selects
++//! `ChannelBlocks::row_dominated_by_inverted`, which applies exactly that
++//! relabelling on the fly; no second `ChannelBlocks` is built.
++
++use super::zeta::ChannelBlocks;
++
++/// Adjacency masks are `u16`, so the matching code handles up to 16 channels
++/// -- comfortably above every `MAX_CHANNELS` the `wide12` / `wide13` features
++/// select.
++pub const MAX_MATCH: usize = 16;
++
++/// Does the bipartite graph with left vertices `0..n`, right vertices `0..n`
++/// and `adj[i]` the bitmask of right vertices adjacent to `i` admit a perfect
++/// matching?
++///
++/// Kuhn's augmenting-path algorithm (`O(V * E)` = `O(n^3)` worst case) rather
++/// than Hopcroft-Karp (`O(E sqrt(V))`): at `n <= 13` the whole graph is 13
++/// `u16`s, an augmenting DFS visits at most 13 right vertices with the visited
++/// set held in a single `u16`, and the asymptotic win would be swamped by
++/// Hopcroft-Karp's per-phase BFS bookkeeping. The greedy seed below already
++/// finds the complete matching outright on the overwhelming majority of the
++/// pairs that reach this point, leaving only a handful of augmentations.
++pub fn has_perfect_matching(adj: &[u16], n: usize) -> bool {
++    debug_assert!(n <= MAX_MATCH);
++    debug_assert!(adj.len() >= n);
++    if n == 0 {
++        return true;
++    }
++
++    // Hall pre-checks. Both are instances of Hall's condition on a specific
++    // family of left sets, so failing either genuinely proves no perfect
++    // matching exists:
++    //
++    // * `adj[i] == 0` is Hall on the singleton `{i}`;
++    // * `popcount(union of all adj[i]) < n` is Hall on the whole left side.
++    //
++    // Neither can reject a graph that has a perfect matching, so both are
++    // sound; they only ever save the augmenting search.
++    let mut union = 0u16;
++    for &mask in adj[..n].iter() {
++        if mask == 0 {
++            return false;
++        }
++        union |= mask;
++    }
++    if (union.count_ones() as usize) < n {
++        return false;
++    }
++
++    let mut match_left = [usize::MAX; MAX_MATCH];
++    let mut match_right = [usize::MAX; MAX_MATCH];
++
++    // Greedy seed: take the lowest still-unmatched neighbour of each left
++    // vertex. Purely an optimisation -- the augmenting loop below completes
++    // any partial matching to a maximum one.
++    let mut taken = 0u16;
++    for i in 0..n {
++        let free = adj[i] & !taken;
++        if free != 0 {
++            let j = free.trailing_zeros() as usize;
++            taken |= 1 << j;
++            match_left[i] = j;
++            match_right[j] = i;
++        }
++    }
++
++    for i in 0..n {
++        if match_left[i] != usize::MAX {
++            continue;
++        }
++        let mut visited = 0u16;
++        if !augment(adj, i, &mut visited, &mut match_left, &mut match_right) {
++            // No augmenting path from `i` in the current maximum-so-far
++            // matching: by Berge's lemma the matching is maximum, and it
++            // misses `i`, so there is no perfect matching.
++            return false;
++        }
++    }
++
++    true
++}
++
++/// One augmenting DFS from left vertex `i`. `visited` is the set of right
++/// vertices already explored in this DFS; recursion depth is bounded by the
++/// number of channels (`<= 16`).
++fn augment(
++    adj: &[u16],
++    i: usize,
++    visited: &mut u16,
++    match_left: &mut [usize; MAX_MATCH],
++    match_right: &mut [usize; MAX_MATCH],
++) -> bool {
++    let mut rest = adj[i];
++    while rest != 0 {
++        let j = rest.trailing_zeros() as usize;
++        rest &= rest - 1;
++        let bit = 1u16 << j;
++        if *visited & bit != 0 {
++            continue;
++        }
++        *visited |= bit;
++        let owner = match_right[j];
++        if owner == usize::MAX || augment(adj, owner, visited, match_left, match_right) {
++            match_right[j] = i;
++            match_left[i] = j;
++            return true;
++        }
++    }
++    false
++}
++
++/// The Lemma M test: does `Gamma(A, B)` admit a perfect matching?
++///
++/// `false` is a sound rejection of `exists pi : pi(A) subset-of B`, where `A`
++/// is the set whose blocks are `a` (or its complement, when `invert_a`) and
++/// `B` is the set whose blocks are `b`. `true` is *not* a proof of anything --
++/// the exact arbiter still has to run.
++///
++/// Note the asymmetry of `invert_a`: only the `a` side is complemented, which
++/// is what the two `LowerInvert` branches need (identity vs. complement), and
++/// which is why the two branches must keep their own separate guards rather
++/// than share one disjunctive test.
++pub fn gamma_has_matching(a: &ChannelBlocks, b: &ChannelBlocks, invert_a: bool) -> bool {
++    let channels = a.channels();
++    debug_assert_eq!(channels, b.channels());
++    debug_assert_eq!(a.block_len(), b.block_len());
++    debug_assert!(channels <= MAX_MATCH);
++
++    let mut adj = [0u16; MAX_MATCH];
++    for i in 0..channels {
++        let mut mask = 0u16;
++        for j in 0..channels {
++            let dominated = if invert_a {
++                a.row_dominated_by_inverted(i, b, j)
++            } else {
++                a.row_dominated_by(i, b, j)
++            };
++            if dominated {
++                mask |= 1 << j;
++            }
++        }
++        if mask == 0 {
++            // Hall on `{i}`: short-circuit before building the rest of the
++            // graph. This is the common rejection by a wide margin.
++            return false;
++        }
++        adj[i] = mask;
++    }
++
++    has_perfect_matching(&adj[..channels], channels)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::output_set::index::{IndexDirection, Lower};
++    use crate::output_set::packed::PackedSet;
++    use crate::output_set::{subsumes_permuted_packed, OutputSet};
++
++    struct Xs(u64);
++    impl Xs {
++        fn next(&mut self) -> u64 {
++            let mut x = self.0;
++            x ^= x << 13;
++            x ^= x >> 7;
++            x ^= x << 17;
++            self.0 = x;
++            x
++        }
++    }
++
++    /// Random reachable output sets: random comparator chains from the full
++    /// cube, keeping every intermediate set. Same shape as the `zeta` corpus,
++    /// but capped hard so the quadratic pair sweep below stays cheap.
++    fn corpus(channels: usize, limit: usize, seed: u64) -> Vec<PackedSet> {
++        let mut rng = Xs(seed);
++        let mut out = vec![];
++        while out.len() < limit {
++            let mut set = OutputSet::all_values(channels);
++            out.push(PackedSet::from_bitmap(set.as_ref()));
++            for _ in 0..(channels * 2) {
++                if out.len() >= limit {
++                    break;
++                }
++                let i = (rng.next() as usize) % channels;
++                let j = (rng.next() as usize) % channels;
++                if i == j {
++                    continue;
++                }
++                if set.apply_comparator([i.max(j), i.min(j)]) {
++                    out.push(PackedSet::from_bitmap(set.as_ref()));
++                }
++            }
++        }
++        out.truncate(limit);
++        out
++    }
++
++    fn blocks(set: &PackedSet) -> ChannelBlocks {
++        ChannelBlocks::from_packed(set)
++    }
++
++    fn inverted(set: &PackedSet) -> PackedSet {
++        let mut copy = *set;
++        copy.invert();
++        copy
++    }
++
++    #[test]
++    fn hand_built_matchings() {
++        // Perfect matching exists: 0-{0,1}, 1-{1,2}, 2-{2}.
++        assert!(has_perfect_matching(&[0b011, 0b110, 0b100], 3));
++        // Identity only.
++        assert!(has_perfect_matching(&[0b001, 0b010, 0b100], 3));
++        // Complete graph.
++        assert!(has_perfect_matching(&[0b111, 0b111, 0b111], 3));
++        // Needs an augmenting path past the greedy seed: greedy takes
++        // 0->0, 1->1, then 2 has only {0, 1} and must displace one of them,
++        // which succeeds because 0 can move to 2.
++        assert!(has_perfect_matching(&[0b101, 0b010, 0b011], 3));
++
++        // Hall violation on {0, 1}: both only see right vertex 0.
++        assert!(!has_perfect_matching(&[0b001, 0b001, 0b110], 3));
++        // Empty row.
++        assert!(!has_perfect_matching(&[0b111, 0b000, 0b111], 3));
++        // Union too small.
++        assert!(!has_perfect_matching(&[0b011, 0b011, 0b011], 3));
++        // Hall violation on a 3-subset of a 4-vertex graph.
++        assert!(!has_perfect_matching(
++            &[0b0011, 0b0011, 0b0011, 0b1111],
++            4
++        ));
++
++        assert!(has_perfect_matching(&[], 0));
++    }
++
++    #[test]
++    fn reflexive() {
++        for channels in 4..=8 {
++            for set in corpus(channels, 24, 0x51de_0001 + channels as u64) {
++                let b = blocks(&set);
++                assert!(
++                    gamma_has_matching(&b, &b, false),
++                    "channels={} identity is a perfect matching of Gamma(A, A)",
++                    channels
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn sound_on_reachable_corpus() {
++        for channels in 4..=8 {
++            let sets = corpus(channels, 20, 0xa11c_e000 + channels as u64);
++            let all_blocks = sets.iter().map(blocks).collect::<Vec<_>>();
++
++            let mut truths = 0usize;
++            let mut inv_truths = 0usize;
++
++            for (ai, a) in sets.iter().enumerate() {
++                for (bi, b) in sets.iter().enumerate() {
++                    if subsumes_permuted_packed(a, b).is_some() {
++                        truths += 1;
++                        assert!(
++                            gamma_has_matching(&all_blocks[ai], &all_blocks[bi], false),
++                            "UNSOUND: channels={} a={} b={} exact says subsumes, Gamma has no \
++                             perfect matching",
++                            channels,
++                            ai,
++                            bi
++                        );
++                    }
++                    if subsumes_permuted_packed(&inverted(a), b).is_some() {
++                        inv_truths += 1;
++                        assert!(
++                            gamma_has_matching(&all_blocks[ai], &all_blocks[bi], true),
++                            "UNSOUND (complement): channels={} a={} b={} exact says \
++                             complement(a) subsumes b, Gamma has no perfect matching",
++                            channels,
++                            ai,
++                            bi
++                        );
++                    }
++                }
++            }
++
++            // The corpus always contains the full cube and reflexive pairs, so
++            // this is a live-wire check that the assertions above actually ran.
++            assert!(truths >= sets.len(), "channels={}", channels);
++            let _ = inv_truths;
++        }
++    }
++
++    #[test]
++    fn gamma_implies_coordinatewise() {
++        let mut stronger = 0usize;
++        let mut evaluated = 0usize;
++
++        for channels in 4..=8 {
++            let sets = corpus(channels, 20, 0xc0ffee00 + channels as u64);
++            let all_blocks = sets.iter().map(blocks).collect::<Vec<_>>();
++            let abstractions = sets
++                .iter()
++                .map(|set| set.to_output_set().abstraction())
++                .collect::<Vec<_>>();
++
++            for ai in 0..sets.len() {
++                for bi in 0..sets.len() {
++                    evaluated += 1;
++                    let gamma = gamma_has_matching(&all_blocks[ai], &all_blocks[bi], false);
++                    let coord = Lower::test_abstraction(&abstractions[ai], &abstractions[bi]);
++                    assert!(
++                        !gamma || coord,
++                        "COUNTEREXAMPLE to `Gamma ==> coordinatewise`: channels={} a={} b={}; \
++                         Gamma accepted a pair the across-channel-sorted abstraction rejects, \
++                         which contradicts the Lemma M derivation",
++                        channels,
++                        ai,
++                        bi
++                    );
++                    if coord && !gamma {
++                        stronger += 1;
++                    }
++                }
++            }
++        }
++
++        // Empirical strictness: Lemma M must actually reject pairs the
++        // deployed coordinatewise filter lets through, or it buys nothing.
++        assert!(
++            stronger > 0,
++            "Lemma M rejected nothing the coordinatewise filter accepts over {} pairs",
++            evaluated
++        );
++    }
++}
+diff -ruN a/src/output_set/packed.rs b/src/output_set/packed.rs
+--- a/src/output_set/packed.rs	2026-08-18 04:42:57
++++ b/src/output_set/packed.rs	2026-08-18 04:23:34
+@@ -103,9 +103,62 @@
+         result
+     }
+ 
++    /// ZM-V3: byte-at-a-time packing, structurally identical to
++    /// `OutputSet::pack_into_slice` (byte `b` holds bitmap bits `8*b..8*b+7`,
++    /// LSB-first) except that the byte is ORed straight into word `b / 8` at
++    /// shift `(b % 8) * 8` rather than stored, which matches
++    /// [`Self::from_packed_bytes`]'s reassembly exactly. This is the same
++    /// bit-for-bit result as the one-bool-at-a-time loop it replaces
++    /// (`bit i -> word i >> 6, position i & 63`), since `8*b + j` has word
++    /// index `b / 8` and in-word position `(b % 8) * 8 + j`.
++    ///
++    /// The `chunks_exact(8)` remainder tail only ever fires for
++    /// `channels < 3`, where the whole bitmap is shorter than one byte.
+     pub fn from_bitmap(set: OutputSet<&[bool]>) -> Self {
+         let channels = set.channels();
+         let mut result = Self::zeros(channels);
++
++        let bitmap = set.bitmap();
++        let mut byte_chunks = bitmap.chunks_exact(8);
++
++        for (b, byte_chunk) in (&mut byte_chunks).enumerate() {
++            let byte = unsafe {
++                (*byte_chunk.get_unchecked(0) as u8)
++                    | ((*byte_chunk.get_unchecked(1) as u8) << 1)
++                    | ((*byte_chunk.get_unchecked(2) as u8) << 2)
++                    | ((*byte_chunk.get_unchecked(3) as u8) << 3)
++                    | ((*byte_chunk.get_unchecked(4) as u8) << 4)
++                    | ((*byte_chunk.get_unchecked(5) as u8) << 5)
++                    | ((*byte_chunk.get_unchecked(6) as u8) << 6)
++                    | ((*byte_chunk.get_unchecked(7) as u8) << 7)
++            };
++            result.bits[b / 8] |= (byte as u64) << ((b % 8) * 8);
++        }
++
++        let remainder = byte_chunks.remainder();
++        if !remainder.is_empty() {
++            let b = bitmap.len() / 8;
++            let byte = (remainder.get(0).cloned().unwrap_or(false) as u8)
++                | ((remainder.get(1).cloned().unwrap_or(false) as u8) << 1)
++                | ((remainder.get(2).cloned().unwrap_or(false) as u8) << 2)
++                | ((remainder.get(3).cloned().unwrap_or(false) as u8) << 3)
++                | ((remainder.get(4).cloned().unwrap_or(false) as u8) << 4)
++                | ((remainder.get(5).cloned().unwrap_or(false) as u8) << 5)
++                | ((remainder.get(6).cloned().unwrap_or(false) as u8) << 6)
++                | ((remainder.get(7).cloned().unwrap_or(false) as u8) << 7);
++            result.bits[b / 8] |= (byte as u64) << ((b % 8) * 8);
++        }
++
++        result.check_clean();
++        result
++    }
++
++    /// The pre-ZM one-bool-at-a-time [`Self::from_bitmap`], retained as the
++    /// differential oracle for the byte-at-a-time rewrite. Tests only.
++    #[cfg(test)]
++    fn from_bitmap_reference(set: OutputSet<&[bool]>) -> Self {
++        let channels = set.channels();
++        let mut result = Self::zeros(channels);
+         for (i, &present) in set.bitmap().iter().enumerate() {
+             if present {
+                 result.bits[i >> 6] |= 1u64 << (i & 63);
+@@ -900,6 +953,58 @@
+         let mut roundtrip = OutputSet::all_values(expected.channels());
+         packed.write_bitmap_into(roundtrip.as_mut());
+         assert_eq!(&roundtrip, expected);
++    }
++
++    /// ZM-V3: the byte-at-a-time `from_bitmap` must be bit-for-bit equal to
++    /// the one-bool-at-a-time loop it replaced, in *every* word of the
++    /// backing array (not just the live ones, which is all `eq_packed`
++    /// compares), at every width including the `channels < 3` widths that
++    /// take the `chunks_exact` remainder tail.
++    #[test]
++    fn from_bitmap_matches_reference() {
++        for channels in 0..=MAX_CHANNELS {
++            let mut sets = build_sets(channels, 0x6C62_272E ^ (channels as u64), 20);
++
++            // Explicit edge cases: all-true, all-false, single vector.
++            sets.push(OutputSet::all_values(channels));
++            let mut empty = OutputSet::all_values(channels);
++            for slot in empty.bitmap_mut().iter_mut() {
++                *slot = false;
++            }
++            sets.push(empty.clone());
++            // Single-vector sets. For the small widths every bitmap index; for
++            // the large ones an index set that still covers every in-word bit
++            // position (`0..64`), both ends of the word array, and a
++            // stride-101 sweep across words -- without holding thousands of
++            // dense bitmaps at once.
++            let size = 1usize << channels;
++            let indices: Vec<usize> = if size <= 1024 {
++                (0..size).collect()
++            } else {
++                (0..64)
++                    .chain((0..64).map(|k: usize| (k * 101) % size))
++                    .chain(size - 64..size)
++                    .collect()
++            };
++            for i in indices {
++                let mut single = empty.clone();
++                single.bitmap_mut()[i] = true;
++                sets.push(single);
++            }
++
++            for os in &sets {
++                let actual = PackedSet::from_bitmap(os.as_ref());
++                let expected = PackedSet::from_bitmap_reference(os.as_ref());
++                assert_eq!(actual.channels, expected.channels, "channels={channels}");
++                assert_eq!(actual.words, expected.words, "channels={channels}");
++                assert_eq!(
++                    &actual.bits[..],
++                    &expected.bits[..],
++                    "channels={channels} bitmap={:?}",
++                    os.bitmap()
++                );
++            }
++        }
+     }
+ 
+     #[test]
+diff -ruN a/src/output_set/zeta.rs b/src/output_set/zeta.rs
+--- a/src/output_set/zeta.rs	1970-01-01 07:30:00
++++ b/src/output_set/zeta.rs	2026-08-18 05:21:41
+@@ -0,0 +1,940 @@
++//! ZM-V3, Lemma Z: the rank-<=2 superset-zeta truncation behind
++//! `OutputSet::abstraction`.
++//!
++//! # The lemma
++//!
++//! Let `X` be an output set and `zeta(S) = |{ x in X : x superset-of S }|` its
++//! superset-zeta transform (identifying a Boolean vector with the set of
++//! channels on which it is 1). `OutputSet::channel_pair_abstraction([i, j])`
++//! counts the four quadrants of the channel pair `(i, j)`:
++//!
++//! ```text
++//! group 0 = |{x : x_i = 1, x_j = 1}| = zeta({i,j})
++//! group 1 = |{x : x_i = 0, x_j = 1}| = zeta({j}) - zeta({i,j})
++//! group 2 = |{x : x_i = 1, x_j = 0}| = zeta({i}) - zeta({i,j})
++//! group 3 = |{x : x_i = 0, x_j = 0}| = |X| - zeta({i}) - zeta({j}) + zeta({i,j})
++//! ```
++//!
++//! so the *entire* abstraction vector -- and therefore the whole `Lower` /
++//! `LowerInvert` index filter -- is a function of
++//! `(|X|, zeta({i}) for each i, zeta({i,j}) for each pair)`, i.e. of the
++//! rank-<=2 truncation of `zeta` alone. Nothing of higher rank is ever
++//! consulted.
++//!
++//! # Why that is worth anything
++//!
++//! Upstream computes the abstraction by running `channel_pair_abstraction`
++//! once per *ordered* channel pair, each a stride-`2^k` gather over the dense
++//! `[bool]` bitmap doing 4 loads and 4 adds per visited index:
++//! `n(n-1) * 2^n / 4 * 8` scalar operations, 2,555,904 at n = 13.
++//!
++//! Computing the rank-<=2 zeta truncation *once* and deriving all
++//! `n(n-1)` quadruples from it by inclusion-exclusion needs one contiguous
++//! pass over the *packed* `u64` bitmap with masked popcounts:
++//! `2^n/64` words times (a fixed 22 popcounts plus O(n^2/2) accumulator adds).
++//! At n = 13 that is 128 words * ~90 ops ~= 11.5k operations plus the
++//! O(n^2) inclusion-exclusion, against 2.56M -- and it consumes the packed
++//! representation `PackedSet` (TIER1) already provides, so it needs no
++//! `[bool]` expansion.
++//!
++//! # Bit-identity
++//!
++//! [`write_abstraction_from_counts`] performs exactly
++//! `OutputSet::write_abstraction_into`'s post-processing (descending sort
++//! within each per-channel group, scatter, ascending sort across channels,
++//! rank-block transpose) with `channel_pair_abstraction` replaced by
++//! [`PairCounts::quadrants`]. Every intermediate value is equal by the lemma,
++//! so the emitted `u16` vector is equal bit for bit. This is asserted by the
++//! unit tests in this module and by the standalone differential harness.
++//!
++//! The two sorting steps no longer call `sort_unstable`: they use the
++//! fixed-shape branch-free sorts [`sort2_desc_u16`] / [`sort4_asc_u16`], and
++//! only two of the four groups are sorted at all (see
++//! [`ChannelBlocks::from_counts`] for the reflection that derives the other
++//! two). Both are exact rearrangements of the same multisets, so bit-identity
++//! is untouched -- and is what `bin/zeta_diff` and
++//! `tests::abstraction_bit_identical` check.
++
++use super::packed::PackedSet;
++use super::{AVec, MAX_CHANNELS, PAIR_ABSTRACTION_GROUPS};
++use arrayvec::ArrayVec;
++
++/// `BIT_MASK[c]` has bit `p` set (`p` in `0..64`) iff bit `c` of `p` is set.
++/// Duplicated from `packed.rs` (private there) so this module is standalone.
++const fn bit_masks() -> [u64; 6] {
++    let mut masks = [0u64; 6];
++    let mut c = 0usize;
++    while c < 6 {
++        let mut p = 0usize;
++        while p < 64 {
++            if (p >> c) & 1 == 1 {
++                masks[c] |= 1u64 << p;
++            }
++            p += 1;
++        }
++        c += 1;
++    }
++    masks
++}
++
++const BIT_MASK: [u64; 6] = bit_masks();
++
++/// `LOW_PAIR[c][d] = BIT_MASK[c] & BIT_MASK[d]`, so an in-word pair quadrant
++/// costs one `AND` and one `POPCNT` rather than two `AND`s.
++const fn low_pair_masks() -> [[u64; 6]; 6] {
++    let masks = bit_masks();
++    let mut out = [[0u64; 6]; 6];
++    let mut c = 0usize;
++    while c < 6 {
++        let mut d = 0usize;
++        while d < 6 {
++            out[c][d] = masks[c] & masks[d];
++            d += 1;
++        }
++        c += 1;
++    }
++    out
++}
++
++const LOW_PAIR: [[u64; 6]; 6] = low_pair_masks();
++
++/// The rank-<=2 truncation of the superset-zeta transform of an output set.
++///
++/// `total = zeta(empty) = |X|`, `ones[i] = zeta({i})`,
++/// `pair[i][j] = zeta({i,j})` (symmetric, with `pair[i][i] = ones[i]`).
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub struct PairCounts {
++    channels: usize,
++    total: u32,
++    ones: [u32; MAX_CHANNELS],
++    pair: [[u32; MAX_CHANNELS]; MAX_CHANNELS],
++}
++
++impl PairCounts {
++    pub fn channels(&self) -> usize {
++        self.channels
++    }
++
++    pub fn total(&self) -> u32 {
++        self.total
++    }
++
++    pub fn ones(&self, i: usize) -> u32 {
++        self.ones[i]
++    }
++
++    pub fn pair(&self, i: usize, j: usize) -> u32 {
++        self.pair[i][j]
++    }
++
++    /// One contiguous pass over the packed bitmap.
++    ///
++    /// Channels split into the `low` ones (`c < 6`), which are in-word bit
++    /// positions and are handled by masked popcount, and the `high` ones
++    /// (`c >= 6`), which are bits of the *word index* and are handled by
++    /// selecting words.
++    pub fn from_packed(set: &PackedSet) -> Self {
++        let channels = set.channels();
++        debug_assert!(channels <= MAX_CHANNELS);
++        let bits = set.bits();
++
++        let low = channels.min(6);
++        let high = channels.saturating_sub(6);
++
++        let mut total: u32 = 0;
++        let mut ones = [0u32; MAX_CHANNELS];
++        let mut pair = [[0u32; MAX_CHANNELS]; MAX_CHANNELS];
++
++        let mut lowpop = [0u32; 6];
++
++        for (w, &word) in bits.iter().enumerate() {
++            if word == 0 {
++                continue;
++            }
++            let pf = word.count_ones();
++            total += pf;
++
++            for c in 0..low {
++                let p = (word & BIT_MASK[c]).count_ones();
++                lowpop[c] = p;
++                ones[c] += p;
++            }
++            for c in 0..low {
++                for d in (c + 1)..low {
++                    pair[c][d] += (word & LOW_PAIR[c][d]).count_ones();
++                }
++            }
++
++            if high == 0 {
++                continue;
++            }
++            // Only the set high bits of `w` matter; iterate them directly.
++            let mut rest = w as u32;
++            while rest != 0 {
++                let h = rest.trailing_zeros() as usize;
++                rest &= rest - 1;
++                if h >= high {
++                    break;
++                }
++                let hc = 6 + h;
++                ones[hc] += pf;
++                for c in 0..low {
++                    pair[c][hc] += lowpop[c];
++                }
++                let mut rest2 = rest;
++                while rest2 != 0 {
++                    let h2 = rest2.trailing_zeros() as usize;
++                    rest2 &= rest2 - 1;
++                    if h2 >= high {
++                        break;
++                    }
++                    pair[hc][6 + h2] += pf;
++                }
++            }
++        }
++
++        // Symmetrise and fill the diagonal.
++        for i in 0..channels {
++            pair[i][i] = ones[i];
++            for j in 0..i {
++                pair[i][j] = pair[j][i];
++            }
++        }
++
++        Self {
++            channels,
++            total,
++            ones,
++            pair,
++        }
++    }
++
++    /// Exactly `OutputSet::channel_pair_abstraction([i, j])`, by
++    /// inclusion-exclusion on the rank-<=2 zeta truncation (Lemma Z).
++    ///
++    /// `i` is `channel_pair[0]` (the row channel) and `j` is
++    /// `channel_pair[1]`; the group order matches upstream's
++    /// `(1,1) / (0,1) / (1,0) / (0,0)` exactly.
++    #[inline]
++    pub fn quadrants(&self, i: usize, j: usize) -> [u32; PAIR_ABSTRACTION_GROUPS] {
++        let p = self.pair[i][j];
++        let oi = self.ones[i];
++        let oj = self.ones[j];
++        // `total + p - oi - oj` and not `total - oi - oj + p`: every prefix of
++        // the former is a nonnegative integer (`total >= oi`, and
++        // `total + p - oi >= oj` because the group-3 count is a cardinality),
++        // whereas `total - oi - oj` underflows as an intermediate whenever
++        // `oi + oj > total` -- correct after wrapping in release, a panic under
++        // `debug_assertions`. Keeping the crate testable in debug mode matters
++        // more than the (nonexistent) codegen difference.
++        [p, oj - p, oi - p, self.total + p - oi - oj]
++    }
++
++}
++
++/// Sorts two equally long `u16` slices descending, in lockstep.
++///
++/// The slices the abstraction path sorts have `n - 1` or `n` entries -- 2..13
++/// -- a length at which `slice::sort_unstable_by`'s pattern-defeating
++/// quicksort is almost entirely fixed setup: an out-of-line call that
++/// re-derives the length, chooses a pivot strategy and only then falls into
++/// its own insertion sort. Since these are total orders on scalars, any
++/// correct sort emits the identical sequence, so the choice is purely one of
++/// cost.
++///
++/// This is an **odd-even transposition sort**: `len` layers of independent
++/// `(max, min)` compare-exchanges on adjacent pairs. It is branch-free
++/// (`u16::max` / `u16::min` become `cmp` + two `csel`), which matters because
++/// the comparison outcomes here are data-dependent noise that a predictor
++/// cannot learn.
++///
++/// Odd-even transposition is *latency* bound rather than throughput bound --
++/// each layer depends on the previous one -- so the two slices are sorted in
++/// one interleaved loop rather than by two calls. The chains are independent,
++/// so the second sort is nearly free. Measured on the microbenchmark at n=11,
++/// `ChannelBlocks::from_counts`: 625 ns for two insertion sorts, 561 ns for
++/// two separate odd-even sorts, 545 ns interleaved; at n=8, where insertion
++/// sort's early exit is at its best, interleaved odd-even still matches it
++/// (249 ns).
++#[inline]
++fn sort2_desc_u16(x: &mut [u16], y: &mut [u16]) {
++    let len = x.len();
++    debug_assert_eq!(len, y.len());
++    for round in 0..len {
++        let mut t = round & 1;
++        while t + 1 < len {
++            let (a, b) = (x[t], x[t + 1]);
++            x[t] = a.max(b);
++            x[t + 1] = a.min(b);
++            let (c, d) = (y[t], y[t + 1]);
++            y[t] = c.max(d);
++            y[t + 1] = c.min(d);
++            t += 2;
++        }
++    }
++}
++
++/// [`sort2_desc_u16`] the other way round and four slices wide: the
++/// replacement for `<[u16]>::sort_unstable` in
++/// [`write_abstraction_from_counts`].
++///
++/// Four rather than two because that step sorts `4(n - 1)` slices and is
++/// squarely latency bound; widening from two chains to four took
++/// `OutputSet::abstraction` from 1087 ns to 956 ns at n=9 and from 2260 ns to
++/// 2017 ns at n=11. `chunks` is split into four equal parts, which is exactly
++/// how the caller's four consecutive `channels`-long chunks are laid out.
++///
++/// `inline(always)` and not `inline`: the caller passes `len == channels`,
++/// which it also uses for the chunking, and only propagating that equality
++/// into the body recovers the last ~6% (991 ns -> 956 ns at n=9). The reverse
++/// is true of [`sort2_desc_u16`], which regressed under `inline(always)`;
++/// both were measured.
++#[inline(always)]
++fn sort4_asc_u16(chunks: &mut [u16], len: usize) {
++    debug_assert_eq!(chunks.len(), 4 * len);
++    let (xy, zw) = chunks.split_at_mut(2 * len);
++    let (x, y) = xy.split_at_mut(len);
++    let (z, w) = zw.split_at_mut(len);
++    for round in 0..len {
++        let mut t = round & 1;
++        while t + 1 < len {
++            let (a, b) = (x[t], x[t + 1]);
++            x[t] = a.min(b);
++            x[t + 1] = a.max(b);
++            let (c, d) = (y[t], y[t + 1]);
++            y[t] = c.min(d);
++            y[t + 1] = c.max(d);
++            let (e, f) = (z[t], z[t + 1]);
++            z[t] = e.min(f);
++            z[t + 1] = e.max(f);
++            let (g, h) = (w[t], w[t + 1]);
++            w[t] = g.min(h);
++            w[t + 1] = g.max(h);
++            t += 2;
++        }
++    }
++}
++
++/// The post-processing of `OutputSet::write_abstraction_into`, over
++/// [`PairCounts`] instead of `channel_pair_abstraction`.
++///
++/// Structurally identical to upstream -- descending sort within each
++/// per-channel group, scatter, ascending sort across channels, rank-block
++/// transpose -- with the two sorting steps done the way
++/// [`ChannelBlocks::from_counts`] does them:
++///
++/// * the per-channel descending sorts use the group-2/3-from-group-0/1
++///   reflection (see [`ChannelBlocks::from_counts`]), so two sorts run instead
++///   of four and no `CVec` scratch is needed;
++/// * both sorting steps use [`sort2_desc_u16`] / [`sort4_asc_u16`] instead of
++///   `sort_unstable`. The across-channel step is `4(n - 1)` sorts of `n`
++///   elements each, the single largest cost in the old version.
++///
++/// The emitted vector is unchanged bit for bit (`abstraction_bit_identical`,
++/// `pathological_sets_bit_identical`, and `bin/zeta_diff`).
++pub fn write_abstraction_from_counts(counts: &PairCounts, abstraction: &mut [u16]) {
++    let channels = counts.channels();
++    debug_assert_eq!(
++        abstraction.len(),
++        channels * (channels - 1) * PAIR_ABSTRACTION_GROUPS
++    );
++
++    let k = channels - 1;
++    let total = counts.total();
++    // See `ChannelBlocks::from_counts` for the one slot of slack and for the
++    // branch-free diagonal handling.
++    let mut g0 = [0u16; MAX_CHANNELS];
++    let mut g1 = [0u16; MAX_CHANNELS];
++
++    for channel in 0..channels {
++        let ones_i = counts.ones(channel);
++        let pair_row = &counts.pair[channel][..channels];
++        let ones = &counts.ones[..channels];
++
++        let mut t = 0usize;
++        for other in 0..channels {
++            let p = pair_row[other];
++            g0[t] = p as u16;
++            g1[t] = (ones[other] - p) as u16;
++            t += (other != channel) as usize;
++        }
++        debug_assert_eq!(t, k);
++
++        let (g0, g1) = (&mut g0[..k], &mut g1[..k]);
++        sort2_desc_u16(g0, g1);
++
++        let c2 = ones_i as u16;
++        let c3 = (total - ones_i) as u16;
++        for rank in 0..k {
++            let mirror = k - 1 - rank;
++            // Upstream's `channel + channels * (group + PAIR_ABSTRACTION_GROUPS
++            // * index)`, with `group` folded into the four offsets.
++            let base = channel + channels * PAIR_ABSTRACTION_GROUPS * rank;
++            abstraction[base] = g0[rank];
++            abstraction[base + channels] = g1[rank];
++            abstraction[base + 2 * channels] = c2 - g0[mirror];
++            abstraction[base + 3 * channels] = c3 - g1[mirror];
++        }
++    }
++
++    // `4(n - 1)` is a multiple of four, so the `channels`-long chunks group up
++    // exactly four at a time, which is what `sort4_asc_u16` wants.
++    for quad in abstraction.chunks_mut(PAIR_ABSTRACTION_GROUPS * channels) {
++        sort4_asc_u16(quad, channels);
++    }
++
++    for chunk in abstraction.chunks_mut(channels * PAIR_ABSTRACTION_GROUPS) {
++        let mut tmp = ArrayVec::<[u16; 64]>::new();
++        tmp.try_extend_from_slice(chunk).unwrap();
++
++        for i in 0..PAIR_ABSTRACTION_GROUPS {
++            for j in 0..channels {
++                chunk[i + j * PAIR_ABSTRACTION_GROUPS] = tmp[j + i * channels];
++            }
++        }
++    }
++}
++
++/// `OutputSet::abstraction()` computed from a [`PackedSet`].
++pub fn abstraction_from_packed(set: &PackedSet) -> AVec<u16> {
++    let channels = set.channels();
++    let len = channels * (channels - 1) * PAIR_ABSTRACTION_GROUPS;
++    let mut result = std::iter::repeat(0).take(len).collect::<AVec<u16>>();
++    write_abstraction_from_counts(&PairCounts::from_packed(set), &mut result[..]);
++    result
++}
++
++// ---------------------------------------------------------------------------
++// Lemma M support: the per-channel abstraction blocks.
++// ---------------------------------------------------------------------------
++
++/// Width of one per-channel block: `PAIR_ABSTRACTION_GROUPS * (n - 1)`.
++pub const MAX_BLOCK: usize = PAIR_ABSTRACTION_GROUPS * (MAX_CHANNELS - 1);
++
++/// ZM-V3, Lemma M: `v_i(X)` for every channel `i`, *before* the across-channel
++/// sort that `write_abstraction_into` applies.
++///
++/// Row `i` holds the four `channel_pair_abstraction([i, j])` groups over
++/// `j != i`, each sorted **descending**, laid out with the group index in the
++/// low two bits:
++///
++/// ```text
++/// row[i][PAIR_ABSTRACTION_GROUPS * rank + group]
++/// ```
++///
++/// That layout is chosen so that complementing the cube -- which swaps the
++/// quadrants `(1,1) <-> (0,0)` and `(0,1) <-> (1,0)`, i.e. `group <-> group^3`,
++/// and does not touch the descending order within a group -- acts on a row as
++/// the index permutation `t |-> t ^ 3`, exactly as it does on the full
++/// abstraction vector (`index.rs`, `LowerInvert`). No recomputation is needed
++/// for the complement polarity.
++///
++/// **Invariant, relied on by the comparison kernels:** `rows[i][block..]` is
++/// zero for every `i`, and `rows[i]` is all zero for `i >= channels`.
++/// [`Self::from_counts`] establishes it (the array is zero-initialised and it
++/// writes exactly `..block` of the first `channels` rows) and nothing else
++/// writes `rows`. [`Self::row_dominated_by`] and
++/// [`Self::row_dominated_by_inverted`] compare the whole fixed-width row
++/// rather than `..block` precisely so that the trip count is a compile-time
++/// constant, which is only sound because the tail compares equal.
++#[derive(Clone, Copy, Debug)]
++pub struct ChannelBlocks {
++    channels: usize,
++    block: usize,
++    rows: [[u16; MAX_BLOCK]; MAX_CHANNELS],
++}
++
++impl ChannelBlocks {
++    pub fn channels(&self) -> usize {
++        self.channels
++    }
++
++    pub fn block_len(&self) -> usize {
++        self.block
++    }
++
++    #[inline]
++    pub fn row(&self, i: usize) -> &[u16] {
++        &self.rows[i][..self.block]
++    }
++
++    /// Only **two** of the four groups are ever sorted.
++    ///
++    /// Fix a channel `i` and write `p_j = zeta({i, j})`, `o_j = zeta({j})`,
++    /// `T = |X|`. By [`PairCounts::quadrants`] the four multisets over `j != i`
++    /// are
++    ///
++    /// ```text
++    /// group 0 = { p_j }                group 2 = { o_i - p_j }
++    /// group 1 = { o_j - p_j }          group 3 = { (T - o_i) - (o_j - p_j) }
++    /// ```
++    ///
++    /// so groups 2 and 3 are groups 0 and 1 reflected through a constant. `x
++    /// |-> c - x` is order-*reversing*, hence sorting group 2 descending is
++    /// sorting group 0 *ascending*: if `s0` is group 0 sorted descending then
++    /// group 2 descending is `c - s0[k - 1 - r]` at rank `r`, and likewise for
++    /// 3 from 1. The multiset determines the sorted sequence, so this is equal,
++    /// not merely equivalent (asserted by `blocks_match_sorted_reference`).
++    ///
++    /// That halves the sorting and the quadrant arithmetic, and -- more
++    /// important for codegen -- it makes the row fill a single sequential pass
++    /// with compile-time offsets instead of `4(n-1)` stores to data-dependent
++    /// indices. The previous version, four `sort_unstable_by` calls per
++    /// channel plus a scatter, was 887 ns of `from_packed`'s 1079 ns at n=9;
++    /// LLVM unrolled it into ~1200 instructions of stack-spill traffic.
++    pub fn from_counts(counts: &PairCounts) -> Self {
++        let channels = counts.channels();
++        let block = PAIR_ABSTRACTION_GROUPS * (channels - 1);
++        let mut rows = [[0u16; MAX_BLOCK]; MAX_CHANNELS];
++
++        let k = channels - 1;
++        let total = counts.total();
++        // One slot of slack: the gather below writes the `other == channel`
++        // entry too and then lets the next iteration overwrite it, which at
++        // `channel == channels - 1` means a write at index `k`.
++        let mut g0 = [0u16; MAX_CHANNELS];
++        let mut g1 = [0u16; MAX_CHANNELS];
++
++        for channel in 0..channels {
++            let ones_i = counts.ones(channel);
++            let pair_row = &counts.pair[channel][..channels];
++            let ones = &counts.ones[..channels];
++
++            // Branch-free gather: `t` only advances off the diagonal, so the
++            // `other == channel` entry is written and then overwritten rather
++            // than skipped by a `continue`. That keeps the loop a straight
++            // contiguous walk of two `u32` rows -- LLVM was otherwise
++            // specialising the `continue` into ~8 KB of unrolled spill traffic.
++            // The diagonal entry is harmless in its own right:
++            // `pair[i][i] == ones[i]`, so it computes `(ones_i, 0)`.
++            let mut t = 0usize;
++            for other in 0..channels {
++                let p = pair_row[other];
++                g0[t] = p as u16;
++                g1[t] = (ones[other] - p) as u16;
++                t += (other != channel) as usize;
++            }
++            debug_assert_eq!(t, k);
++
++            let (g0, g1) = (&mut g0[..k], &mut g1[..k]);
++            sort2_desc_u16(g0, g1);
++
++            // `ones_i` and `total - ones_i` are the constants groups 2 and 3
++            // reflect through; both are nonnegative (`total >= ones_i`), and
++            // every difference below is a quadrant count, hence nonnegative.
++            let c2 = ones_i as u16;
++            let c3 = (total - ones_i) as u16;
++            let row = &mut rows[channel];
++            for rank in 0..k {
++                let mirror = k - 1 - rank;
++                let out = &mut row[PAIR_ABSTRACTION_GROUPS * rank..][..PAIR_ABSTRACTION_GROUPS];
++                out[0] = g0[rank];
++                out[1] = g1[rank];
++                out[2] = c2 - g0[mirror];
++                out[3] = c3 - g1[mirror];
++            }
++        }
++
++        Self {
++            channels,
++            block,
++            rows,
++        }
++    }
++
++    pub fn from_packed(set: &PackedSet) -> Self {
++        Self::from_counts(&PairCounts::from_packed(set))
++    }
++
++    /// `v_i(A) <= v_j(B)` coordinatewise.
++    ///
++    /// Compared over the whole fixed `MAX_BLOCK` row rather than `..block`,
++    /// and branchlessly rather than with an early `return false`. Both are
++    /// deliberate:
++    ///
++    /// * the tail `block..MAX_BLOCK` is zero in every row (`rows` is
++    ///   zero-initialised and [`Self::from_counts`] writes exactly `..block`),
++    ///   so `0 <= 0` holds there and including it cannot change the answer --
++    ///   but it turns the trip count into a compile-time constant, which is
++    ///   what lets this vectorise into a handful of 8-lane `u16` compares;
++    /// * `gamma_has_matching` runs `n^2` of these and the rows are sorted
++    ///   descending, so the early exit almost always fires at `t == 0` on a
++    ///   *data-dependent, unpredictable* branch. Paying ~5 vector operations
++    ///   beats paying one mispredict.
++    #[inline]
++    pub fn row_dominated_by(&self, i: usize, other: &Self, j: usize) -> bool {
++        debug_assert_eq!(self.block, other.block);
++        let a = &self.rows[i];
++        let b = &other.rows[j];
++        let mut ok = true;
++        for t in 0..MAX_BLOCK {
++            ok &= a[t] <= b[t];
++        }
++        ok
++    }
++
++    /// `v_i(complement(A)) <= v_j(B)` coordinatewise, i.e.
++    /// `for all t: A.row(i)[t ^ 3] <= B.row(j)[t]`, equivalently
++    /// `for all t: A.row(i)[t] <= B.row(j)[t ^ 3]`.
++    ///
++    /// Same fixed-width branchless shape as [`Self::row_dominated_by`]; the
++    /// `t ^ 3` relabelling reverses each aligned group of four, and `MAX_BLOCK`
++    /// is a multiple of four, so the zero tail maps onto itself and stays
++    /// harmless.
++    #[inline]
++    pub fn row_dominated_by_inverted(&self, i: usize, other: &Self, j: usize) -> bool {
++        debug_assert_eq!(self.block, other.block);
++        let a = &self.rows[i];
++        let b = &other.rows[j];
++        let mut ok = true;
++        for c in (0..MAX_BLOCK).step_by(PAIR_ABSTRACTION_GROUPS) {
++            ok &= a[c] <= b[c + 3];
++            ok &= a[c + 1] <= b[c + 2];
++            ok &= a[c + 2] <= b[c + 1];
++            ok &= a[c + 3] <= b[c];
++        }
++        ok
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::output_set::OutputSet;
++
++    struct Xs(u64);
++    impl Xs {
++        fn next(&mut self) -> u64 {
++            let mut x = self.0;
++            x ^= x << 13;
++            x ^= x >> 7;
++            x ^= x << 17;
++            self.0 = x;
++            x
++        }
++    }
++
++    /// Random reachable-ish corpora: random comparator chains from the full
++    /// cube, keeping every intermediate set (the population `prune.rs` and the
++    /// on-line index actually see).
++    fn corpus(channels: usize, nets: usize, seed: u64) -> Vec<OutputSet<Vec<bool>>> {
++        let mut rng = Xs(seed);
++        let mut out = vec![];
++        for _ in 0..nets {
++            let mut set = OutputSet::all_values(channels);
++            out.push(set.clone());
++            for _ in 0..(channels * 3) {
++                let i = (rng.next() as usize) % channels;
++                let j = (rng.next() as usize) % channels;
++                if i == j {
++                    continue;
++                }
++                let hi = i.max(j);
++                let lo = i.min(j);
++                if set.apply_comparator([hi, lo]) {
++                    out.push(set.clone());
++                }
++            }
++        }
++        out
++    }
++
++    /// Upstream `channel_pair_abstraction`, kept here as the oracle.
++    fn oracle_pair(set: &OutputSet<Vec<bool>>, i: usize, j: usize) -> [usize; 4] {
++        set.channel_pair_abstraction([i, j])
++    }
++
++    #[test]
++    fn quadrants_match_channel_pair_abstraction() {
++        for channels in 3..=super::MAX_CHANNELS {
++            for set in corpus(channels, 6, 0x1234_5678 + channels as u64) {
++                let packed = PackedSet::from_bitmap(set.as_ref());
++                let counts = PairCounts::from_packed(&packed);
++                assert_eq!(counts.total() as usize, set.len());
++                for i in 0..channels {
++                    for j in 0..channels {
++                        if i == j {
++                            continue;
++                        }
++                        let want = oracle_pair(&set, i, j);
++                        let got = counts.quadrants(i, j);
++                        assert_eq!(
++                            [
++                                got[0] as usize,
++                                got[1] as usize,
++                                got[2] as usize,
++                                got[3] as usize
++                            ],
++                            want,
++                            "channels={} pair=({},{})",
++                            channels,
++                            i,
++                            j
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn abstraction_bit_identical() {
++        for channels in 3..=super::MAX_CHANNELS {
++            for set in corpus(channels, 6, 0xdead_beef + channels as u64) {
++                let packed = PackedSet::from_bitmap(set.as_ref());
++                let want = set.abstraction_reference();
++                let got = abstraction_from_packed(&packed);
++                assert_eq!(&want[..], &got[..], "channels={}", channels);
++                assert_eq!(&set.abstraction()[..], &got[..], "channels={}", channels);
++            }
++        }
++    }
++
++    /// The packed-input entry points must agree with the `&self` ones for the
++    /// set they mirror, including at the `dims` boundaries (0, past the end).
++    #[test]
++    fn packed_entry_points_match_self_methods() {
++        for channels in 3..=super::MAX_CHANNELS {
++            for set in corpus(channels, 3, 0x0bad_c0de + channels as u64) {
++                let packed = PackedSet::from_bitmap(set.as_ref());
++                assert_eq!(
++                    &OutputSet::abstraction_from_packed(&packed)[..],
++                    &set.abstraction()[..],
++                    "channels={}",
++                    channels
++                );
++
++                let full_len = set.abstraction_len();
++                for &dims in &[0, 1, 7, full_len / 2, full_len, full_len + 5] {
++                    assert_eq!(
++                        &OutputSet::abstraction_prefix_from_packed(&packed, dims)[..],
++                        &set.abstraction_prefix(dims)[..],
++                        "channels={} dims={}",
++                        channels,
++                        dims
++                    );
++                }
++            }
++        }
++    }
++
++    /// The extreme reachable sets: the full cube, a fully sorted set, and the
++    /// images of both under `invert` / `swap_channels` /
++    /// `prune_extremal_channel_into`. (A single-vector set is *not* reachable:
++    /// comparators preserve the all-zeros and all-ones vectors, so every
++    /// genuine output set has at least two elements.)
++    #[test]
++    fn pathological_sets_bit_identical() {
++        for channels in 3..=super::MAX_CHANNELS {
++            let mut sets = vec![];
++
++            let cube = OutputSet::all_values(channels);
++            sets.push(cube.clone());
++
++            // Fully sorted: bubble sort, which is a sorting network.
++            let mut sorted = cube.clone();
++            for i in 0..channels {
++                for j in 0..channels.saturating_sub(1 + i) {
++                    sorted.apply_comparator([j + 1, j]);
++                }
++            }
++            assert!(sorted.is_sorted(), "channels={}", channels);
++            sets.push(sorted.clone());
++
++            // Inverted / permuted images of both.
++            for base in [&cube, &sorted].iter() {
++                let mut inv = (*base).clone();
++                inv.invert();
++                sets.push(inv);
++                let mut swapped = (*base).clone();
++                swapped.swap_channels([0, channels - 1]);
++                sets.push(swapped);
++            }
++
++            // Sets obtained by pruning an extremal channel off a
++            // `channels + 1`-wide partially sorted set -- the only other
++            // set-producing operation the search uses. `prune_extremal_channel_into`
++            // asserts the channel really is extremal, so every extremal
++            // `(polarity, channel)` is enumerated rather than guessed.
++            if channels + 1 <= super::MAX_CHANNELS {
++                let big_channels = channels + 1;
++                let mut big = OutputSet::all_values(big_channels);
++                big.apply_comparator([1, 0]);
++                big.apply_comparator([2, 1]);
++                for &polarity in &[false, true] {
++                    for channel in 0..big_channels {
++                        if !big.channel_is_extremal(polarity, channel) {
++                            continue;
++                        }
++                        let mut small = OutputSet::all_values(channels);
++                        big.prune_extremal_channel_into(polarity, channel, small.as_mut());
++                        sets.push(small);
++                    }
++                }
++            }
++
++            for set in sets {
++                let packed = PackedSet::from_bitmap(set.as_ref());
++                assert_eq!(
++                    &set.abstraction_reference()[..],
++                    &abstraction_from_packed(&packed)[..],
++                    "channels={}",
++                    channels
++                );
++                assert_eq!(
++                    &set.abstraction_reference()[..],
++                    &set.abstraction()[..],
++                    "channels={}",
++                    channels
++                );
++                let counts = PairCounts::from_packed(&packed);
++                for i in 0..channels {
++                    for j in 0..channels {
++                        if i == j {
++                            continue;
++                        }
++                        let want = oracle_pair(&set, i, j);
++                        let got = counts.quadrants(i, j);
++                        assert_eq!(
++                            [
++                                got[0] as usize,
++                                got[1] as usize,
++                                got[2] as usize,
++                                got[3] as usize
++                            ],
++                            want,
++                            "channels={} pair=({},{})",
++                            channels,
++                            i,
++                            j
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    /// The pre-optimisation `ChannelBlocks::from_counts`: one
++    /// `sort_unstable_by` per `(channel, group)` and a separate scatter. Kept
++    /// as the oracle for the SWAR rank sort that replaced it.
++    fn blocks_rows_by_sorting(counts: &PairCounts) -> Vec<Vec<u16>> {
++        let channels = counts.channels();
++        let mut out = vec![vec![0u16; PAIR_ABSTRACTION_GROUPS * (channels - 1)]; channels];
++        let mut groups = [[0u16; MAX_CHANNELS - 1]; PAIR_ABSTRACTION_GROUPS];
++
++        for channel in 0..channels {
++            let mut k = 0usize;
++            for other in 0..channels {
++                if other == channel {
++                    continue;
++                }
++                let q = counts.quadrants(channel, other);
++                for g in 0..PAIR_ABSTRACTION_GROUPS {
++                    groups[g][k] = q[g] as u16;
++                }
++                k += 1;
++            }
++            for g in 0..PAIR_ABSTRACTION_GROUPS {
++                let slice = &mut groups[g][..k];
++                slice.sort_unstable_by(|a, b| b.cmp(a));
++                for (rank, &v) in slice.iter().enumerate() {
++                    out[channel][PAIR_ABSTRACTION_GROUPS * rank + g] = v;
++                }
++            }
++        }
++
++        out
++    }
++
++    #[test]
++    fn blocks_match_sorted_reference() {
++        for channels in 3..=super::MAX_CHANNELS {
++            for set in corpus(channels, 6, 0x5ea1_0000 + channels as u64) {
++                let packed = PackedSet::from_bitmap(set.as_ref());
++                let counts = PairCounts::from_packed(&packed);
++                let blocks = ChannelBlocks::from_counts(&counts);
++                let want = blocks_rows_by_sorting(&counts);
++                for i in 0..channels {
++                    assert_eq!(blocks.row(i), &want[i][..], "channels={} i={}", channels, i);
++                }
++            }
++        }
++    }
++
++    /// `row_dominated_by` / `row_dominated_by_inverted` compare the full
++    /// `MAX_BLOCK`-wide row instead of `..block`, which is only equivalent
++    /// because the tail is zero in every row. Pin both halves of that: the
++    /// invariant itself, and the agreement with the `..block` definition.
++    #[test]
++    fn row_domination_matches_block_width_definition() {
++        for channels in 3..=super::MAX_CHANNELS {
++            let sets = corpus(channels, 3, 0x7e51_0000 + channels as u64);
++            let blocks = sets
++                .iter()
++                .map(|set| ChannelBlocks::from_packed(&PackedSet::from_bitmap(set.as_ref())))
++                .collect::<Vec<_>>();
++
++            for b in blocks.iter() {
++                for i in 0..MAX_CHANNELS {
++                    let live = if i < channels { b.block_len() } else { 0 };
++                    for t in live..MAX_BLOCK {
++                        assert_eq!(b.rows[i][t], 0, "channels={} i={} t={}", channels, i, t);
++                    }
++                }
++            }
++
++            for a in blocks.iter() {
++                for b in blocks.iter() {
++                    for i in 0..channels {
++                        for j in 0..channels {
++                            let block = a.block_len();
++                            let want = (0..block).all(|t| a.row(i)[t] <= b.row(j)[t]);
++                            let want_inv = (0..block).all(|t| a.row(i)[t] <= b.row(j)[t ^ 3]);
++                            assert_eq!(
++                                a.row_dominated_by(i, b, j),
++                                want,
++                                "channels={} i={} j={}",
++                                channels,
++                                i,
++                                j
++                            );
++                            assert_eq!(
++                                a.row_dominated_by_inverted(i, b, j),
++                                want_inv,
++                                "channels={} i={} j={} (inverted)",
++                                channels,
++                                i,
++                                j
++                            );
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn blocks_complement_is_group_xor3() {
++        for channels in 3..=super::MAX_CHANNELS {
++            for set in corpus(channels, 4, 0xfeed_face + channels as u64) {
++                let packed = PackedSet::from_bitmap(set.as_ref());
++                let blocks = ChannelBlocks::from_packed(&packed);
++                let mut inv = packed;
++                inv.invert();
++                let inv_blocks = ChannelBlocks::from_packed(&inv);
++                for i in 0..channels {
++                    for t in 0..blocks.block_len() {
++                        assert_eq!(
++                            inv_blocks.row(i)[t],
++                            blocks.row(i)[t ^ 3],
++                            "channels={} i={} t={}",
++                            channels,
++                            i,
++                            t
++                        );
++                    }
++                }
++            }
++        }
++    }
++}
+diff -ruN a/src/output_set.rs b/src/output_set.rs
+--- a/src/output_set.rs	2026-08-18 04:42:57
++++ b/src/output_set.rs	2026-08-18 04:37:03
+@@ -52,7 +52,13 @@
+ pub type AVec<T> = ArrayVec<[T; MAX_ABSTRACTION_CAP]>;
+ 
+ pub mod index;
++/// ZM-V3, Lemma M: the bipartite-matching (Hall) filter over the per-channel
++/// abstraction blocks that `zeta` computes.
++pub mod matching;
+ pub mod packed;
++/// ZM-V3, Lemma Z: the rank-<=2 superset-zeta truncation behind the
++/// abstraction, and the per-channel blocks Lemma M consumes.
++pub mod zeta;
+ 
+ mod canon;
+ mod subsume;
+@@ -126,6 +132,27 @@
+         result.unpack_from_slice(packed);
+         result
+     }
++
++    /// ZM-V3: [`OutputSet::abstraction`] for a set a caller already holds in
++    /// packed form, without expanding it back into a dense `[bool]` bitmap.
++    ///
++    /// Equal to `set.abstraction()` for the `OutputSet` that `packed` mirrors.
++    pub fn abstraction_from_packed(packed: &packed::PackedSet) -> AVec<u16> {
++        zeta::abstraction_from_packed(packed)
++    }
++
++    /// ZM-V3: [`OutputSet::abstraction_prefix`] for a set a caller already
++    /// holds in packed form, without expanding it back into a dense `[bool]`
++    /// bitmap.
++    ///
++    /// Equal to `set.abstraction_prefix(dims)` for the `OutputSet` that
++    /// `packed` mirrors.
++    pub fn abstraction_prefix_from_packed(packed: &packed::PackedSet, dims: usize) -> AVec<u16> {
++        let mut full = zeta::abstraction_from_packed(packed);
++        let dims = dims.min(full.len());
++        full.truncate(dims);
++        full
++    }
+ }
+ 
+ impl<Bitmap> OutputSet<Bitmap>
+@@ -476,7 +503,15 @@
+         OutputSet::abstraction_len_for_channels(self.channels())
+     }
+ 
+-    pub fn write_abstraction_into(&self, abstraction: &mut [u16]) {
++    /// ZM-V3: the pre-ZM upstream route to the abstraction vector, computing
++    /// `channel_pair_abstraction` once per *ordered* channel pair over the
++    /// dense `[bool]` bitmap.
++    ///
++    /// Retained verbatim as the differential oracle for
++    /// [`Self::write_abstraction_into`]'s Lemma Z route (see
++    /// `output_set::zeta`) and used by tests and `bin/zeta_diff` only; no
++    /// production call site should use it.
++    pub fn write_abstraction_into_reference(&self, abstraction: &mut [u16]) {
+         assert_eq!(abstraction.len(), self.abstraction_len());
+ 
+         for channel in 0..self.channels() {
+@@ -519,6 +554,29 @@
+                 }
+             }
+         }
++    }
++
++    /// ZM-V3: [`Self::abstraction`] via the pre-ZM upstream route.
++    ///
++    /// Retained as the differential oracle for the Lemma Z route and used by
++    /// tests and `bin/zeta_diff` only; no production call site should use it.
++    pub fn abstraction_reference(&self) -> AVec<u16> {
++        let mut result = repeat(0).take(self.abstraction_len()).collect::<AVec<_>>();
++
++        self.write_abstraction_into_reference(&mut result[..]);
++
++        result
++    }
++
++    /// ZM-V3, Lemma Z: the abstraction vector from the rank-<=2 truncation of
++    /// the superset-zeta transform, computed in one contiguous masked-popcount
++    /// pass over the packed bitmap instead of `n(n-1)` strided gathers over the
++    /// dense one. Bit-identical to [`Self::write_abstraction_into_reference`];
++    /// see `output_set::zeta`.
++    pub fn write_abstraction_into(&self, abstraction: &mut [u16]) {
++        assert_eq!(abstraction.len(), self.abstraction_len());
++        let packed = packed::PackedSet::from_bitmap(self.as_ref());
++        zeta::write_abstraction_from_counts(&zeta::PairCounts::from_packed(&packed), abstraction);
+     }
+ 
+     pub fn abstraction(&self) -> AVec<u16> {
