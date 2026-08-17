@@ -1,0 +1,3486 @@
+# Tier 1: packed-u64 bit-packing + NEON SIMD, a permutation-invariant
+# weight-histogram thermometer pre-filter, and a 64-bit feature-vector
+# signature pre-filter for OutputSetIndex.
+#
+# Applies on top of, in order:
+#   tools/patches/sortnetopt-macos-proc.patch
+#   tools/patches/sortnetopt-instrumentation-v3.patch
+#   tools/patches/sortnetopt-online-subsumption-v3.patch
+#   tools/patches/sortnetopt-perf-v3.patch
+# against the pinned upstream commit 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+# Apply with:  patch -V none -p1 -i <this file>
+#
+# The Isabelle/HOL-extracted checker (checker/) is not touched.
+#
+# Three changes, all exact (they only ever skip work that provably cannot
+# succeed; no answer changes):
+#
+#  1. src/output_set/packed.rs (new) - PackedSet, a bit-packed u64 mirror of
+#     OutputSet's dense byte-per-Boolean-vector bitmap (bit i in word i>>6,
+#     bit position i&63; the same layout as pack_into_slice on little-endian).
+#     Provides subsumes_unpermuted (explicit aarch64 NEON with a portable
+#     scalar fallback), swap_channels (in-word delta swap / word-pair blend /
+#     word permutation, by case), invert (reverse_bits), weight_histogram and
+#     low_channels_channel_abstraction (masked popcounts driven by a cached
+#     AbstractionTables). src/output_set/subsume.rs - the exact permuted-
+#     subsumption solver, ~78 % of active thread time under M2b - now holds
+#     PackedSet instead of OutputSet<Vec<bool>>, so its leaf test, its
+#     swap_channels and its per-node abstraction all run on u64 words, and it
+#     performs no heap allocation at all. src/output_set/index.rs no longer
+#     unpacks a candidate to 2^k bools before testing it: it goes straight
+#     from the stored packed bytes to a PackedSet by memcpy.
+#
+#  2. The weight-histogram thermometer. A channel permutation permutes cube
+#     coordinates and so preserves Hamming weight; complementation maps weight
+#     w to k-w. Hence "exists pi: pi(A) subset-of B" requires
+#     hist_A[w] <= hist_B[w] for all w, and "exists pi: pi(complement(A))
+#     subset-of B" requires hist_A[k-w] <= hist_B[w] for all w. Both polarities
+#     are tested separately and each gates only its own branch of
+#     LowerInvert::test_precise, so the filter is one-sided in the safe
+#     direction. Applied everywhere subsumes_permuted is reached: the on-line
+#     index, prune and gen-proof.
+#
+#  3. A 64-bit invariant signature per stored index entry (E-prover/SatELite
+#     lineage): 5 monotone thermometer bits per Hamming weight, bit j of slot w
+#     set iff hist[w] >= ceil(binomial(k,w)*(j+1)/6). Monotone thresholds give
+#     the containment property hist_A <= hist_B implies sig_A & !sig_B == 0, so
+#     sig_A & !sig_B != 0 is a sound one-instruction reject, evaluated before
+#     the abstraction test and before any unpacking. Tree nodes carry the AND
+#     and the OR of their subtree's signatures (Augmentation::sig_and/sig_or),
+#     which reject whole subtrees in the lookup and eviction directions
+#     respectively.
+#
+# Env gates (all default ON, off only for "0"/"false"/"no"):
+#   SORTNETOPT_TIER1_SIG    - the signature pre-filter (change 3)
+#   SORTNETOPT_TIER1_HIST   - the histogram pre-filter (change 2)
+#   SORTNETOPT_FILTER_AUDIT - run the exact test on every pair a filter
+#                             rejected and panic on disagreement (validation)
+#
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/bin/sortnetopt.rs source/src/bin/sortnetopt.rs
+--- a/src/bin/sortnetopt.rs	2026-08-17 16:29:25
++++ b/src/bin/sortnetopt.rs	2026-08-17 15:47:38
+@@ -10,7 +10,7 @@
+     fix::fix_proof,
+     logging,
+     output_set::{
+-        index::{Lower, OutputSetIndex},
++        index::{Lower, OutputSetIndex, SubsumeFilter},
+         OutputSet, MAX_CHANNELS,
+     },
+     proof::gen_proof,
+@@ -143,7 +143,8 @@
+ 
+     let mut layer = OutputSetIndex::<Lower>::new(opt.channels);
+ 
+-    layer.insert_with_abstraction(initial.as_ref(), &abstraction, 0);
++    let initial_filter = SubsumeFilter::from_output_set(initial.as_ref());
++    layer.insert_with_abstraction(initial.as_ref(), &abstraction, &initial_filter, 0);
+ 
+     let mut layer_count = 0;
+ 
+@@ -152,7 +153,7 @@
+ 
+         let mut next_output_sets = HashSet::default();
+ 
+-        layer.for_each(|output_set: OutputSet<&[bool]>, _abstraction, _value| {
++        layer.for_each(|output_set: OutputSet<&[bool]>, _abstraction, _sig, _value| {
+             for i in 0..opt.channels {
+                 for j in 0..i {
+                     let mut next_output_set = output_set.to_owned();
+@@ -165,7 +166,13 @@
+ 
+             for next_output_set in next_output_sets.drain() {
+                 let abstraction = next_output_set.abstraction();
+-                next_layer.insert_with_abstraction(next_output_set.as_ref(), &abstraction[..], 0);
++                let filter = SubsumeFilter::from_output_set(next_output_set.as_ref());
++                next_layer.insert_with_abstraction(
++                    next_output_set.as_ref(),
++                    &abstraction[..],
++                    &filter,
++                    0,
++                );
+             }
+         });
+ 
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/instrument.rs source/src/instrument.rs
+--- a/src/instrument.rs	2026-08-17 16:29:25
++++ b/src/instrument.rs	2026-08-17 16:17:24
+@@ -103,6 +103,48 @@
+ /// Nanoseconds summed over all threads, computing `OutputSet::len` popcounts.
+ pub static IDX_NS_POPCOUNT: AtomicU64 = AtomicU64::new(0);
+ 
++// --- TIER1: Subsume / AbstractionTables diagnostics --------------------------
++
++/// `Subsume::new` entries -- one per top-level `subsumes_permuted_packed`
++/// call (recursive `Subsume::search` calls reuse the same `Subsume`, so they
++/// do not add to this).
++pub static SUBSUME_CALLS: AtomicU64 = AtomicU64::new(0);
++/// `Subsume::filter_matching` invocations, summed across every `Subsume`
++/// instance's lifetime and flushed once (via `Drop`) per top-level call, to
++/// keep the hot path a plain `usize` increment rather than an atomic one.
++pub static SUBSUME_FILTER_MATCHING: AtomicU64 = AtomicU64::new(0);
++/// `AbstractionTables::new` calls -- the (potentially expensive) table build
++/// `Subsume::filter_matching` amortizes across calls sharing the same
++/// `(channels, fixed_channels)`. Compared against `SUBSUME_CALLS` /
++/// `SUBSUME_FILTER_MATCHING`, this shows how well that amortization is
++/// actually working across `Subsume` instances (see the M2c cache).
++pub static SUBSUME_TABLE_BUILDS: AtomicU64 = AtomicU64::new(0);
++/// Iterations of the inner `loop` in `Subsume::search` (one per node of the
++/// backtracking search tree, summed and flushed the same way as
++/// `SUBSUME_FILTER_MATCHING`).
++pub static SUBSUME_NODES: AtomicU64 = AtomicU64::new(0);
++
++// --- TIER1: signature / histogram pre-filters --------------------------------
++
++/// Per-entry candidates that reached the TIER1 filter chain (i.e. passed the
++/// coarse `does_improve`/`would_be_updated` check).
++pub static FILTER_CANDIDATES: AtomicU64 = AtomicU64::new(0);
++/// ... of which were rejected by the per-entry thermometer-signature filter.
++pub static FILTER_SIG_REJECTS: AtomicU64 = AtomicU64::new(0);
++/// k-d subtrees whose node-level signature reject (`sig_and`/`sig_or`
++/// bracket) proved no entry inside could relate to the query.
++pub static FILTER_SIG_NODE_REJECTS: AtomicU64 = AtomicU64::new(0);
++/// Candidates that passed the signature filter but were rejected by the
++/// exact weight-histogram thermometer comparison.
++pub static FILTER_HIST_REJECTS: AtomicU64 = AtomicU64::new(0);
++/// Calls to `subsumes_permuted_packed`, the exact (expensive) arbiter.
++pub static FILTER_EXACT_CALLS: AtomicU64 = AtomicU64::new(0);
++/// `SORTNETOPT_FILTER_AUDIT` violations: the exact arbiter accepted a pair
++/// that a signature or histogram filter rejected. Must always be 0; a
++/// nonzero value is a soundness bug in the filters and the process panics
++/// before this counter can be reported.
++pub static FILTER_AUDIT_VIOLATIONS: AtomicU64 = AtomicU64::new(0);
++
+ #[inline]
+ pub fn add_ns(counter: &AtomicU64, start: Instant) {
+     counter.fetch_add(start.elapsed().as_nanos() as u64, Relaxed);
+@@ -389,6 +431,33 @@
+         (
+             "idx_evict_buckets_skipped",
+             IDX_EVICT_BUCKETS_SKIPPED.load(Relaxed),
++        ),
++        ("subsume_calls", SUBSUME_CALLS.load(Relaxed)),
++        (
++            "subsume_filter_matching",
++            SUBSUME_FILTER_MATCHING.load(Relaxed),
++        ),
++        ("subsume_table_builds", SUBSUME_TABLE_BUILDS.load(Relaxed)),
++        ("subsume_nodes", SUBSUME_NODES.load(Relaxed)),
++        (
++            "tier1_sig_filter",
++            crate::output_set::index::sig_filter_enabled() as u64,
++        ),
++        (
++            "tier1_hist_filter",
++            crate::output_set::index::hist_filter_enabled() as u64,
++        ),
++        ("filter_candidates", FILTER_CANDIDATES.load(Relaxed)),
++        ("filter_sig_rejects", FILTER_SIG_REJECTS.load(Relaxed)),
++        (
++            "filter_sig_node_rejects",
++            FILTER_SIG_NODE_REJECTS.load(Relaxed),
++        ),
++        ("filter_hist_rejects", FILTER_HIST_REJECTS.load(Relaxed)),
++        ("filter_exact_calls", FILTER_EXACT_CALLS.load(Relaxed)),
++        (
++            "filter_audit_violations",
++            FILTER_AUDIT_VIOLATIONS.load(Relaxed),
+         ),
+     ]
+ }
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/output_set/index/tree.rs source/src/output_set/index/tree.rs
+--- a/src/output_set/index/tree.rs	2026-08-17 16:29:25
++++ b/src/output_set/index/tree.rs	2026-08-17 15:18:30
+@@ -8,6 +8,7 @@
+     packed_dim: usize,
+     packed: Vec<u8>,
+     values: Vec<u8>,
++    sigs: Vec<u64>,
+     ranges: Vec<[u16; 2]>,
+     nodes: Vec<Node>,
+ }
+@@ -30,6 +31,8 @@
+ pub struct Augmentation {
+     pub size: usize,
+     pub value_range: [u8; 2],
++    pub sig_and: u64,
++    pub sig_or: u64,
+ }
+ 
+ #[derive(Copy, Clone)]
+@@ -48,30 +51,52 @@
+ }
+ 
+ impl Augmentation {
+-    pub fn new(_point_dim: usize, _points: &[u16], values: &[u8]) -> Self {
++    pub fn new(_point_dim: usize, _points: &[u16], values: &[u8], sigs: &[u64]) -> Self {
+         let mut min_value = values[0];
+         let mut max_value = values[0];
+         for &value in &values[1..] {
+             min_value = min_value.min(value);
+             max_value = max_value.max(value);
+         }
++        let mut sig_and = sigs[0];
++        let mut sig_or = sigs[0];
++        for &sig in &sigs[1..] {
++            sig_and &= sig;
++            sig_or |= sig;
++        }
+         Augmentation {
+             size: values.len(),
+             value_range: [min_value, max_value],
++            sig_and,
++            sig_or,
+         }
+     }
+ 
+-    pub fn update_leaf(&mut self, _point_dim: usize, _points: &[u16], values: &[u8]) -> bool {
++    pub fn update_leaf(
++        &mut self,
++        _point_dim: usize,
++        _points: &[u16],
++        values: &[u8],
++        sigs: &[u64],
++    ) -> bool {
+         let mut min_value = values[0];
+         let mut max_value = values[0];
+         for &value in &values[1..] {
+             min_value = min_value.min(value);
+             max_value = max_value.max(value);
+         }
++        let mut sig_and = sigs[0];
++        let mut sig_or = sigs[0];
++        for &sig in &sigs[1..] {
++            sig_and &= sig;
++            sig_or |= sig;
++        }
+ 
+         let new_augmentation = Augmentation {
+             size: values.len(),
+             value_range: [min_value, max_value],
++            sig_and,
++            sig_or,
+         };
+ 
+         let updated = new_augmentation != *self;
+@@ -86,11 +111,18 @@
+         let value_range_max = children[0].value_range[1].max(children[1].value_range[1]);
+         let value_range = [value_range_min, value_range_max];
+         let size = children[0].size + children[1].size;
++        let sig_and = children[0].sig_and & children[1].sig_and;
++        let sig_or = children[0].sig_or | children[1].sig_or;
+ 
+-        let updated = (self.value_range != value_range) | (self.size != size);
++        let updated = (self.value_range != value_range)
++            | (self.size != size)
++            | (self.sig_and != sig_and)
++            | (self.sig_or != sig_or);
+ 
+         self.value_range = value_range;
+         self.size = size;
++        self.sig_and = sig_and;
++        self.sig_or = sig_or;
+ 
+         updated
+     }
+@@ -103,6 +135,7 @@
+         packed_dim: usize,
+         packed: Vec<u8>,
+         values: Vec<u8>,
++        sigs: Vec<u64>,
+     ) -> Self {
+         assert_eq!(
+             values.len() * point_dim,
+@@ -116,6 +149,12 @@
+             "number of points != number of packed values"
+         );
+ 
++        assert_eq!(
++            sigs.len(),
++            values.len(),
++            "number of sigs != number of values"
++        );
++
+         let (nodes, mut ranges);
+ 
+         if values.is_empty() {
+@@ -123,7 +162,7 @@
+             ranges = vec![];
+         } else {
+             nodes = vec![Node {
+-                augmentation: Augmentation::new(point_dim, &points, &values),
++                augmentation: Augmentation::new(point_dim, &points, &values, &sigs),
+                 links: Links::Leaf {
+                     values: 0..values.len(),
+                 },
+@@ -142,6 +181,7 @@
+             packed_dim,
+             packed,
+             values,
++            sigs,
+             ranges,
+             nodes,
+         };
+@@ -153,6 +193,7 @@
+         result.points.shrink_to_fit();
+         result.packed.shrink_to_fit();
+         result.values.shrink_to_fit();
++        result.sigs.shrink_to_fit();
+ 
+         if !result.values.is_empty() {
+             result.build_tree(0);
+@@ -178,6 +219,7 @@
+         self.points.capacity() * 2
+             + self.packed.capacity()
+             + self.values.capacity()
++            + self.sigs.capacity() * 8
+             + self.ranges.capacity() * 4
+             + self.nodes.capacity() * std::mem::size_of::<Node>()
+     }
+@@ -188,6 +230,7 @@
+         self.points.len() * 2
+             + self.packed.len()
+             + self.values.len()
++            + self.sigs.len() * 8
+             + self.ranges.len() * 4
+             + self.nodes.len() * std::mem::size_of::<Node>()
+     }
+@@ -260,6 +303,7 @@
+                 self.point_dim,
+                 &self.points[values.start * self.point_dim..values.end * self.point_dim],
+                 &self.values[values.clone()],
++                &self.sigs[values.clone()],
+             ),
+             links: Links::Leaf { values },
+             parent: parent_id,
+@@ -313,6 +357,7 @@
+         }
+ 
+         self.values.swap(left, right);
++        self.sigs.swap(left, right);
+     }
+ 
+     fn move_node_ranges(&mut self, dst: usize, src: usize) {
+@@ -492,6 +537,7 @@
+                     self.point_dim,
+                     &self.points[values.start * self.point_dim..values.end * self.point_dim],
+                     &self.values[values.clone()],
++                    &self.sigs[values.clone()],
+                 ),
+             };
+ 
+@@ -536,7 +582,7 @@
+     ) -> S
+     where
+         N: FnMut(&mut S, &Augmentation, &[[u16; 2]]) -> bool,
+-        A: FnMut(&mut S, &[u16], &[u8], u8) -> bool,
++        A: FnMut(&mut S, &[u16], &[u8], u64, u8) -> bool,
+     {
+         let mut state = self.traversal_root();
+ 
+@@ -561,6 +607,7 @@
+                         &mut user_state,
+                         &self.points[index * self.point_dim..][..self.point_dim],
+                         &self.packed[index * self.packed_dim..][..self.packed_dim],
++                        self.sigs[index],
+                         self.values[index],
+                     );
+ 
+@@ -583,7 +630,7 @@
+     ) -> S
+     where
+         N: FnMut(&mut S, &Augmentation, &[[u16; 2]]) -> bool,
+-        A: FnMut(&mut S, &[u16], &[u8], &mut u8) -> TraversalMut,
++        A: FnMut(&mut S, &[u16], &[u8], u64, &mut u8) -> TraversalMut,
+     {
+         let mut state = self.traversal_root();
+ 
+@@ -609,6 +656,7 @@
+                         &mut user_state,
+                         &self.points[index * self.point_dim..][..self.point_dim],
+                         &self.packed[index * self.packed_dim..][..self.packed_dim],
++                        self.sigs[index],
+                         &mut self.values[index],
+                     );
+ 
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/output_set/index.rs source/src/output_set/index.rs
+--- a/src/output_set/index.rs	2026-08-17 16:29:25
++++ b/src/output_set/index.rs	2026-08-17 16:18:34
+@@ -1,11 +1,18 @@
+-use std::{cmp::Reverse, iter::repeat, mem::replace};
++use std::{cmp::Reverse, iter::repeat, mem::replace, sync::OnceLock};
+ 
+-use super::{BVec, CVec, OutputSet, PAIR_ABSTRACTION_GROUPS};
++use super::{
++    packed, packed::PackedSet, subsumes_permuted_packed, BVec, CVec, OutputSet, WVec,
++    PAIR_ABSTRACTION_GROUPS,
++};
+ 
++use crate::instrument;
++
+ mod tree;
+ 
+-use tree::{Augmentation, TraversalMut, Tree};
++use tree::{TraversalMut, Tree};
+ 
++pub use tree::Augmentation;
++
+ pub enum Lower {}
+ pub enum LowerInvert {}
+ 
+@@ -13,9 +20,142 @@
+ 
+ const TREE_THRESHOLD: usize = 32;
+ 
++/// TIER1: everything a lookup/insert query needs for the
++/// permutation-invariant pre-filters (weight-histogram thermometer signature
++/// and exact histogram comparison), computed once per query rather than once
++/// per candidate.
++#[derive(Clone)]
++pub struct SubsumeFilter {
++    pub packed: PackedSet,
++    pub hist: WVec<u32>,
++    pub hist_rev: WVec<u32>,
++    pub sig: u64,
++    pub sig_rev: u64,
++}
++
++impl SubsumeFilter {
++    pub fn from_packed(packed: PackedSet) -> Self {
++        let channels = packed.channels();
++        let hist = packed.weight_histogram();
++        let hist_rev = packed::reverse_histogram(&hist);
++        let sig = packed::histogram_signature(channels, &hist);
++        let sig_rev = packed::histogram_signature(channels, &hist_rev);
++        Self {
++            packed,
++            hist,
++            hist_rev,
++            sig,
++            sig_rev,
++        }
++    }
++
++    pub fn from_output_set(set: OutputSet<&[bool]>) -> Self {
++        Self::from_packed(PackedSet::from_bitmap(set))
++    }
++
++    pub fn from_packed_bytes(channels: usize, bytes: &[u8]) -> Self {
++        Self::from_packed(PackedSet::from_packed_bytes(channels, bytes))
++    }
++}
++
++fn env_flag(name: &str) -> bool {
++    match std::env::var(name) {
++        Ok(val) => {
++            let val = val.trim().to_ascii_lowercase();
++            val == "1" || val == "true" || val == "yes"
++        }
++        Err(_) => false,
++    }
++}
++
++static AUDIT: OnceLock<bool> = OnceLock::new();
++
++/// TIER1: whether `SORTNETOPT_FILTER_AUDIT` is enabled, read from the
++/// environment exactly once (subsequent calls hit the cached `OnceLock`).
++///
++/// When enabled, every `OutputSetIndex` traversal in this module:
++///
++/// * disables node-level signature rejection (`test_signature_node` /
++///   `test_signature_node_update`) entirely, so every entry in every subtree
++///   is visited and individually audited. This is still sound as an audit
++///   strategy: `Augmentation::sig_and` is the bitwise AND (a subset) of every
++///   stored entry's signature in the subtree and `sig_or` the bitwise OR (a
++///   superset), so `test_signature_node`/`test_signature_node_update`
++///   rejecting a node is implied by *every* entry in that subtree
++///   individually failing the corresponding per-entry `test_signature` /
++///   `test_signature_update`. Per-entry soundness therefore implies node
++///   soundness, so skipping the node-level check in audit mode only costs
++///   time (it revisits entries a sound node reject would have skipped) and
++///   never hides a filter bug that per-entry auditing would have caught.
++/// * whenever a per-entry signature or histogram filter would have rejected
++///   a candidate, does not skip it: it instead runs the exact arbiter
++///   (`Dir::test_precise_packed` / `Dir::test_precise_packed_update`) with
++///   `apply_hist_filter = false` anyway. If the exact test would have
++///   accepted a pair the filter rejected, that is a soundness bug in the
++///   filter, so the violation is counted, logged, and the process panics.
++/// * otherwise behaves exactly as without audit mode, so enabling it must
++///   never change any search result -- only its cost.
++pub fn audit_enabled() -> bool {
++    *AUDIT.get_or_init(|| env_flag("SORTNETOPT_FILTER_AUDIT"))
++}
++
++/// `true` unless `name` is set to exactly "0", "false" or "no" (case- and
++/// whitespace-insensitive). Used for the TIER1 per-change attribution gates
++/// below, which default ON (so an unset environment reproduces the current
++/// M2b-plus-TIER1 behaviour) and are only ever turned OFF explicitly.
++fn env_flag_default_on(name: &str) -> bool {
++    match std::env::var(name) {
++        Ok(val) => {
++            let val = val.trim().to_ascii_lowercase();
++            !(val == "0" || val == "false" || val == "no")
++        }
++        Err(_) => true,
++    }
++}
++
++static TIER1_SIG: OnceLock<bool> = OnceLock::new();
++static TIER1_HIST: OnceLock<bool> = OnceLock::new();
++
++/// TIER1 campaign attribution gate for the thermometer-signature pre-filter,
++/// read from `SORTNETOPT_TIER1_SIG` exactly once (subsequent calls hit the
++/// cached `OnceLock`). Default on.
++///
++/// When off, every `Dir::test_signature` / `Dir::test_signature_update` /
++/// `Dir::test_signature_node` / `Dir::test_signature_node_update` call site
++/// in this module's traversal closures behaves as though the test had
++/// returned `true` (no rejection) -- the test is skipped outright (short-
++/// circuited before it is ever called), so `FILTER_SIG_REJECTS` /
++/// `FILTER_SIG_NODE_REJECTS` only ever count rejections that genuinely
++/// happened. This lets a campaign run with just the histogram filter (or
++/// neither filter, alongside `SORTNETOPT_TIER1_HIST=0`) to attribute
++/// speedup separately to each TIER1 filter.
++pub fn sig_filter_enabled() -> bool {
++    *TIER1_SIG.get_or_init(|| env_flag_default_on("SORTNETOPT_TIER1_SIG"))
++}
++
++/// TIER1 campaign attribution gate for the exact weight-histogram
++/// thermometer pre-filter, read from `SORTNETOPT_TIER1_HIST` exactly once.
++/// Default on; see [`sig_filter_enabled`] for the off-switch string
++/// convention.
++///
++/// When off, every `Dir::test_histogram` / `Dir::test_histogram_update` call
++/// site behaves as though the test had returned `true`, and every call site
++/// that computes `apply_hist_filter` for `Dir::test_precise_packed` /
++/// `Dir::test_precise_packed_update` passes `false` instead. The candidate's
++/// packed set and weight histogram are still built either way (their
++/// computation is not gated), since `test_precise_packed`'s signature
++/// requires the histogram regardless of whether the filter itself is
++/// consulted.
++pub fn hist_filter_enabled() -> bool {
++    *TIER1_HIST.get_or_init(|| env_flag_default_on("SORTNETOPT_TIER1_HIST"))
++}
++
+ pub trait IndexDirection {
+     type Perm;
+ 
++    /// Human-readable direction name, used in audit-violation log lines.
++    fn dir_name() -> &'static str;
++
+     fn lookup_dir() -> bool;
+ 
+     fn can_improve(best_so_far: Option<u8>, range: [u8; 2]) -> bool;
+@@ -34,21 +174,38 @@
+         Self::test_abstraction(lookup, candidate)
+     }
+ 
+-    fn test_precise(
+-        candidate: OutputSet<&[bool]>,
++    /// Per-entry signature reject, lookup direction. `false` => provably no
++    /// relation between the candidate and the query.
++    fn test_signature(candidate_sig: u64, q: &SubsumeFilter) -> bool;
++    /// Per-entry signature reject, update/eviction direction.
++    fn test_signature_update(candidate_sig: u64, q: &SubsumeFilter) -> bool;
++    /// Subtree reject, lookup direction. `false` => NO entry in the subtree
++    /// can relate to the query.
++    fn test_signature_node(aug: &Augmentation, q: &SubsumeFilter) -> bool;
++    /// Subtree reject, update/eviction direction.
++    fn test_signature_node_update(aug: &Augmentation, q: &SubsumeFilter) -> bool;
++    /// Exact weight-histogram thermometer, lookup direction.
++    fn test_histogram(candidate_hist: &[u32], q: &SubsumeFilter) -> bool;
++    /// Exact weight-histogram thermometer, update/eviction direction.
++    fn test_histogram_update(candidate_hist: &[u32], q: &SubsumeFilter) -> bool;
++
++    fn test_precise_packed(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
+         candidate_abstraction: &[u16],
+-        lookup: OutputSet<&[bool]>,
++        q: &SubsumeFilter,
+         lookup_abstraction: &[u16],
++        apply_hist_filter: bool,
+     ) -> Option<Self::Perm>;
+ 
+-    fn test_precise_update(
+-        candidate: OutputSet<&[bool]>,
++    fn test_precise_packed_update(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
+         candidate_abstraction: &[u16],
+-        lookup: OutputSet<&[bool]>,
++        q: &SubsumeFilter,
+         lookup_abstraction: &[u16],
+-    ) -> bool {
+-        Self::test_precise(lookup, lookup_abstraction, candidate, candidate_abstraction).is_some()
+-    }
++        apply_hist_filter: bool,
++    ) -> bool;
+ 
+     fn id_perm(channels: usize) -> Self::Perm;
+ }
+@@ -56,6 +213,10 @@
+ impl IndexDirection for Lower {
+     type Perm = CVec<usize>;
+ 
++    fn dir_name() -> &'static str {
++        "Lower"
++    }
++
+     fn lookup_dir() -> bool {
+         false
+     }
+@@ -105,15 +266,60 @@
+             .all(|(&candidate, &lookup)| candidate <= lookup)
+     }
+ 
+-    fn test_precise(
+-        candidate: OutputSet<&[bool]>,
++    fn test_signature(candidate_sig: u64, q: &SubsumeFilter) -> bool {
++        (candidate_sig & !q.sig) == 0
++    }
++
++    fn test_signature_update(candidate_sig: u64, q: &SubsumeFilter) -> bool {
++        (q.sig & !candidate_sig) == 0
++    }
++
++    fn test_signature_node(aug: &Augmentation, q: &SubsumeFilter) -> bool {
++        (aug.sig_and & !q.sig) == 0
++    }
++
++    fn test_signature_node_update(aug: &Augmentation, q: &SubsumeFilter) -> bool {
++        (q.sig & !aug.sig_or) == 0
++    }
++
++    fn test_histogram(candidate_hist: &[u32], q: &SubsumeFilter) -> bool {
++        packed::hist_subsumes(candidate_hist, &q.hist)
++    }
++
++    fn test_histogram_update(candidate_hist: &[u32], q: &SubsumeFilter) -> bool {
++        packed::hist_subsumes(&q.hist, candidate_hist)
++    }
++
++    fn test_precise_packed(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
+         _candidate_abstraction: &[u16],
+-        lookup: OutputSet<&[bool]>,
++        q: &SubsumeFilter,
+         _lookup_abstraction: &[u16],
++        apply_hist_filter: bool,
+     ) -> Option<Self::Perm> {
+-        candidate.subsumes_permuted(lookup)
++        if apply_hist_filter && !packed::hist_subsumes(candidate_hist, &q.hist) {
++            return None;
++        }
++        instrument::bump(&instrument::FILTER_EXACT_CALLS);
++        subsumes_permuted_packed(candidate, &q.packed)
+     }
+ 
++    fn test_precise_packed_update(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
++        _candidate_abstraction: &[u16],
++        q: &SubsumeFilter,
++        _lookup_abstraction: &[u16],
++        apply_hist_filter: bool,
++    ) -> bool {
++        if apply_hist_filter && !packed::hist_subsumes(&q.hist, candidate_hist) {
++            return false;
++        }
++        instrument::bump(&instrument::FILTER_EXACT_CALLS);
++        subsumes_permuted_packed(&q.packed, candidate).is_some()
++    }
++
+     fn id_perm(channels: usize) -> Self::Perm {
+         (0..channels).collect()
+     }
+@@ -122,6 +328,10 @@
+ impl IndexDirection for LowerInvert {
+     type Perm = (bool, CVec<usize>);
+ 
++    fn dir_name() -> &'static str {
++        "LowerInvert"
++    }
++
+     fn lookup_dir() -> bool {
+         false
+     }
+@@ -180,14 +390,44 @@
+         })
+     }
+ 
+-    fn test_precise(
+-        candidate: OutputSet<&[bool]>,
++    fn test_signature(candidate_sig: u64, q: &SubsumeFilter) -> bool {
++        ((candidate_sig & !q.sig) == 0) || ((candidate_sig & !q.sig_rev) == 0)
++    }
++
++    fn test_signature_update(candidate_sig: u64, q: &SubsumeFilter) -> bool {
++        ((q.sig & !candidate_sig) == 0) || ((q.sig_rev & !candidate_sig) == 0)
++    }
++
++    fn test_signature_node(aug: &Augmentation, q: &SubsumeFilter) -> bool {
++        ((aug.sig_and & !q.sig) == 0) || ((aug.sig_and & !q.sig_rev) == 0)
++    }
++
++    fn test_signature_node_update(aug: &Augmentation, q: &SubsumeFilter) -> bool {
++        ((q.sig & !aug.sig_or) == 0) || ((q.sig_rev & !aug.sig_or) == 0)
++    }
++
++    fn test_histogram(candidate_hist: &[u32], q: &SubsumeFilter) -> bool {
++        packed::hist_subsumes(candidate_hist, &q.hist)
++            || packed::hist_subsumes(candidate_hist, &q.hist_rev)
++    }
++
++    fn test_histogram_update(candidate_hist: &[u32], q: &SubsumeFilter) -> bool {
++        packed::hist_subsumes(&q.hist, candidate_hist)
++            || packed::hist_subsumes(&q.hist_rev, candidate_hist)
++    }
++
++    fn test_precise_packed(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
+         candidate_abstraction: &[u16],
+-        lookup: OutputSet<&[bool]>,
++        q: &SubsumeFilter,
+         lookup_abstraction: &[u16],
++        apply_hist_filter: bool,
+     ) -> Option<Self::Perm> {
+-        if Lower::test_abstraction(candidate_abstraction, lookup_abstraction) {
+-            if let Some(perm) = candidate.subsumes_permuted(lookup) {
++        let id_ok = !apply_hist_filter || packed::hist_subsumes(candidate_hist, &q.hist);
++        if id_ok && Lower::test_abstraction(candidate_abstraction, lookup_abstraction) {
++            instrument::bump(&instrument::FILTER_EXACT_CALLS);
++            if let Some(perm) = subsumes_permuted_packed(candidate, &q.packed) {
+                 return Some((false, perm));
+             }
+         }
+@@ -221,14 +461,57 @@
+         if !(0..dims).all(|i| candidate_abstraction[i] <= lookup_abstraction[i ^ 3]) {
+             return None;
+         }
+-        let mut inverted = candidate.to_owned();
++        if apply_hist_filter && !packed::hist_subsumes(candidate_hist, &q.hist_rev) {
++            return None;
++        }
++        let mut inverted = *candidate;
+         inverted.invert();
+-        if let Some(perm) = inverted.subsumes_permuted(lookup) {
++        instrument::bump(&instrument::FILTER_EXACT_CALLS);
++        if let Some(perm) = subsumes_permuted_packed(&inverted, &q.packed) {
+             return Some((true, perm));
+         }
+         None
+     }
+ 
++    /// This is a *direct* implementation, not a role-swapped call through
++    /// `test_precise_packed` (whose `q` parameter is fixed to the query
++    /// side). It must stay behaviourally identical to what the crate's old
++    /// default `test_precise_update(candidate, candidate_abstraction, lookup,
++    /// lookup_abstraction) = Self::test_precise(lookup, lookup_abstraction,
++    /// candidate, candidate_abstraction).is_some()` composition produced,
++    /// modulo the new (sound) histogram pre-filters -- see the TIER1
++    /// integration report for the substitution that establishes this.
++    fn test_precise_packed_update(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
++        candidate_abstraction: &[u16],
++        q: &SubsumeFilter,
++        lookup_abstraction: &[u16],
++        apply_hist_filter: bool,
++    ) -> bool {
++        let id_ok = !apply_hist_filter || packed::hist_subsumes(&q.hist, candidate_hist);
++        if id_ok && Lower::test_abstraction(lookup_abstraction, candidate_abstraction) {
++            instrument::bump(&instrument::FILTER_EXACT_CALLS);
++            if subsumes_permuted_packed(&q.packed, candidate).is_some() {
++                return true;
++            }
++        }
++        let dims = candidate_abstraction.len().min(lookup_abstraction.len()) & !3;
++        if !(0..dims).all(|i| lookup_abstraction[i] <= candidate_abstraction[i ^ 3]) {
++            return false;
++        }
++        // The complement of the QUERY subsumes the candidate: `hist_q[k - w]
++        // <= hist_c[w]` for all `w`, i.e. `hist_subsumes(&q.hist_rev,
++        // candidate_hist)`.
++        if apply_hist_filter && !packed::hist_subsumes(&q.hist_rev, candidate_hist) {
++            return false;
++        }
++        let mut inverted = q.packed;
++        inverted.invert();
++        instrument::bump(&instrument::FILTER_EXACT_CALLS);
++        subsumes_permuted_packed(&inverted, candidate).is_some()
++    }
++
+     fn id_perm(channels: usize) -> Self::Perm {
+         (false, (0..channels).collect())
+     }
+@@ -237,6 +520,10 @@
+ impl IndexDirection for Upper {
+     type Perm = CVec<usize>;
+ 
++    fn dir_name() -> &'static str {
++        "Upper"
++    }
++
+     fn lookup_dir() -> bool {
+         true
+     }
+@@ -286,15 +573,60 @@
+             .all(|(&candidate, &lookup)| candidate >= lookup)
+     }
+ 
+-    fn test_precise(
+-        candidate: OutputSet<&[bool]>,
++    fn test_signature(candidate_sig: u64, q: &SubsumeFilter) -> bool {
++        (q.sig & !candidate_sig) == 0
++    }
++
++    fn test_signature_update(candidate_sig: u64, q: &SubsumeFilter) -> bool {
++        (candidate_sig & !q.sig) == 0
++    }
++
++    fn test_signature_node(aug: &Augmentation, q: &SubsumeFilter) -> bool {
++        (q.sig & !aug.sig_or) == 0
++    }
++
++    fn test_signature_node_update(aug: &Augmentation, q: &SubsumeFilter) -> bool {
++        (aug.sig_and & !q.sig) == 0
++    }
++
++    fn test_histogram(candidate_hist: &[u32], q: &SubsumeFilter) -> bool {
++        packed::hist_subsumes(&q.hist, candidate_hist)
++    }
++
++    fn test_histogram_update(candidate_hist: &[u32], q: &SubsumeFilter) -> bool {
++        packed::hist_subsumes(candidate_hist, &q.hist)
++    }
++
++    fn test_precise_packed(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
+         _candidate_abstraction: &[u16],
+-        lookup: OutputSet<&[bool]>,
++        q: &SubsumeFilter,
+         _lookup_abstraction: &[u16],
++        apply_hist_filter: bool,
+     ) -> Option<Self::Perm> {
+-        lookup.subsumes_permuted(candidate)
++        if apply_hist_filter && !packed::hist_subsumes(&q.hist, candidate_hist) {
++            return None;
++        }
++        instrument::bump(&instrument::FILTER_EXACT_CALLS);
++        subsumes_permuted_packed(&q.packed, candidate)
+     }
+ 
++    fn test_precise_packed_update(
++        candidate: &PackedSet,
++        candidate_hist: &[u32],
++        _candidate_abstraction: &[u16],
++        q: &SubsumeFilter,
++        _lookup_abstraction: &[u16],
++        apply_hist_filter: bool,
++    ) -> bool {
++        if apply_hist_filter && !packed::hist_subsumes(candidate_hist, &q.hist) {
++            return false;
++        }
++        instrument::bump(&instrument::FILTER_EXACT_CALLS);
++        subsumes_permuted_packed(candidate, &q.packed).is_some()
++    }
++
+     fn id_perm(channels: usize) -> Self::Perm {
+         (0..channels).collect()
+     }
+@@ -309,6 +641,7 @@
+     packed_dim: usize,
+     packed: Vec<u8>,
+     values: Vec<u8>,
++    sigs: Vec<u64>,
+ }
+ 
+ impl<Dir: IndexDirection> OutputSetIndex<Dir> {
+@@ -321,10 +654,10 @@
+     /// Soundness: every `Dir::test_abstraction*` predicate is a conjunction of
+     /// per-coordinate comparisons, so evaluating it on a coordinate subset is a
+     /// strictly weaker necessary condition. The exact arbiter
+-    /// (`Dir::test_precise` = `subsumes_permuted`) is unchanged, so a truncated
+-    /// index returns exactly the same answers as a full one; it only does more
+-    /// precise tests to get there. Truncation trades query time for the
+-    /// O(channels^2) per-entry point storage that otherwise dwarfs the
++    /// (`Dir::test_precise_packed` = `subsumes_permuted_packed`) is unchanged,
++    /// so a truncated index returns exactly the same answers as a full one; it
++    /// only does more precise tests to get there. Truncation trades query time
++    /// for the O(channels^2) per-entry point storage that otherwise dwarfs the
+     /// O(2^channels/8) packed key at the widths where the memo table lives.
+     /// `point_dim` is rounded down to a multiple of `PAIR_ABSTRACTION_GROUPS`
+     /// (4), which is the minimum granularity: `LowerInvert` implements the
+@@ -343,6 +676,7 @@
+             packed_dim: OutputSet::packed_len_for_channels(channels),
+             packed: vec![],
+             values: vec![],
++            sigs: vec![],
+         }
+     }
+ 
+@@ -355,6 +689,7 @@
+         self.points.capacity() * 2
+             + self.packed.capacity()
+             + self.values.capacity()
++            + self.sigs.capacity() * 8
+             + self
+                 .trees
+                 .iter()
+@@ -367,6 +702,7 @@
+         self.points.len() * 2
+             + self.packed.len()
+             + self.values.len()
++            + self.sigs.len() * 8
+             + self
+                 .trees
+                 .iter()
+@@ -378,41 +714,99 @@
+         &self,
+         output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
++        filter: &SubsumeFilter,
+     ) -> Option<(u8, Dir::Perm, OutputSet)> {
+         let mut best_so_far = None;
++        let audit_mode = audit_enabled();
++        let channels = self.channels;
+ 
+-        let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
+-        let mut candidate_output_set = OutputSet::from_bitmap(self.channels, &mut bitmap[..]);
+-
+         let mut node_filter = |best_so_far: &mut Option<(u8, Dir::Perm, OutputSet)>,
+                                augmentation: &Augmentation,
+                                ranges: &[[u16; 2]]|
+          -> bool {
+             Dir::can_improve(best_so_far.as_ref().map(|x| x.0), augmentation.value_range)
+                 && Dir::test_abstraction_range(ranges, abstraction)
++                && {
++                    // See `audit_enabled` for why disabling this check in
++                    // audit mode is still sound. `sig_filter_enabled` is the
++                    // TIER1 attribution gate: when off, this short-circuits
++                    // to `true` before `Dir::test_signature_node` is ever
++                    // called, so no reject is counted for a test that never
++                    // ran.
++                    let ok = audit_mode
++                        || !sig_filter_enabled()
++                        || Dir::test_signature_node(augmentation, filter);
++                    if !ok {
++                        instrument::bump(&instrument::FILTER_SIG_NODE_REJECTS);
++                    }
++                    ok
++                }
+         };
+ 
+         let mut action = |best_so_far: &mut Option<(u8, Dir::Perm, OutputSet)>,
+                           candidate_abstraction: &[u16],
+                           packed_candidate: &[u8],
++                          candidate_sig: u64,
+                           value: u8|
+          -> bool {
+             if !Dir::does_improve(best_so_far.as_ref().map(|x| x.0), value) {
+                 return true;
+             }
++
++            instrument::bump(&instrument::FILTER_CANDIDATES);
++            let mut sig_rejected = false;
++            if sig_filter_enabled() && !Dir::test_signature(candidate_sig, filter) {
++                instrument::bump(&instrument::FILTER_SIG_REJECTS);
++                if !audit_mode {
++                    return true;
++                }
++                sig_rejected = true;
++            }
++
+             if !Dir::test_abstraction(candidate_abstraction, abstraction) {
+                 return true;
+             }
+-            candidate_output_set.unpack_from_slice(packed_candidate);
+-            let perm = if candidate_output_set == output_set {
++
++            let candidate_packed = PackedSet::from_packed_bytes(channels, packed_candidate);
++            let candidate_hist = candidate_packed.weight_histogram();
++
++            let mut hist_rejected = false;
++            if hist_filter_enabled() && !Dir::test_histogram(&candidate_hist, filter) {
++                instrument::bump(&instrument::FILTER_HIST_REJECTS);
++                if !audit_mode {
++                    return true;
++                }
++                hist_rejected = true;
++            }
++
++            let perm = if candidate_packed == filter.packed {
+                 Dir::id_perm(output_set.channels())
+             } else {
+-                let perm = Dir::test_precise(
+-                    candidate_output_set.as_ref(),
++                let apply_hist_filter =
++                    hist_filter_enabled() && !(audit_mode && (sig_rejected || hist_rejected));
++                let perm = Dir::test_precise_packed(
++                    &candidate_packed,
++                    &candidate_hist,
+                     candidate_abstraction,
+-                    output_set,
++                    filter,
+                     abstraction,
++                    apply_hist_filter,
+                 );
++                if audit_mode && (sig_rejected || hist_rejected) && perm.is_some() {
++                    instrument::bump(&instrument::FILTER_AUDIT_VIOLATIONS);
++                    log::error!(
++                        "TIER1 FILTER AUDIT VIOLATION: dir={} channels={} candidate_sig={:#x} query_sig={:#x} query_sig_rev={:#x} candidate_hist={:?} query_hist={:?} query_hist_rev={:?}",
++                        Dir::dir_name(),
++                        channels,
++                        candidate_sig,
++                        filter.sig,
++                        filter.sig_rev,
++                        candidate_hist,
++                        filter.hist,
++                        filter.hist_rev,
++                    );
++                    panic!("TIER1 FILTER AUDIT VIOLATION");
++                }
+                 if let Some(perm) = perm {
+                     perm
+                 } else {
+@@ -420,7 +814,7 @@
+                 }
+             };
+ 
+-            *best_so_far = Some((value, perm, candidate_output_set.to_owned()));
++            *best_so_far = Some((value, perm, candidate_packed.to_output_set()));
+ 
+             true
+         };
+@@ -439,6 +833,7 @@
+                 &mut best_so_far,
+                 &self.points[index * self.point_dim..][..self.point_dim],
+                 &self.packed[index * self.packed_dim..][..self.packed_dim],
++                self.sigs[index],
+                 value,
+             );
+         }
+@@ -450,8 +845,9 @@
+         &self,
+         output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
++        filter: &SubsumeFilter,
+     ) -> Option<u8> {
+-        self.lookup_with_abstraction_from(output_set, abstraction, None)
++        self.lookup_with_abstraction_from(output_set, abstraction, filter, None)
+     }
+ 
+     /// M2b: `lookup_with_abstraction` with the accumulator seeded.
+@@ -471,44 +867,98 @@
+     /// stored subsuming set.
+     pub fn lookup_with_abstraction_from(
+         &self,
+-        output_set: OutputSet<&[bool]>,
++        _output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
++        filter: &SubsumeFilter,
+         seed: Option<u8>,
+     ) -> Option<u8> {
+         let mut best_so_far = seed;
++        let audit_mode = audit_enabled();
++        let channels = self.channels;
+ 
+-        let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
+-        let mut candidate_output_set = OutputSet::from_bitmap(self.channels, &mut bitmap[..]);
+-
+         let mut node_filter = |best_so_far: &mut Option<u8>,
+                                augmentation: &Augmentation,
+                                ranges: &[[u16; 2]]|
+          -> bool {
+             Dir::can_improve(*best_so_far, augmentation.value_range)
+                 && Dir::test_abstraction_range(ranges, abstraction)
++                && {
++                    // TIER1 attribution gate: see the sibling `node_filter`
++                    // in `lookup_subsuming_with_abstraction` for why
++                    // short-circuiting here keeps the reject counter exact.
++                    let ok = audit_mode
++                        || !sig_filter_enabled()
++                        || Dir::test_signature_node(augmentation, filter);
++                    if !ok {
++                        instrument::bump(&instrument::FILTER_SIG_NODE_REJECTS);
++                    }
++                    ok
++                }
+         };
+ 
+         let mut action = |best_so_far: &mut Option<u8>,
+                           candidate_abstraction: &[u16],
+                           packed_candidate: &[u8],
++                          candidate_sig: u64,
+                           value: u8|
+          -> bool {
+             if !Dir::does_improve(*best_so_far, value) {
+                 return true;
+             }
++
++            instrument::bump(&instrument::FILTER_CANDIDATES);
++            let mut sig_rejected = false;
++            if sig_filter_enabled() && !Dir::test_signature(candidate_sig, filter) {
++                instrument::bump(&instrument::FILTER_SIG_REJECTS);
++                if !audit_mode {
++                    return true;
++                }
++                sig_rejected = true;
++            }
++
+             if !Dir::test_abstraction(candidate_abstraction, abstraction) {
+                 return true;
+             }
+-            candidate_output_set.unpack_from_slice(packed_candidate);
+-            if candidate_output_set != output_set {
+-                if Dir::test_precise(
+-                    candidate_output_set.as_ref(),
++
++            let candidate_packed = PackedSet::from_packed_bytes(channels, packed_candidate);
++            let candidate_hist = candidate_packed.weight_histogram();
++
++            let mut hist_rejected = false;
++            if hist_filter_enabled() && !Dir::test_histogram(&candidate_hist, filter) {
++                instrument::bump(&instrument::FILTER_HIST_REJECTS);
++                if !audit_mode {
++                    return true;
++                }
++                hist_rejected = true;
++            }
++
++            if candidate_packed != filter.packed {
++                let apply_hist_filter =
++                    hist_filter_enabled() && !(audit_mode && (sig_rejected || hist_rejected));
++                let perm = Dir::test_precise_packed(
++                    &candidate_packed,
++                    &candidate_hist,
+                     candidate_abstraction,
+-                    output_set,
++                    filter,
+                     abstraction,
+-                )
+-                .is_none()
+-                {
++                    apply_hist_filter,
++                );
++                if audit_mode && (sig_rejected || hist_rejected) && perm.is_some() {
++                    instrument::bump(&instrument::FILTER_AUDIT_VIOLATIONS);
++                    log::error!(
++                        "TIER1 FILTER AUDIT VIOLATION: dir={} channels={} candidate_sig={:#x} query_sig={:#x} query_sig_rev={:#x} candidate_hist={:?} query_hist={:?} query_hist_rev={:?}",
++                        Dir::dir_name(),
++                        channels,
++                        candidate_sig,
++                        filter.sig,
++                        filter.sig_rev,
++                        candidate_hist,
++                        filter.hist,
++                        filter.hist_rev,
++                    );
++                    panic!("TIER1 FILTER AUDIT VIOLATION");
++                }
++                if perm.is_none() {
+                     return true;
+                 }
+             }
+@@ -532,6 +982,7 @@
+                 &mut best_so_far,
+                 &self.points[index * self.point_dim..][..self.point_dim],
+                 &self.packed[index * self.packed_dim..][..self.packed_dim],
++                self.sigs[index],
+                 value,
+             );
+         }
+@@ -543,6 +994,7 @@
+         &mut self,
+         output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
++        filter: &SubsumeFilter,
+         value: u8,
+     ) {
+         let old_size = self.packed.len();
+@@ -551,6 +1003,7 @@
+ 
+         self.points.extend_from_slice(abstraction);
+         self.values.push(value);
++        self.sigs.push(filter.sig);
+ 
+         if self.values.len() >= TREE_THRESHOLD {
+             self.trees.sort_by_key(|tree| Reverse(tree.len()));
+@@ -564,10 +1017,11 @@
+                     (),
+                     Dir::lookup_dir(),
+                     |_, _, _| true,
+-                    |_, point, packed, value| {
++                    |_, point, packed, sig, value| {
+                         self.points.extend_from_slice(point);
+                         self.packed.extend_from_slice(packed);
+                         self.values.push(value);
++                        self.sigs.push(sig);
+                         true
+                     },
+                 );
+@@ -579,6 +1033,7 @@
+                 self.packed_dim,
+                 replace(&mut self.packed, vec![]),
+                 replace(&mut self.values, vec![]),
++                replace(&mut self.sigs, vec![]),
+             );
+ 
+             self.trees.push(tree);
+@@ -589,9 +1044,10 @@
+         &mut self,
+         output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
++        filter: &SubsumeFilter,
+         value: u8,
+     ) -> u8 {
+-        self.insert_with_abstraction_collect(output_set, abstraction, value, &mut |_| ())
++        self.insert_with_abstraction_collect(output_set, abstraction, filter, value, &mut |_| ())
+     }
+ 
+     /// M2a: `insert_with_abstraction` with the *identity of every evicted entry*
+@@ -605,13 +1061,14 @@
+         &mut self,
+         output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
++        filter: &SubsumeFilter,
+         value: u8,
+         on_evict: &mut dyn FnMut(&[u8]),
+     ) -> u8 {
+-        let best_so_far = self.lookup_with_abstraction(output_set, abstraction);
++        let best_so_far = self.lookup_with_abstraction(output_set, abstraction, filter);
+ 
+-        let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
+-        let mut candidate_output_set = OutputSet::from_bitmap(self.channels, &mut bitmap[..]);
++        let audit_mode = audit_enabled();
++        let channels = self.channels;
+ 
+         let mut updated_in_place = false;
+ 
+@@ -623,32 +1080,88 @@
+             |_: &mut (), augmentation: &Augmentation, ranges: &[[u16; 2]]| -> bool {
+                 Dir::can_be_updated(augmentation.value_range, value)
+                     && Dir::test_abstraction_range_update(ranges, abstraction)
++                    && {
++                        // TIER1 attribution gate: see `node_filter` in
++                        // `lookup_subsuming_with_abstraction`.
++                        let ok = audit_mode
++                            || !sig_filter_enabled()
++                            || Dir::test_signature_node_update(augmentation, filter);
++                        if !ok {
++                            instrument::bump(&instrument::FILTER_SIG_NODE_REJECTS);
++                        }
++                        ok
++                    }
+             };
+ 
+         let mut action = |_: &mut (),
+                           candidate_abstraction: &[u16],
+                           packed_candidate: &[u8],
++                          candidate_sig: u64,
+                           candidate_value: &mut u8|
+          -> TraversalMut {
+             if !Dir::would_be_updated(*candidate_value, value) {
+                 return TraversalMut::Retain;
+             }
++
++            instrument::bump(&instrument::FILTER_CANDIDATES);
++            let mut sig_rejected = false;
++            if sig_filter_enabled() && !Dir::test_signature_update(candidate_sig, filter) {
++                instrument::bump(&instrument::FILTER_SIG_REJECTS);
++                if !audit_mode {
++                    return TraversalMut::Retain;
++                }
++                sig_rejected = true;
++            }
++
+             if !Dir::test_abstraction_update(candidate_abstraction, abstraction) {
+                 return TraversalMut::Retain;
+             }
+-            candidate_output_set.unpack_from_slice(packed_candidate);
+-            if candidate_output_set == output_set {
++
++            let candidate_packed = PackedSet::from_packed_bytes(channels, packed_candidate);
++            let candidate_hist = candidate_packed.weight_histogram();
++
++            let mut hist_rejected = false;
++            if hist_filter_enabled() && !Dir::test_histogram_update(&candidate_hist, filter) {
++                instrument::bump(&instrument::FILTER_HIST_REJECTS);
++                if !audit_mode {
++                    return TraversalMut::Retain;
++                }
++                hist_rejected = true;
++            }
++
++            if candidate_packed == filter.packed {
+                 assert!(!updated_in_place);
+                 *candidate_value = value;
+                 updated_in_place = true;
+                 return TraversalMut::Retain;
+             }
+-            if !Dir::test_precise_update(
+-                candidate_output_set.as_ref(),
++
++            let apply_hist_filter =
++                hist_filter_enabled() && !(audit_mode && (sig_rejected || hist_rejected));
++            let precise = Dir::test_precise_packed_update(
++                &candidate_packed,
++                &candidate_hist,
+                 candidate_abstraction,
+-                output_set,
++                filter,
+                 abstraction,
+-            ) {
++                apply_hist_filter,
++            );
++            if audit_mode && (sig_rejected || hist_rejected) && precise {
++                instrument::bump(&instrument::FILTER_AUDIT_VIOLATIONS);
++                log::error!(
++                    "TIER1 FILTER AUDIT VIOLATION (update): dir={} channels={} candidate_sig={:#x} query_sig={:#x} query_sig_rev={:#x} candidate_hist={:?} query_hist={:?} query_hist_rev={:?}",
++                    Dir::dir_name(),
++                    channels,
++                    candidate_sig,
++                    filter.sig,
++                    filter.sig_rev,
++                    candidate_hist,
++                    filter.hist,
++                    filter.hist_rev,
++                );
++                panic!("TIER1 FILTER AUDIT VIOLATION");
++            }
++            if !precise {
+                 return TraversalMut::Retain;
+             }
+ 
+@@ -670,11 +1183,13 @@
+                 &mut (),
+                 &self.points[index * self.point_dim..][..self.point_dim],
+                 &self.packed[index * self.packed_dim..][..self.packed_dim],
++                self.sigs[index],
+                 &mut self.values[index],
+             );
+ 
+             if action_result == TraversalMut::Remove {
+                 self.values.swap_remove(index);
++                self.sigs.swap_remove(index);
+ 
+                 if index != self.values.len() {
+                     let (keep, last) = self.points.split_at_mut(self.values.len() * self.point_dim);
+@@ -696,7 +1211,7 @@
+             return value;
+         }
+ 
+-        self.insert_new_unchecked_with_abstraction(output_set, abstraction, value);
++        self.insert_new_unchecked_with_abstraction(output_set, abstraction, filter, value);
+         value
+     }
+ 
+@@ -716,43 +1231,99 @@
+     /// unmodified `insert_with_abstraction_collect` on the home bucket.
+     pub fn remove_dominated_with_abstraction(
+         &mut self,
+-        output_set: OutputSet<&[bool]>,
++        _output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
++        filter: &SubsumeFilter,
+         value: u8,
+         on_evict: &mut dyn FnMut(&[u8]),
+     ) -> usize {
+         let mut removed = 0usize;
++        let audit_mode = audit_enabled();
++        let channels = self.channels;
+ 
+-        let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
+-        let mut candidate_output_set = OutputSet::from_bitmap(self.channels, &mut bitmap[..]);
+-
+         let mut node_filter =
+             |_: &mut (), augmentation: &Augmentation, ranges: &[[u16; 2]]| -> bool {
+                 Dir::can_be_updated(augmentation.value_range, value)
+                     && Dir::test_abstraction_range_update(ranges, abstraction)
++                    && {
++                        // TIER1 attribution gate: see `node_filter` in
++                        // `lookup_subsuming_with_abstraction`.
++                        let ok = audit_mode
++                            || !sig_filter_enabled()
++                            || Dir::test_signature_node_update(augmentation, filter);
++                        if !ok {
++                            instrument::bump(&instrument::FILTER_SIG_NODE_REJECTS);
++                        }
++                        ok
++                    }
+             };
+ 
+         let mut action = |_: &mut (),
+                           candidate_abstraction: &[u16],
+                           packed_candidate: &[u8],
++                          candidate_sig: u64,
+                           candidate_value: &mut u8|
+          -> TraversalMut {
+             if !Dir::would_be_updated(*candidate_value, value) {
+                 return TraversalMut::Retain;
+             }
++
++            instrument::bump(&instrument::FILTER_CANDIDATES);
++            let mut sig_rejected = false;
++            if sig_filter_enabled() && !Dir::test_signature_update(candidate_sig, filter) {
++                instrument::bump(&instrument::FILTER_SIG_REJECTS);
++                if !audit_mode {
++                    return TraversalMut::Retain;
++                }
++                sig_rejected = true;
++            }
++
+             if !Dir::test_abstraction_update(candidate_abstraction, abstraction) {
+                 return TraversalMut::Retain;
+             }
+-            candidate_output_set.unpack_from_slice(packed_candidate);
+-            if candidate_output_set == output_set {
++
++            let candidate_packed = PackedSet::from_packed_bytes(channels, packed_candidate);
++            let candidate_hist = candidate_packed.weight_histogram();
++
++            let mut hist_rejected = false;
++            if hist_filter_enabled() && !Dir::test_histogram_update(&candidate_hist, filter) {
++                instrument::bump(&instrument::FILTER_HIST_REJECTS);
++                if !audit_mode {
++                    return TraversalMut::Retain;
++                }
++                hist_rejected = true;
++            }
++
++            if candidate_packed == filter.packed {
+                 return TraversalMut::Retain;
+             }
+-            if !Dir::test_precise_update(
+-                candidate_output_set.as_ref(),
++
++            let apply_hist_filter =
++                hist_filter_enabled() && !(audit_mode && (sig_rejected || hist_rejected));
++            let precise = Dir::test_precise_packed_update(
++                &candidate_packed,
++                &candidate_hist,
+                 candidate_abstraction,
+-                output_set,
++                filter,
+                 abstraction,
+-            ) {
++                apply_hist_filter,
++            );
++            if audit_mode && (sig_rejected || hist_rejected) && precise {
++                instrument::bump(&instrument::FILTER_AUDIT_VIOLATIONS);
++                log::error!(
++                    "TIER1 FILTER AUDIT VIOLATION (evict): dir={} channels={} candidate_sig={:#x} query_sig={:#x} query_sig_rev={:#x} candidate_hist={:?} query_hist={:?} query_hist_rev={:?}",
++                    Dir::dir_name(),
++                    channels,
++                    candidate_sig,
++                    filter.sig,
++                    filter.sig_rev,
++                    candidate_hist,
++                    filter.hist,
++                    filter.hist_rev,
++                );
++                panic!("TIER1 FILTER AUDIT VIOLATION");
++            }
++            if !precise {
+                 return TraversalMut::Retain;
+             }
+ 
+@@ -775,11 +1346,13 @@
+                 &mut (),
+                 &self.points[index * self.point_dim..][..self.point_dim],
+                 &self.packed[index * self.packed_dim..][..self.packed_dim],
++                self.sigs[index],
+                 &mut self.values[index],
+             );
+ 
+             if action_result == TraversalMut::Remove {
+                 self.values.swap_remove(index);
++                self.sigs.swap_remove(index);
+ 
+                 if index != self.values.len() {
+                     let (keep, last) = self.points.split_at_mut(self.values.len() * self.point_dim);
+@@ -802,14 +1375,14 @@
+         removed
+     }
+ 
+-    pub fn for_each(&self, mut action: impl FnMut(OutputSet<&[bool]>, &[u16], u8)) {
++    pub fn for_each(&self, mut action: impl FnMut(OutputSet<&[bool]>, &[u16], u64, u8)) {
+         let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
+         let mut output_set = OutputSet::from_bitmap(self.channels, &mut bitmap[..]);
+ 
+-        let mut action = |_: &mut (), abstraction: &[u16], packed: &[u8], value: u8| -> bool {
++        let mut action = |_: &mut (), abstraction: &[u16], packed: &[u8], sig: u64, value: u8| -> bool {
+             output_set.unpack_from_slice(packed);
+ 
+-            action(output_set.as_ref(), abstraction, value);
++            action(output_set.as_ref(), abstraction, sig, value);
+             true
+         };
+ 
+@@ -822,6 +1395,7 @@
+                 &mut (),
+                 &self.points[index * self.point_dim..][..self.point_dim],
+                 &self.packed[index * self.packed_dim..][..self.packed_dim],
++                self.sigs[index],
+                 value,
+             );
+         }
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/output_set/packed.rs source/src/output_set/packed.rs
+--- a/src/output_set/packed.rs	1970-01-01 07:30:00
++++ b/src/output_set/packed.rs	2026-08-17 16:25:30
+@@ -0,0 +1,1258 @@
++//! Bit-packed mirror of [`OutputSet`]'s dense `[bool]` bitmap.
++//!
++//! One bit per Boolean vector, LSB-first, in `u64` words: bit `i` of the
++//! bitmap lives in word `i >> 6`, bit position `i & 63`. This is the same
++//! layout as `OutputSet::pack_into_slice`'s byte layout on a little-endian
++//! machine (byte `b` holds bits `8*b .. 8*b+7`, and here word `w` holds
++//! bytes `8*w .. 8*w+7`).
++
++use super::{OutputSet, WVec, MAX_CHANNELS};
++
++/// Maximum number of live `u64` words for any `channels <= MAX_CHANNELS`.
++pub const MAX_WORDS: usize = super::MAX_BITMAP_SIZE / 64;
++
++/// Table of masks, indexed by bit position `c` in `0..6`: `BIT_MASK[c]` has
++/// bit `p` set (for `p` in `0..64`) iff bit `c` of `p` is set.
++const fn bit_masks() -> [u64; 6] {
++    let mut masks = [0u64; 6];
++    let mut c = 0usize;
++    while c < 6 {
++        let mut p = 0usize;
++        while p < 64 {
++            if (p >> c) & 1 == 1 {
++                masks[c] |= 1u64 << p;
++            }
++            p += 1;
++        }
++        c += 1;
++    }
++    masks
++}
++
++const BIT_MASK: [u64; 6] = bit_masks();
++
++/// Table of masks, indexed by popcount `t` in `0..=6`: `INWORD[t]` has bit
++/// `p` set (for `p` in `0..64`) iff `p.count_ones() == t`.
++const fn inword_masks() -> [u64; 7] {
++    let mut masks = [0u64; 7];
++    let mut p = 0usize;
++    while p < 64 {
++        let t = (p as u32).count_ones() as usize;
++        masks[t] |= 1u64 << p;
++        p += 1;
++    }
++    masks
++}
++
++const INWORD: [u64; 7] = inword_masks();
++
++/// Bit-packed mirror of `OutputSet`'s dense `[bool]` bitmap.
++#[derive(Clone, Copy, Debug)]
++pub struct PackedSet {
++    channels: usize,
++    words: usize,
++    bits: [u64; MAX_WORDS],
++}
++
++impl PartialEq for PackedSet {
++    fn eq(&self, other: &Self) -> bool {
++        self.eq_packed(other)
++    }
++}
++
++impl Eq for PackedSet {}
++
++impl PackedSet {
++    fn words_for_channels(channels: usize) -> usize {
++        ((1usize << channels) / 64).max(1)
++    }
++
++    /// Debug-only invariant check: only `words` words are live, and for
++    /// `channels < 6` only the low `1 << channels` bits of word 0 may ever
++    /// be set.
++    fn check_clean(&self) {
++        debug_assert!(self.channels <= MAX_CHANNELS);
++        debug_assert_eq!(self.words, Self::words_for_channels(self.channels));
++        if self.channels < 6 {
++            let n = 1usize << self.channels;
++            let mask = (1u64 << n) - 1;
++            debug_assert_eq!(self.bits[0] & !mask, 0);
++        }
++    }
++
++    pub fn channels(&self) -> usize {
++        self.channels
++    }
++
++    pub fn words(&self) -> usize {
++        self.words
++    }
++
++    pub fn bits(&self) -> &[u64] {
++        &self.bits[..self.words]
++    }
++
++    pub fn zeros(channels: usize) -> Self {
++        debug_assert!(channels <= MAX_CHANNELS);
++        let result = Self {
++            channels,
++            words: Self::words_for_channels(channels),
++            bits: [0u64; MAX_WORDS],
++        };
++        result.check_clean();
++        result
++    }
++
++    pub fn from_bitmap(set: OutputSet<&[bool]>) -> Self {
++        let channels = set.channels();
++        let mut result = Self::zeros(channels);
++        for (i, &present) in set.bitmap().iter().enumerate() {
++            if present {
++                result.bits[i >> 6] |= 1u64 << (i & 63);
++            }
++        }
++        result.check_clean();
++        result
++    }
++
++    pub fn from_packed_bytes(channels: usize, packed: &[u8]) -> Self {
++        debug_assert_eq!(packed.len(), OutputSet::packed_len_for_channels(channels));
++        let mut result = Self::zeros(channels);
++        for (i, &byte) in packed.iter().enumerate() {
++            result.bits[i / 8] |= (byte as u64) << ((i % 8) * 8);
++        }
++        result.check_clean();
++        result
++    }
++
++    pub fn write_bitmap_into(&self, mut target: OutputSet<&mut [bool]>) {
++        debug_assert_eq!(target.channels(), self.channels);
++        for (i, slot) in target.bitmap_mut().iter_mut().enumerate() {
++            *slot = (self.bits[i >> 6] >> (i & 63)) & 1 != 0;
++        }
++    }
++
++    pub fn to_output_set(&self) -> OutputSet<Vec<bool>> {
++        let mut bitmap = vec![false; 1usize << self.channels];
++        self.write_bitmap_into(OutputSet::from_bitmap(self.channels, bitmap.as_mut_slice()));
++        OutputSet::from_bitmap(self.channels, bitmap)
++    }
++
++    pub fn eq_packed(&self, other: &Self) -> bool {
++        self.channels == other.channels && self.bits[..self.words] == other.bits[..other.words]
++    }
++
++    /// Plain scalar/auto-vectorizable implementation of
++    /// `OutputSet::subsumes_unpermuted`: `self.bits[w] & !other.bits[w] == 0`
++    /// for every live word `w`.
++    pub fn subsumes_unpermuted_scalar(&self, other: &Self) -> bool {
++        debug_assert_eq!(self.channels, other.channels);
++        let mut acc = 0u64;
++        for w in 0..self.words {
++            acc |= self.bits[w] & !other.bits[w];
++        }
++        acc == 0
++    }
++
++    /// `OutputSet::subsumes_unpermuted`-equivalent check.
++    ///
++    /// On `aarch64`, uses an explicit NEON path processing two words (128
++    /// bits) per iteration with a scalar tail. NEON is part of the aarch64
++    /// baseline instruction set (unlike x86 AVX/SSE extensions), so no
++    /// runtime feature detection is required before using it; the `unsafe`
++    /// block below is sound on every aarch64 target Rust supports.
++    /// On every other target this just calls [`Self::subsumes_unpermuted_scalar`].
++    #[cfg(target_arch = "aarch64")]
++    pub fn subsumes_unpermuted(&self, other: &Self) -> bool {
++        use std::arch::aarch64::{vandq_u64, vdupq_n_u64, vgetq_lane_u64, vld1q_u64, vmvnq_u32, vorrq_u64, vreinterpretq_u32_u64, vreinterpretq_u64_u32};
++
++        debug_assert_eq!(self.channels, other.channels);
++
++        let words = self.words;
++        let mut w = 0usize;
++
++        // Safety: aarch64 NEON is a baseline extension on all aarch64
++        // targets, so these intrinsics are always available. `w + 2 <=
++        // words <= MAX_WORDS` keeps every `add(w)` load in-bounds of the
++        // `[u64; MAX_WORDS]` arrays.
++        unsafe {
++            let mut acc = vdupq_n_u64(0);
++            while w + 2 <= words {
++                let a = vld1q_u64(self.bits.as_ptr().add(w));
++                let b = vld1q_u64(other.bits.as_ptr().add(w));
++                let not_b = vreinterpretq_u64_u32(vmvnq_u32(vreinterpretq_u32_u64(b)));
++                let bic = vandq_u64(a, not_b);
++                acc = vorrq_u64(acc, bic);
++                w += 2;
++            }
++            let lane0 = vgetq_lane_u64(acc, 0);
++            let lane1 = vgetq_lane_u64(acc, 1);
++            if lane0 | lane1 != 0 {
++                return false;
++            }
++        }
++
++        let mut tail = 0u64;
++        while w < words {
++            tail |= self.bits[w] & !other.bits[w];
++            w += 1;
++        }
++        tail == 0
++    }
++
++    #[cfg(not(target_arch = "aarch64"))]
++    pub fn subsumes_unpermuted(&self, other: &Self) -> bool {
++        self.subsumes_unpermuted_scalar(other)
++    }
++
++    pub fn swap_channels(&mut self, channels: [usize; 2]) {
++        debug_assert!(channels[0] < self.channels);
++        debug_assert!(channels[1] < self.channels);
++
++        let (c0, c1) = if channels[0] <= channels[1] {
++            (channels[0], channels[1])
++        } else {
++            (channels[1], channels[0])
++        };
++
++        if c0 == c1 {
++            return;
++        }
++
++        if c1 < 6 {
++            // Case A: both bit positions are inside a word. Hacker's
++            // Delight delta swap.
++            let d = (1usize << c1) - (1usize << c0);
++            let m = BIT_MASK[c0] & !BIT_MASK[c1];
++            for w in 0..self.words {
++                let x = self.bits[w];
++                let t = ((x >> d) ^ x) & m;
++                self.bits[w] = x ^ t ^ (t << d);
++            }
++        } else if c0 < 6 {
++            // Case B: c0 is in-word, c1 is a word-index bit.
++            let s = 1usize << c0;
++            let mmask = BIT_MASK[c0];
++            let w_bit = c1 - 6;
++            let bit = 1usize << w_bit;
++            let mut w = 0usize;
++            while w < self.words {
++                if w & bit == 0 {
++                    let w2 = w | bit;
++                    let a = self.bits[w];
++                    let b = self.bits[w2];
++                    self.bits[w] = (a & !mmask) | ((b << s) & mmask);
++                    self.bits[w2] = (b & mmask) | ((a >> s) & !mmask);
++                }
++                w += 1;
++            }
++        } else {
++            // Case C: both are word-index bits -- pure word permutation.
++            let b0 = c0 - 6;
++            let b1 = c1 - 6;
++            let bit0 = 1usize << b0;
++            let bit1 = 1usize << b1;
++            for w in 0..self.words {
++                if (w & bit0) != 0 && (w & bit1) == 0 {
++                    let w2 = w ^ bit0 ^ bit1;
++                    self.bits.swap(w, w2);
++                }
++            }
++        }
++
++        self.check_clean();
++    }
++
++    pub fn invert(&mut self) {
++        if self.words == 1 {
++            let n = 1usize << self.channels;
++            self.bits[0] = self.bits[0].reverse_bits() >> (64 - n);
++        } else {
++            let mut new_bits = [0u64; MAX_WORDS];
++            for j in 0..self.words {
++                new_bits[self.words - 1 - j] = self.bits[j].reverse_bits();
++            }
++            self.bits[..self.words].copy_from_slice(&new_bits[..self.words]);
++        }
++        self.check_clean();
++    }
++
++    pub fn len(&self) -> u32 {
++        self.bits[..self.words].iter().map(|w| w.count_ones()).sum()
++    }
++
++    pub fn weight_histogram(&self) -> WVec<u32> {
++        let mut hist: WVec<u32> = WVec::new();
++        for _ in 0..=self.channels {
++            hist.push(0);
++        }
++
++        for j in 0..self.words {
++            let word = self.bits[j];
++            if word == 0 {
++                continue;
++            }
++            let pj = (j as u64).count_ones() as usize;
++            for t in 0..=6usize {
++                if pj + t > self.channels {
++                    break;
++                }
++                let cnt = (word & INWORD[t]).count_ones();
++                hist[pj + t] += cnt;
++            }
++        }
++
++        hist
++    }
++
++    pub fn low_channels_channel_abstraction_len(&self, low_channels: usize) -> usize {
++        let weights = self.channels - low_channels;
++        let low_indices = 1usize << low_channels;
++        weights * low_indices * 3
++    }
++
++    /// Thin wrapper around [`Self::low_channels_channel_abstraction_with`]
++    /// that builds a one-off [`AbstractionTables`] for this single call.
++    ///
++    /// Callers that invoke this repeatedly for the same `(channels,
++    /// low_channels)` pair (e.g. `Subsume::filter_matching`, which calls it
++    /// `2 * (channels - fixed_channels)` times per search node) should build
++    /// an `AbstractionTables` once with [`AbstractionTables::new`] and call
++    /// [`Self::low_channels_channel_abstraction_with`] directly instead, to
++    /// avoid rebuilding the `bit_low`/`bit_hw`/group tables on every call.
++    pub fn low_channels_channel_abstraction(
++        &self,
++        low_channels: usize,
++        channel: usize,
++        buffer: &mut [usize],
++    ) {
++        let tables = AbstractionTables::new(self.channels, low_channels);
++        self.low_channels_channel_abstraction_with(&tables, low_channels, channel, buffer);
++    }
++
++    /// Table-driven variant of [`Self::low_channels_channel_abstraction`].
++    ///
++    /// Requires `tables.channels() == self.channels() && tables.low_channels()
++    /// == low_channels`; this is checked with `debug_assert!` rather than
++    /// stored redundantly on `self`, since `tables` is expected to be reused
++    /// across many `PackedSet`s that all share the same `channels`.
++    pub fn low_channels_channel_abstraction_with(
++        &self,
++        tables: &AbstractionTables,
++        low_channels: usize,
++        channel: usize,
++        buffer: &mut [usize],
++    ) {
++        debug_assert_eq!(tables.channels, self.channels);
++        debug_assert_eq!(tables.low_channels, low_channels);
++        debug_assert!(channel >= low_channels);
++        debug_assert!(channel < self.channels);
++
++        for v in buffer.iter_mut() {
++            *v = 0;
++        }
++
++        let weights = tables.weights;
++        let low_word_bits = tables.low_word_bits;
++        let bit_low = &tables.bit_low;
++        let ct = &tables.per_channel[channel];
++        let high_word_bits = ct.high_word_bits;
++
++        if channel < 6 {
++            let s = ct.shift_or_bit;
++            let mch = ct.mch;
++            let bit_hw = &tables.bit_hw_low[channel];
++
++            for j in 0..self.words {
++                let word = self.bits[j];
++                let hj = word & mch;
++                let lj = (word << s) & mch;
++                if hj == 0 && lj == 0 {
++                    continue;
++                }
++                let base_low = (j & low_word_bits) << 6;
++                let base_hw = (j & high_word_bits).count_ones() as usize;
++                let row_base = 3 * (base_hw + weights * base_low);
++                Self::accumulate_word(
++                    hj,
++                    lj,
++                    row_base,
++                    weights,
++                    &ct.groups,
++                    bit_low,
++                    bit_hw,
++                    buffer,
++                );
++            }
++        } else {
++            let bit = ct.shift_or_bit;
++            let bit_hw = &tables.bit_hw_high;
++
++            for j in 0..self.words {
++                if j & bit == 0 {
++                    continue;
++                }
++                let hj = self.bits[j];
++                let lj = self.bits[j ^ bit];
++                if hj == 0 && lj == 0 {
++                    continue;
++                }
++                let base_low = (j & low_word_bits) << 6;
++                let base_hw = (j & high_word_bits).count_ones() as usize;
++                let row_base = 3 * (base_hw + weights * base_low);
++                Self::accumulate_word(
++                    hj,
++                    lj,
++                    row_base,
++                    weights,
++                    &ct.groups,
++                    bit_low,
++                    bit_hw,
++                    buffer,
++                );
++            }
++        }
++    }
++
++    /// Groups the (up to 64) in-word bit positions selected by `mch` by
++    /// their `(low_b, hw_b)` bucket, so that
++    /// `low_channels_channel_abstraction` can add a whole group's
++    /// contribution at once via masked popcounts. Each group's constant
++    /// `idx_base = 3 * (hw_b + weights * low_b)` is precomputed here (see
++    /// `accumulate_word`'s doc comment for the identity that makes summing
++    /// it with a per-word `row_base` at use time exact), which also removes
++    /// a multiply from the inner loop.
++    ///
++    /// `low_b` ranges over `0..64` (`bit_low` only ever looks at the
++    /// low 6 bits of the low-channel mask) and `hw_b` ranges over `0..=6`
++    /// (popcount of a 6-bit mask), so `key = low_b * 7 + hw_b < 448`. This
++    /// lets each bucket be found in O(1) via a direct-mapped `slot` table
++    /// instead of a linear scan over already-created groups, making the
++    /// whole function a single O(64) pass over the set bits of `mch` plus
++    /// one O(448) table reset.
++    ///
++    /// Returns a `Vec` sized to the actual number of distinct buckets
++    /// touched (at most 64, and in practice `<= 7` for the small
++    /// `low_channels` widths the search spends its time at) rather than a
++    /// fixed 64-entry array: `AbstractionTables` builds one `ChannelTable`
++    /// per channel, and the fixed-size array was most of its footprint.
++    fn build_groups(
++        mch: u64,
++        bit_low: &[u8; 64],
++        bit_hw: &[u8; 64],
++        weights: usize,
++    ) -> Vec<(u64, u32)> {
++        const NO_GROUP: i16 = -1;
++        let mut slot = [NO_GROUP; 448];
++
++        let mut groups: Vec<(u64, u32)> = Vec::new();
++
++        let mut rem = mch;
++        while rem != 0 {
++            let b = rem.trailing_zeros() as usize;
++            rem &= rem - 1;
++
++            let low_b = bit_low[b] as usize;
++            let hw_b = bit_hw[b] as usize;
++            let key = low_b * 7 + hw_b;
++
++            let gi = slot[key];
++            if gi != NO_GROUP {
++                groups[gi as usize].0 |= 1u64 << b;
++            } else {
++                slot[key] = groups.len() as i16;
++                let idx_base = (3 * (hw_b + weights * low_b)) as u32;
++                groups.push((1u64 << b, idx_base));
++            }
++        }
++        groups
++    }
++
++    /// Adds one word's contribution (`hj` = "hi" bits aligned to bit
++    /// `channel` set, `lj` = the matching "lo" partner bits at the same
++    /// positions) into `buffer`, choosing whichever of the grouped or
++    /// per-bit inner loop looks cheaper for this word's live-bit density.
++    ///
++    /// `row_base` is the per-word part of the flattened index, `3 *
++    /// (base_hw + weights * base_low)`. Each group (or, in the per-bit
++    /// fallback, each live bit) then contributes its own `idx_base = 3 *
++    /// (hw_b + weights * low_b)`, and `row_base + idx_base` is exactly the
++    /// original single-shot `3 * ((base_hw + hw_b) + weights * (base_low |
++    /// low_b))`: `base_low` (a multiple of 64, from `(j & low_word_bits) <<
++    /// 6`) and `low_b` (`< 64`, from the low 6 bits of the low-channel mask)
++    /// occupy disjoint bit ranges, so `base_low | low_b == base_low +
++    /// low_b`, and the sum then distributes over that addition:
++    /// `3*((base_hw+hw_b) + weights*(base_low+low_b)) == 3*(base_hw +
++    /// weights*base_low) + 3*(hw_b + weights*low_b)`.
++    #[allow(clippy::too_many_arguments)]
++    fn accumulate_word(
++        hj: u64,
++        lj: u64,
++        row_base: usize,
++        weights: usize,
++        groups: &[(u64, u32)],
++        bit_low: &[u8; 64],
++        bit_hw: &[u8; 64],
++        buffer: &mut [usize],
++    ) {
++        let live = hj | lj;
++        if live == 0 {
++            return;
++        }
++        let live_count = live.count_ones() as usize;
++        let group_count = groups.len();
++
++        if 2 * group_count <= live_count {
++            for &(gm, idx_base) in groups {
++                let a = lj & gm;
++                let c = hj & gm;
++                if a == 0 && c == 0 {
++                    continue;
++                }
++                let idx = row_base + idx_base as usize;
++                buffer[idx] += a.count_ones() as usize;
++                buffer[idx + 1] += c.count_ones() as usize;
++                buffer[idx + 2] += (a & c).count_ones() as usize;
++            }
++        } else {
++            let mut rem = live;
++            while rem != 0 {
++                let b = rem.trailing_zeros() as usize;
++                let bitv = 1u64 << b;
++                rem &= !bitv;
++                let low_b = bit_low[b] as usize;
++                let hw_b = bit_hw[b] as usize;
++                let idx = row_base + 3 * (hw_b + weights * low_b);
++                buffer[idx] += ((lj & bitv) != 0) as usize;
++                buffer[idx + 1] += ((hj & bitv) != 0) as usize;
++                buffer[idx + 2] += ((lj & hj & bitv) != 0) as usize;
++            }
++        }
++    }
++}
++
++/// Per-`channel` slice of [`AbstractionTables`]: everything
++/// `low_channels_channel_abstraction_with` needs that varies with
++/// `channel` (but not with the `PackedSet` being queried).
++#[derive(Clone)]
++struct ChannelTable {
++    /// In-word channel mask (`BIT_MASK[channel]` for `channel < 6`, `!0u64`
++    /// for `channel >= 6`, matching the original per-call computation).
++    mch: u64,
++    /// `1 << channel` (the in-word shift) for `channel < 6`; `1 <<
++    /// (channel - 6)` (the word-index bit) for `channel >= 6`.
++    shift_or_bit: usize,
++    /// `high_mask >> 6` for this channel.
++    high_word_bits: usize,
++    /// `(mask, idx_base)` per group; see `PackedSet::build_groups`. Sized to
++    /// the actual number of distinct `(low_b, hw_b)` buckets touched, not a
++    /// fixed 64-entry array.
++    groups: Vec<(u64, u32)>,
++}
++
++impl ChannelTable {
++    const EMPTY: ChannelTable = ChannelTable {
++        mch: 0,
++        shift_or_bit: 0,
++        high_word_bits: 0,
++        groups: Vec::new(),
++    };
++}
++
++/// Reusable precomputed tables for [`PackedSet::low_channels_channel_abstraction_with`],
++/// built once for a `(channels, low_channels)` pair and shared across every
++/// `channel` in `low_channels..channels` and across every `PackedSet` with
++/// that `channels` count.
++///
++/// `Subsume::filter_matching` calls `low_channels_channel_abstraction` `2 *
++/// (channels - fixed_channels)` times per search node, always with the same
++/// `low_channels` (== `fixed_channels`, which only changes a handful of
++/// times per search). Building `bit_low`/`bit_hw`/the per-channel group
++/// tables once per node (via this type) instead of once per call amortizes
++/// that setup cost across all of those calls; M2c additionally caches whole
++/// `AbstractionTables` instances across `Subsume` instances (see
++/// `output_set::subsume`'s thread-local `TABLE_CACHE`), since a fresh
++/// `Subsume` is built for every exact subsumption test.
++pub struct AbstractionTables {
++    channels: usize,
++    low_channels: usize,
++    weights: usize,
++    /// `low_mask >> 6`; does not depend on `channel`.
++    low_word_bits: usize,
++    /// `bit_low[b] = b & (low_mask & 63)`; does not depend on `channel`
++    /// (the low-channel mask never includes bit `channel`'s in-word
++    /// position by construction: `channel >= low_channels`). Values are
++    /// always `< 64`, hence `u8`.
++    bit_low: [u8; 64],
++    /// One `bit_hw` array per `channel` in `0..6.min(channels)`, since for
++    /// `channel < 6` the in-word high mask excludes bit `channel`. Values
++    /// are popcounts of a 6-bit mask, hence always `<= 6` and `u8`.
++    bit_hw_low: [[u8; 64]; 6],
++    /// Shared `bit_hw` array for every `channel >= 6`: bit `channel`'s
++    /// in-word contribution is always 0 there (it is a word-index bit), so
++    /// the in-word high mask -- and hence this array -- is the same for
++    /// every such channel. Values are `<= 6`, hence `u8`.
++    bit_hw_high: [u8; 64],
++    /// Indexed by `channel`, length exactly `channels`: entries below
++    /// `low_channels` are `ChannelTable::EMPTY` placeholders (never read,
++    /// since every caller checks `channel >= low_channels` first), entries
++    /// in `low_channels..channels` are populated. A `Vec` rather than a
++    /// fixed `[_; MAX_CHANNELS]` array both because `ChannelTable` is no
++    /// longer `Copy` (its `groups` field is itself a `Vec`) and to avoid
++    /// paying for unused tail entries when `channels < MAX_CHANNELS`.
++    per_channel: Vec<ChannelTable>,
++}
++
++impl AbstractionTables {
++    pub fn new(channels: usize, low_channels: usize) -> Self {
++        crate::instrument::bump(&crate::instrument::SUBSUME_TABLE_BUILDS);
++        debug_assert!(channels <= MAX_CHANNELS);
++        debug_assert!(low_channels <= channels);
++
++        let weights = channels - low_channels;
++        let low_indices = 1usize << low_channels;
++        let low_mask = low_indices - 1;
++        let full_mask = (1usize << channels) - 1;
++        let low_in_word = low_mask & 63;
++        let low_word_bits = low_mask >> 6;
++
++        let mut bit_low = [0u8; 64];
++        for b in 0..64usize {
++            bit_low[b] = (b & low_in_word) as u8;
++        }
++
++        // channel >= 6: bit `channel` never lands in the low 6 bits of
++        // `high_mask`, so this in-word high mask (and the `bit_hw` array
++        // derived from it) is shared by every such channel.
++        let high_mask_high = !low_mask & full_mask;
++        let high_in_word_high = high_mask_high & 63;
++        let mut bit_hw_high = [0u8; 64];
++        for b in 0..64usize {
++            bit_hw_high[b] = (b & high_in_word_high).count_ones() as u8;
++        }
++
++        let mut bit_hw_low = [[0u8; 64]; 6];
++        for channel in 0..6.min(channels) {
++            let mask = 1usize << channel;
++            let high_mask = !(low_mask | mask) & full_mask;
++            let high_in_word = high_mask & 63;
++            for b in 0..64usize {
++                bit_hw_low[channel][b] = (b & high_in_word).count_ones() as u8;
++            }
++        }
++
++        let mut per_channel: Vec<ChannelTable> = Vec::with_capacity(channels);
++        for _ in 0..low_channels {
++            per_channel.push(ChannelTable::EMPTY);
++        }
++        for channel in low_channels..channels {
++            let mask = 1usize << channel;
++            let high_mask = !(low_mask | mask) & full_mask;
++            let high_word_bits = high_mask >> 6;
++
++            if channel < 6 {
++                let s = mask;
++                let mch = BIT_MASK[channel];
++                let groups =
++                    PackedSet::build_groups(mch, &bit_low, &bit_hw_low[channel], weights);
++                per_channel.push(ChannelTable {
++                    mch,
++                    shift_or_bit: s,
++                    high_word_bits,
++                    groups,
++                });
++            } else {
++                let bit = 1usize << (channel - 6);
++                let groups = PackedSet::build_groups(!0u64, &bit_low, &bit_hw_high, weights);
++                per_channel.push(ChannelTable {
++                    mch: !0u64,
++                    shift_or_bit: bit,
++                    high_word_bits,
++                    groups,
++                });
++            }
++        }
++
++        Self {
++            channels,
++            low_channels,
++            weights,
++            low_word_bits,
++            bit_low,
++            bit_hw_low,
++            bit_hw_high,
++            per_channel,
++        }
++    }
++
++    pub fn channels(&self) -> usize {
++        self.channels
++    }
++
++    pub fn low_channels(&self) -> usize {
++        self.low_channels
++    }
++
++    /// Same value as `PackedSet::low_channels_channel_abstraction_len`.
++    pub fn abstraction_len(&self) -> usize {
++        self.weights * (1usize << self.low_channels) * 3
++    }
++}
++
++/// Number of rows/columns in [`BINOM`] (indices `0..=MAX_CHANNELS`).
++const BINOM_ROWS: usize = MAX_CHANNELS + 1;
++
++/// Pascal's-triangle table of binomial coefficients, `BINOM[n][k] ==
++/// C(n, k)`, for `n, k` in `0..=MAX_CHANNELS`.
++const fn binomials() -> [[u64; BINOM_ROWS]; BINOM_ROWS] {
++    let mut table = [[0u64; BINOM_ROWS]; BINOM_ROWS];
++    let mut n = 0usize;
++    while n < BINOM_ROWS {
++        table[n][0] = 1;
++        let mut k = 1usize;
++        while k <= n {
++            // `table[n - 1][k]` is still 0 (never written) when `k > n -
++            // 1`, so this is exactly `C(n-1, k-1) + C(n-1, k)` including
++            // the `k == n` boundary case.
++            table[n][k] = table[n - 1][k - 1] + table[n - 1][k];
++            k += 1;
++        }
++        n += 1;
++    }
++    table
++}
++
++const BINOM: [[u64; BINOM_ROWS]; BINOM_ROWS] = binomials();
++
++/// `T(channels, w, j) = ceil(C(channels, w) * (j + 1) / 6)`, computed in
++/// integer arithmetic. Non-decreasing in `j` (since the numerator is
++/// non-decreasing in `j` and the denominator is fixed), and `>= 1` at `j ==
++/// 0` (since `C(channels, w) >= 1` for `w <= channels`).
++fn histogram_threshold(channels: usize, w: usize, j: usize) -> u64 {
++    let numerator = BINOM[channels][w] * (j as u64 + 1);
++    (numerator + 5) / 6
++}
++
++/// `true` iff `a[w] <= b[w]` for all `w`. Necessary condition for "exists
++/// `pi`: `pi(A) subset-of B`" (a channel permutation preserves Hamming
++/// weight, so if such a `pi` exists then, weight class by weight class,
++/// `pi` maps `A`'s weight-`w` elements into a subset of `B`'s weight-`w`
++/// elements).
++pub fn hist_subsumes(a: &[u32], b: &[u32]) -> bool {
++    debug_assert_eq!(a.len(), b.len());
++    a.iter().zip(b.iter()).all(|(&av, &bv)| av <= bv)
++}
++
++/// `true` iff `a[k - w] <= b[w]` for all `w` (equivalently,
++/// `hist_subsumes(&reverse_histogram(a), b)`). Necessary condition for
++/// "exists `pi`: `pi(complement(A)) subset-of B`", since complementation
++/// maps weight `w` to weight `k - w`.
++pub fn hist_subsumes_inverted(a: &[u32], b: &[u32]) -> bool {
++    debug_assert_eq!(a.len(), b.len());
++    let n = a.len();
++    (0..n).all(|w| a[n - 1 - w] <= b[w])
++}
++
++/// The reverse of a histogram (slot `w` -> slot `channels - w`), so that a
++/// caller can compute `histogram_signature(k, &reversed)` once per query
++/// rather than reversing on every `hist_subsumes_inverted`-style comparison.
++pub fn reverse_histogram(hist: &[u32]) -> WVec<u32> {
++    hist.iter().rev().copied().collect()
++}
++
++/// 64-bit monotone "thermometer" signature of a weight histogram: bit `5 *
++/// w + j` (for `w` in `0..=channels`, `j` in `0..5`) is set iff `hist[w] >=
++/// histogram_threshold(channels, w, j)`.
++///
++/// Since the threshold is non-decreasing in `j` for fixed `(channels, w)`,
++/// each 5-bit slot is a monotone (thermometer-coded) encoding of `hist[w]`
++/// against the same 5 breakpoints for any two histograms with the same
++/// `channels`. That is exactly what makes the one-sided filter sound:
++/// `hist_subsumes(a, b)` (i.e. `a[w] <= b[w]` for every `w`) implies
++/// `histogram_signature(k, a) & !histogram_signature(k, b) == 0`, since
++/// `a[w] <= b[w]` and both are compared against the *same* thresholds means
++/// every threshold `a[w]` clears, `b[w]` also clears.
++///
++/// `channels <= MAX_CHANNELS == 11`, so at most `12 * 5 == 60` bits are
++/// used; this fits comfortably in a `u64`.
++pub fn histogram_signature(channels: usize, hist: &[u32]) -> u64 {
++    debug_assert!(channels <= MAX_CHANNELS);
++    debug_assert_eq!(hist.len(), channels + 1);
++
++    let mut sig = 0u64;
++    for w in 0..=channels {
++        let hw = hist[w] as u64;
++        for j in 0..5usize {
++            if hw >= histogram_threshold(channels, w, j) {
++                sig |= 1u64 << (5 * w + j);
++            }
++        }
++    }
++    sig
++}
++
++#[cfg(test)]
++mod test {
++    use super::*;
++
++    struct Xorshift64(u64);
++
++    impl Xorshift64 {
++        fn new(seed: u64) -> Self {
++            Self(seed | 1)
++        }
++
++        fn next(&mut self) -> u64 {
++            let mut x = self.0;
++            x ^= x << 13;
++            x ^= x >> 7;
++            x ^= x << 17;
++            self.0 = x;
++            x
++        }
++
++        fn below(&mut self, bound: usize) -> usize {
++            (self.next() % bound as u64) as usize
++        }
++
++        fn pair(&mut self, k: usize) -> Option<[usize; 2]> {
++            if k < 2 {
++                return None;
++            }
++            let a = self.below(k);
++            let mut b = self.below(k);
++            while b == a {
++                b = self.below(k);
++            }
++            Some([a, b])
++        }
++    }
++
++    /// Builds `count` snapshots of an `OutputSet` for `channels`, starting
++    /// from `all_values` (an all-true edge case) and applying a
++    /// deterministic pseudo-random sequence of comparators; later
++    /// snapshots trend towards very sparse sets since sorting-network
++    /// comparators only ever merge (never split) reachable outputs.
++    fn build_sets(channels: usize, seed: u64, count: usize) -> Vec<OutputSet<Vec<bool>>> {
++        let mut rng = Xorshift64::new(seed);
++        let mut current = OutputSet::all_values(channels);
++        let mut snapshots = vec![current.clone()];
++
++        let steps = count.max(20) * 2;
++        for _ in 0..steps {
++            if let Some(pair) = rng.pair(channels) {
++                current.apply_comparator(pair);
++                snapshots.push(current.clone());
++            } else {
++                break;
++            }
++        }
++
++        if snapshots.len() <= count {
++            return snapshots;
++        }
++
++        let mut result = Vec::with_capacity(count);
++        for i in 0..count {
++            let idx = i * (snapshots.len() - 1) / (count - 1).max(1);
++            result.push(snapshots[idx].clone());
++        }
++        result
++    }
++
++    fn assert_bitmap_eq(packed: &PackedSet, expected: &OutputSet<Vec<bool>>) {
++        let mut roundtrip = OutputSet::all_values(expected.channels());
++        packed.write_bitmap_into(roundtrip.as_mut());
++        assert_eq!(&roundtrip, expected);
++    }
++
++    #[test]
++    fn roundtrip_and_len_and_histogram_and_invert() {
++        for channels in 1..=MAX_CHANNELS {
++            let sets = build_sets(channels, 0x9E37_79B9 ^ (channels as u64), 20);
++            for os in &sets {
++                let packed = PackedSet::from_bitmap(os.as_ref());
++                assert_eq!(packed.channels(), channels);
++
++                // from_bitmap -> write_bitmap_into roundtrip.
++                assert_bitmap_eq(&packed, os);
++
++                // from_packed_bytes roundtrip.
++                let bytes = os.packed();
++                let from_bytes = PackedSet::from_packed_bytes(channels, &bytes);
++                assert!(from_bytes.eq_packed(&packed));
++                assert_eq!(from_bytes, packed);
++
++                // to_output_set.
++                assert_eq!(packed.to_output_set(), *os);
++
++                // len.
++                assert_eq!(packed.len() as usize, os.len());
++
++                // weight_histogram.
++                let expected_hist = os.weight_histogram();
++                let actual_hist = packed.weight_histogram();
++                assert_eq!(actual_hist.len(), expected_hist.len());
++                for (a, e) in actual_hist.iter().zip(expected_hist.iter()) {
++                    assert_eq!(*a as usize, *e);
++                }
++
++                // invert.
++                let mut expected_inv = os.clone();
++                expected_inv.invert();
++                let mut packed_inv = packed;
++                packed_inv.invert();
++                assert_bitmap_eq(&packed_inv, &expected_inv);
++                assert_eq!(PackedSet::from_bitmap(expected_inv.as_ref()), packed_inv);
++            }
++        }
++    }
++
++    #[test]
++    fn swap_channels_matches_reference() {
++        for channels in 1..=MAX_CHANNELS {
++            let sets = build_sets(channels, 0xD1B5_4A32 ^ (channels as u64), 12);
++            for os in &sets {
++                let packed = PackedSet::from_bitmap(os.as_ref());
++                for a in 0..channels {
++                    for b in 0..channels {
++                        let mut expected = os.clone();
++                        expected.swap_channels([a, b]);
++
++                        let mut actual = packed;
++                        actual.swap_channels([a, b]);
++
++                        assert_bitmap_eq(&actual, &expected);
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn subsumes_unpermuted_matches_reference() {
++        for channels in 1..=MAX_CHANNELS {
++            let pool = build_sets(channels, 0x27D4_EB2F ^ (channels as u64), 12);
++            let packed_pool: Vec<PackedSet> =
++                pool.iter().map(|os| PackedSet::from_bitmap(os.as_ref())).collect();
++
++            for (i, os_a) in pool.iter().enumerate() {
++                for (j, os_b) in pool.iter().enumerate() {
++                    let expected = os_a.subsumes_unpermuted(os_b.as_ref());
++                    assert_eq!(
++                        packed_pool[i].subsumes_unpermuted_scalar(&packed_pool[j]),
++                        expected,
++                        "scalar mismatch channels={channels} i={i} j={j}"
++                    );
++                    assert_eq!(
++                        packed_pool[i].subsumes_unpermuted(&packed_pool[j]),
++                        expected,
++                        "dispatched mismatch channels={channels} i={i} j={j}"
++                    );
++                }
++            }
++
++            // Genuine subsumption chains: s0, s1 = s0 + comparator, s2 = s1
++            // + comparator, ...
++            if channels >= 2 {
++                let mut rng = Xorshift64::new(0x1234_5678 ^ channels as u64);
++                let mut chain = vec![OutputSet::all_values(channels)];
++                for _ in 0..16 {
++                    let mut next = chain.last().unwrap().clone();
++                    if let Some(pair) = rng.pair(channels) {
++                        next.apply_comparator(pair);
++                    }
++                    chain.push(next);
++                }
++                let packed_chain: Vec<PackedSet> =
++                    chain.iter().map(|os| PackedSet::from_bitmap(os.as_ref())).collect();
++
++                for i in 0..chain.len() {
++                    for j in 0..chain.len() {
++                        let expected = chain[i].subsumes_unpermuted(chain[j].as_ref());
++                        assert_eq!(packed_chain[i].subsumes_unpermuted_scalar(&packed_chain[j]), expected);
++                        assert_eq!(packed_chain[i].subsumes_unpermuted(&packed_chain[j]), expected);
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn low_channels_channel_abstraction_matches_reference() {
++        for channels in 1..=MAX_CHANNELS {
++            let sets = build_sets(channels, 0x5BD1_E995 ^ (channels as u64), 12);
++            for os in &sets {
++                let packed = PackedSet::from_bitmap(os.as_ref());
++
++                for low_channels in 0..channels {
++                    for channel in low_channels..channels {
++                        let len = os.low_channels_channel_abstraction_len(low_channels);
++                        assert_eq!(packed.low_channels_channel_abstraction_len(low_channels), len);
++
++                        let mut expected = vec![usize::MAX; len];
++                        os.low_channels_channel_abstraction(low_channels, channel, &mut expected);
++
++                        let mut actual = vec![usize::MAX; len];
++                        packed.low_channels_channel_abstraction(low_channels, channel, &mut actual);
++
++                        assert_eq!(
++                            actual, expected,
++                            "channels={channels} low_channels={low_channels} channel={channel}"
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    /// `AbstractionTables::new` + `low_channels_channel_abstraction_with`
++    /// must agree with the (now table-building-per-call) standalone
++    /// `low_channels_channel_abstraction` for every already-covered
++    /// `(channels, low_channels, channel)` triple.
++    #[test]
++    fn low_channels_channel_abstraction_with_matches_standalone() {
++        for channels in 1..=MAX_CHANNELS {
++            let sets = build_sets(channels, 0x8B6A_CFE1 ^ (channels as u64), 8);
++            for os in &sets {
++                let packed = PackedSet::from_bitmap(os.as_ref());
++
++                for low_channels in 0..channels {
++                    let tables = AbstractionTables::new(channels, low_channels);
++                    assert_eq!(tables.channels(), channels);
++                    assert_eq!(tables.low_channels(), low_channels);
++                    let len = packed.low_channels_channel_abstraction_len(low_channels);
++                    assert_eq!(tables.abstraction_len(), len);
++
++                    for channel in low_channels..channels {
++                        let mut expected = vec![usize::MAX; len];
++                        packed.low_channels_channel_abstraction(low_channels, channel, &mut expected);
++
++                        let mut actual = vec![usize::MAX; len];
++                        packed.low_channels_channel_abstraction_with(
++                            &tables,
++                            low_channels,
++                            channel,
++                            &mut actual,
++                        );
++
++                        assert_eq!(
++                            actual, expected,
++                            "channels={channels} low_channels={low_channels} channel={channel}"
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    /// Direct oracle coverage for `low_channels_channel_abstraction_with`,
++    /// for every `(channels, low_channels, channel)` triple, using a single
++    /// `AbstractionTables` built once per `(channels, low_channels)` pair
++    /// and reused across every `channel` -- the same reuse pattern
++    /// `Subsume::filter_matching` (and, since M2c, the thread-local
++    /// `TABLE_CACHE`) relies on. `low_channels_channel_abstraction_matches_reference`
++    /// above only exercises `_with` indirectly (through the standalone
++    /// wrapper, which rebuilds `AbstractionTables` fresh on every call); this
++    /// test is the thing the M2c `idx_base`/group-table refactor (narrowed
++    /// `bit_low`/`bit_hw` types, precomputed `idx_base`, `Vec`-sized groups)
++    /// most needs, since a bug there would most plausibly show up as
++    /// cross-channel contamination within one shared table.
++    #[test]
++    fn low_channels_channel_abstraction_with_matches_reference() {
++        for channels in 1..=MAX_CHANNELS {
++            let sets = build_sets(channels, 0x3C6E_F372 ^ (channels as u64), 8);
++            for os in &sets {
++                let packed = PackedSet::from_bitmap(os.as_ref());
++
++                for low_channels in 0..channels {
++                    let tables = AbstractionTables::new(channels, low_channels);
++                    let len = os.low_channels_channel_abstraction_len(low_channels);
++                    assert_eq!(packed.low_channels_channel_abstraction_len(low_channels), len);
++                    assert_eq!(tables.abstraction_len(), len);
++
++                    for channel in low_channels..channels {
++                        let mut expected = vec![usize::MAX; len];
++                        os.low_channels_channel_abstraction(low_channels, channel, &mut expected);
++
++                        let mut actual = vec![usize::MAX; len];
++                        packed.low_channels_channel_abstraction_with(
++                            &tables,
++                            low_channels,
++                            channel,
++                            &mut actual,
++                        );
++
++                        assert_eq!(
++                            actual, expected,
++                            "channels={channels} low_channels={low_channels} channel={channel}"
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn hist_subsumes_signature_implication_random() {
++        for channels in 1..=MAX_CHANNELS {
++            let mut rng = Xorshift64::new(0xA5A5_5A5A ^ (channels as u64));
++            let len = channels + 1;
++
++            for _ in 0..300 {
++                // Ordered pair: b = a + nonneg noise, so hist_subsumes(a, b)
++                // is guaranteed -- exercises the "implication must hold"
++                // side on every iteration.
++                let a: WVec<u32> = (0..len).map(|_| rng.below(40) as u32).collect();
++                let b: WVec<u32> = a.iter().map(|&av| av + rng.below(20) as u32).collect();
++                assert!(hist_subsumes(&a, &b));
++                let sig_a = histogram_signature(channels, &a);
++                let sig_b = histogram_signature(channels, &b);
++                assert_eq!(
++                    sig_a & !sig_b,
++                    0,
++                    "channels={channels} a={a:?} b={b:?} sig_a={sig_a:#x} sig_b={sig_b:#x}"
++                );
++
++                // Independent (mostly unordered) pair: only check the
++                // implication when hist_subsumes actually holds.
++                let c: WVec<u32> = (0..len).map(|_| rng.below(40) as u32).collect();
++                let d: WVec<u32> = (0..len).map(|_| rng.below(40) as u32).collect();
++                if hist_subsumes(&c, &d) {
++                    let sig_c = histogram_signature(channels, &c);
++                    let sig_d = histogram_signature(channels, &d);
++                    assert_eq!(sig_c & !sig_d, 0, "channels={channels} c={c:?} d={d:?}");
++                }
++
++                // hist_subsumes_inverted(a, b) must agree with the
++                // reverse-then-hist_subsumes definition, and the inverted
++                // implication must hold whenever it applies.
++                let rev_a = reverse_histogram(&a);
++                assert_eq!(hist_subsumes_inverted(&a, &b), hist_subsumes(&rev_a, &b));
++                if hist_subsumes_inverted(&c, &d) {
++                    let sig_rev_c = histogram_signature(channels, &reverse_histogram(&c));
++                    let sig_d = histogram_signature(channels, &d);
++                    assert_eq!(sig_rev_c & !sig_d, 0, "channels={channels} c={c:?} d={d:?}");
++                }
++            }
++        }
++    }
++
++    /// Semantic cross-check tying `hist_subsumes`/`hist_subsumes_inverted`/
++    /// `histogram_signature` to `OutputSet::subsumes_permuted` on real
++    /// `OutputSet`s.
++    ///
++    /// Pairs are generated so a decent number of them are *genuine*
++    /// subsumptions, via two constructions that are guaranteed hits:
++    ///   - direct: `A = perm(S)`, `B = S`, so `A.subsumes_permuted(B)` holds
++    ///     via the inverse permutation (`pi(A) == B` exactly).
++    ///   - inverted: `A = perm(invert(S))`, `B = S`. Since `invert` and
++    ///     `swap_channels` commute (both act on independent "aspects" -- bit
++    ///     value complementation vs. bit position permutation -- of the
++    ///     bitmap index), `invert(A) == perm(invert(invert(S))) ==
++    ///     perm(S)`, so `invert(A).subsumes_permuted(B)` holds via the
++    ///     inverse permutation, same as the direct case.
++    /// Every pair (including these two, plus general pool pairs and pairs
++    /// derived by applying an extra comparator to a second copy) is also
++    /// run through the one-sided implication check unconditionally, so a
++    /// failing implication is always caught even for pairs that don't hit
++    /// either guaranteed-subsumption construction.
++    #[test]
++    fn hist_subsumes_and_signature_match_real_subsumes_permuted() {
++        for channels in 1..=MAX_CHANNELS {
++            let pool = build_sets(channels, 0x1357_9BDF ^ (channels as u64), 6);
++            let mut rng = Xorshift64::new(0x2468_ACE0 ^ (channels as u64));
++
++            let hist_of = |os: &OutputSet<Vec<bool>>| -> WVec<u32> {
++                PackedSet::from_bitmap(os.as_ref()).weight_histogram()
++            };
++
++            let random_perm = |os: &OutputSet<Vec<bool>>,
++                                rng: &mut Xorshift64|
++             -> OutputSet<Vec<bool>> {
++                let mut result = os.clone();
++                for _ in 0..5 {
++                    if let Some(pair) = rng.pair(channels) {
++                        result.swap_channels(pair);
++                    }
++                }
++                result
++            };
++
++            let check_direct = |x: &OutputSet<Vec<bool>>, y: &OutputSet<Vec<bool>>| -> bool {
++                let hit = x.subsumes_permuted(y.as_ref()).is_some();
++                if hit {
++                    let hist_x = hist_of(x);
++                    let hist_y = hist_of(y);
++                    assert!(hist_subsumes(&hist_x, &hist_y));
++                    let sig_x = histogram_signature(channels, &hist_x);
++                    let sig_y = histogram_signature(channels, &hist_y);
++                    assert_eq!(sig_x & !sig_y, 0);
++                }
++                hit
++            };
++
++            let check_inverted = |x: &OutputSet<Vec<bool>>, y: &OutputSet<Vec<bool>>| -> bool {
++                let mut x_inv = x.clone();
++                x_inv.invert();
++                let hit = x_inv.subsumes_permuted(y.as_ref()).is_some();
++                if hit {
++                    let hist_x = hist_of(x);
++                    let hist_y = hist_of(y);
++                    assert!(hist_subsumes_inverted(&hist_x, &hist_y));
++                    let sig_y = histogram_signature(channels, &hist_y);
++                    let sig_rev_x = histogram_signature(channels, &reverse_histogram(&hist_x));
++                    assert_eq!(sig_rev_x & !sig_y, 0);
++                }
++                hit
++            };
++
++            let mut saw_direct_hit = false;
++            let mut saw_inverted_hit = false;
++
++            for s in &pool {
++                // Guaranteed direct hit.
++                let a = random_perm(s, &mut rng);
++                let b = s.clone();
++                saw_direct_hit |= check_direct(&a, &b);
++
++                // Guaranteed inverted hit.
++                let mut base = s.clone();
++                base.invert();
++                let a_inv_source = random_perm(&base, &mut rng);
++                let b2 = s.clone();
++                saw_inverted_hit |= check_inverted(&a_inv_source, &b2);
++
++                // General pairs, including one derived from applying an
++                // extra comparator to a second copy: checked
++                // unconditionally (the check itself is conditional on the
++                // subsumption actually being found), for extra coverage
++                // beyond the two guaranteed constructions above.
++                let mut extra = s.clone();
++                if let Some(pair) = rng.pair(channels) {
++                    extra.apply_comparator(pair);
++                }
++                for (x, y) in [(s, &extra), (&extra, s)] {
++                    saw_direct_hit |= check_direct(x, y);
++                    saw_inverted_hit |= check_inverted(x, y);
++                }
++
++                for other in &pool {
++                    saw_direct_hit |= check_direct(s, other);
++                    saw_inverted_hit |= check_inverted(s, other);
++                }
++            }
++
++            assert!(
++                saw_direct_hit,
++                "channels={}: no direct subsumption hit generated",
++                channels
++            );
++            assert!(
++                saw_inverted_hit,
++                "channels={}: no inverted subsumption hit generated",
++                channels
++            );
++        }
++    }
++}
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/output_set/subsume.rs source/src/output_set/subsume.rs
+--- a/src/output_set/subsume.rs	2026-08-17 16:29:25
++++ b/src/output_set/subsume.rs	2026-08-17 16:24:55
+@@ -1,7 +1,12 @@
+-use std::{iter::repeat, mem::replace};
++use std::{cell::RefCell, iter::repeat, mem::replace, rc::Rc};
+ 
+-use super::{CVec, OutputSet, MAX_CHANNELS};
++use super::{
++    packed::{AbstractionTables, PackedSet},
++    CVec, MAX_CHANNELS,
++};
+ 
++use crate::instrument;
++
+ #[derive(Copy, Clone)]
+ enum UndoAction {
+     Matching {
+@@ -13,18 +18,96 @@
+     },
+ }
+ 
++/// M2c: thread-local cache of [`AbstractionTables`] keyed by
++/// `(channels, low_channels)`.
++///
++/// A fresh [`Subsume`] is created for *every* exact subsumption test --
++/// millions per search -- and `filter_matching`'s own per-`Subsume` cache
++/// (see `Subsume::tables`) only amortizes table builds across the calls
++/// belonging to a single `Subsume::search`, not across the many `Subsume`
++/// instances that share the same `(channels, low_channels)` pair over the
++/// life of a search. Caching whole `Rc<AbstractionTables>` values here
++/// closes that gap: `AbstractionTables::new` (and hence
++/// `instrument::SUBSUME_TABLE_BUILDS`) then fires at most once per thread
++/// per `(channels, low_channels)` pair.
++struct TableCache {
++    /// `channels` this cache's `slots` were built for; a mismatch means the
++    /// whole cache is stale (a different search width is running on this
++    /// thread) and must be rebuilt from scratch.
++    channels: usize,
++    /// Indexed by `low_channels` in `0..=MAX_CHANNELS`.
++    slots: Vec<Option<Rc<AbstractionTables>>>,
++}
++
++impl TableCache {
++    fn new() -> Self {
++        Self {
++            channels: usize::MAX,
++            slots: Vec::new(),
++        }
++    }
++
++    fn get(&mut self, channels: usize, low_channels: usize) -> Rc<AbstractionTables> {
++        if self.channels != channels {
++            self.channels = channels;
++            self.slots.clear();
++            self.slots.resize(MAX_CHANNELS + 1, None);
++        }
++        if let Some(tables) = &self.slots[low_channels] {
++            return Rc::clone(tables);
++        }
++        let tables = Rc::new(AbstractionTables::new(channels, low_channels));
++        self.slots[low_channels] = Some(Rc::clone(&tables));
++        tables
++    }
++}
++
++thread_local! {
++    static TABLE_CACHE: RefCell<TableCache> = RefCell::new(TableCache::new());
++}
++
+ pub struct Subsume {
+     channels: usize,
+-    output_sets: [OutputSet; 2],
++    output_sets: [PackedSet; 2],
+     perms: [CVec<usize>; 2],
+     matching: [CVec<u16>; 2],
+     undo_stack: Vec<UndoAction>,
+     fixed_channels: usize,
+     buffer: Vec<usize>,
++    /// M2c: refreshed from the thread-local `TABLE_CACHE` only when
++    /// `fixed_channels` changes (see `filter_matching`), so this is an
++    /// `Rc` clone in the common case, not a fresh `AbstractionTables::new`.
++    tables: Option<Rc<AbstractionTables>>,
++    /// TIER1 diagnostics: `filter_matching` call count and inner-`search`-loop
++    /// node count for this `Subsume`'s whole lifetime (including every
++    /// recursive `self.search()` call, since those share `self`). Plain
++    /// `usize` fields rather than atomics -- flushed once into
++    /// `instrument::SUBSUME_FILTER_MATCHING` / `instrument::SUBSUME_NODES` by
++    /// `Drop`, which fires exactly once per top-level `subsumes_permuted_packed`
++    /// call since only one `Subsume` value exists per such call.
++    diag_filter_matching: usize,
++    diag_nodes: usize,
+ }
+ 
++impl Drop for Subsume {
++    fn drop(&mut self) {
++        instrument::add(
++            &instrument::SUBSUME_FILTER_MATCHING,
++            self.diag_filter_matching as u64,
++        );
++        instrument::add(&instrument::SUBSUME_NODES, self.diag_nodes as u64);
++    }
++}
++
++/// Allocation-free entry point for exact permuted subsumption on already
++/// bit-packed sets: `Subsume::new([*a, *b]).search()`.
++pub fn subsumes_permuted_packed(a: &PackedSet, b: &PackedSet) -> Option<CVec<usize>> {
++    Subsume::new([*a, *b]).search()
++}
++
+ impl Subsume {
+-    pub fn new(output_sets: [OutputSet; 2]) -> Self {
++    pub fn new(output_sets: [PackedSet; 2]) -> Self {
++        instrument::bump(&instrument::SUBSUME_CALLS);
+         assert_eq!(output_sets[0].channels(), output_sets[1].channels());
+         let channels = output_sets[0].channels();
+         let identity_perm = (0..channels).collect::<CVec<_>>();
+@@ -38,14 +121,18 @@
+             undo_stack: vec![],
+             fixed_channels: 0,
+             buffer: vec![],
++            tables: None,
++            diag_filter_matching: 0,
++            diag_nodes: 0,
+         }
+     }
+ 
+     pub fn search(&mut self) -> Option<CVec<usize>> {
+         loop {
+             loop {
++                self.diag_nodes += 1;
+                 if self.fixed_channels == self.channels {
+-                    if self.output_sets[0].subsumes_unpermuted(self.output_sets[1].as_ref()) {
++                    if self.output_sets[0].subsumes_unpermuted(&self.output_sets[1]) {
+                         let mut perm = (0..self.channels).collect::<CVec<_>>();
+ 
+                         for i in 0..self.channels {
+@@ -217,9 +304,27 @@
+     }
+ 
+     fn filter_matching(&mut self) -> bool {
+-        let abstraction_len =
+-            self.output_sets[0].low_channels_channel_abstraction_len(self.fixed_channels);
++        self.diag_filter_matching += 1;
++        // Take the cached tables out of `self` (same style as `self.buffer`
++        // below) so `self.output_sets` can be borrowed independently of
++        // `self.tables` inside the loops. Refresh only when `self.tables` is
++        // absent or stale for the current `(channels, fixed_channels)` pair;
++        // `fixed_channels` changes far less often than `filter_matching` is
++        // called, so this amortizes the `Rc::clone` (and, on a cache miss,
++        // the thread-local `TABLE_CACHE` lookup / `AbstractionTables::new`
++        // build) across many calls.
++        let tables = match self.tables.take() {
++            Some(tables)
++                if tables.channels() == self.channels
++                    && tables.low_channels() == self.fixed_channels =>
++            {
++                tables
++            }
++            _ => TABLE_CACHE.with(|cache| cache.borrow_mut().get(self.channels, self.fixed_channels)),
++        };
+ 
++        let abstraction_len = tables.abstraction_len();
++
+         self.buffer.resize(
+             abstraction_len * (self.channels - self.fixed_channels) * 2,
+             0,
+@@ -234,7 +339,8 @@
+             for channel in self.fixed_channels..self.channels {
+                 let (current_buffer, buffer_rest) = buffer.split_at_mut(abstraction_len);
+ 
+-                self.output_sets[side].low_channels_channel_abstraction(
++                self.output_sets[side].low_channels_channel_abstraction_with(
++                    &tables,
+                     self.fixed_channels,
+                     channel,
+                     current_buffer,
+@@ -257,11 +363,9 @@
+             {
+                 let matching_channel_hi = self.perms[1][channel_hi];
+                 if self.get_matching([matching_channel_lo, matching_channel_hi]) {
+-                    if buffer_lo
+-                        .iter()
+-                        .zip(buffer_hi.iter())
+-                        .any(|(&lo, &hi)| lo > hi)
+-                    {
++                    let lo = &buffer_lo[..abstraction_len];
++                    let hi = &buffer_hi[..abstraction_len];
++                    if (0..abstraction_len).any(|i| lo[i] > hi[i]) {
+                         if !self.remove_matching([matching_channel_lo, matching_channel_hi]) {
+                             result = false;
+                             break 'outer;
+@@ -274,6 +378,7 @@
+         drop(abstraction_buffers);
+ 
+         self.buffer = buffer_vec;
++        self.tables = Some(tables);
+         result
+     }
+ 
+@@ -305,5 +410,258 @@
+             }
+         }
+         moved
++    }
++}
++
++#[cfg(test)]
++mod test {
++    use super::*;
++    use crate::output_set::{packed::hist_subsumes, OutputSet};
++
++    struct Xorshift64(u64);
++
++    impl Xorshift64 {
++        fn new(seed: u64) -> Self {
++            Self(seed | 1)
++        }
++
++        fn next(&mut self) -> u64 {
++            let mut x = self.0;
++            x ^= x << 13;
++            x ^= x >> 7;
++            x ^= x << 17;
++            self.0 = x;
++            x
++        }
++
++        fn below(&mut self, bound: usize) -> usize {
++            (self.next() % bound as u64) as usize
++        }
++
++        fn pair(&mut self, k: usize) -> Option<[usize; 2]> {
++            if k < 2 {
++                return None;
++            }
++            let a = self.below(k);
++            let mut b = self.below(k);
++            while b == a {
++                b = self.below(k);
++            }
++            Some([a, b])
++        }
++    }
++
++    fn random_chain(channels: usize, rng: &mut Xorshift64, steps: usize) -> OutputSet<Vec<bool>> {
++        let mut current = OutputSet::all_values(channels);
++        for _ in 0..steps {
++            if let Some(pair) = rng.pair(channels) {
++                current.apply_comparator(pair);
++            }
++        }
++        current
++    }
++
++    /// Builds a permutation array (as tracked by `Subsume::search`'s
++    /// `perms[side]` bookkeeping: see `apply_perm_convention` below) by
++    /// composing `swaps` random transpositions onto the identity.
++    fn random_perm(channels: usize, rng: &mut Xorshift64, swaps: usize) -> Vec<usize> {
++        let mut perm: Vec<usize> = (0..channels).collect();
++        for _ in 0..swaps {
++            if let Some([a, b]) = rng.pair(channels) {
++                perm.swap(a, b);
++            }
++        }
++        perm
++    }
++
++    /// Applies a `Subsume::search`-convention permutation to `set`.
++    ///
++    /// Convention, derived from `Subsume::rollback`'s `UndoAction::Swap` arm
++    /// (`output_set.swap_channels([target_channel, source_channel]);
++    /// perm.swap(target_channel, source_channel);`, i.e. every
++    /// `swap_channels` call on the working copy is mirrored by the same
++    /// `swap` on `perms[side]`) composed with `search`'s final
++    /// `perm[self.perms[1][i]] = self.perms[0][i]`: the returned `perm`
++    /// satisfies `perm[d] = perms0[perms1^-1[d]]`, and unwinding the
++    /// `perms[side]` invariant (`currentSet.bitmap[index] ==
++    /// originalSet.bitmap[map(index)]` where `map` relocates bit `c` of
++    /// `index` to bit `perms[side][c]`) shows that `perm` is exactly the
++    /// channel relabeling under which `originalSet0` permuted by `perm` (in
++    /// the sense implemented here) subsumes (unpermuted) `originalSet1`.
++    ///
++    /// Concretely: `result.bitmap[index] = set.bitmap[map(index)]` where
++    /// `map(index)` moves bit `d` of `index` to bit `perm[d]` of `map(index)`.
++    fn apply_perm_convention(set: &OutputSet<Vec<bool>>, perm: &[usize]) -> OutputSet<Vec<bool>> {
++        let channels = set.channels();
++        assert_eq!(perm.len(), channels);
++        let bitmap = set.bitmap();
++        let size = 1usize << channels;
++        let mut result = vec![false; size];
++        for (index, slot) in result.iter_mut().enumerate() {
++            let mut mapped = 0usize;
++            for d in 0..channels {
++                if index & (1 << d) != 0 {
++                    mapped |= 1 << perm[d];
++                }
++            }
++            *slot = bitmap[mapped];
++        }
++        OutputSet::from_bitmap(channels, result)
++    }
++
++    /// All `n!` permutations of `0..n`, generated once via Heap's algorithm
++    /// and reused across every pair for a given `channels` count (only
++    /// called for `channels <= 7`, so at most `5040` permutations).
++    fn all_permutations(n: usize) -> Vec<Vec<usize>> {
++        let mut items: Vec<usize> = (0..n).collect();
++        let mut result = Vec::new();
++        if n == 0 {
++            result.push(items);
++            return result;
++        }
++
++        fn heap(items: &mut Vec<usize>, k: usize, result: &mut Vec<Vec<usize>>) {
++            if k == 1 {
++                result.push(items.clone());
++                return;
++            }
++            for i in 0..k {
++                heap(items, k - 1, result);
++                if k % 2 == 0 {
++                    items.swap(i, k - 1);
++                } else {
++                    items.swap(0, k - 1);
++                }
++            }
++        }
++
++        heap(&mut items, n, &mut result);
++        result
++    }
++
++    /// Generates one `(a, b)` pair via one of three constructions, mixed at
++    /// random: independent random comparator chains (mostly no genuine
++    /// subsumption); a set vs. a randomly channel-permuted copy of itself
++    /// (guaranteed direct hit, since some permutation makes the two sets
++    /// bitmap-equal, and equal sets always mutually subsume); and a set vs.
++    /// a permuted copy with extra comparators applied on top (mixed --
++    /// tested in a random direction, since applying a comparator can move a
++    /// set either strictly below or leave it incomparable to the original
++    /// depending on direction).
++    fn generate_pair(channels: usize, rng: &mut Xorshift64) -> (OutputSet<Vec<bool>>, OutputSet<Vec<bool>>) {
++        match rng.below(3) {
++            0 => {
++                let steps_a = 6 + rng.below(10);
++                let a = random_chain(channels, rng, steps_a);
++                let steps_b = 6 + rng.below(10);
++                let b = random_chain(channels, rng, steps_b);
++                (a, b)
++            }
++            1 => {
++                let steps = 4 + rng.below(8);
++                let b = random_chain(channels, rng, steps);
++                let perm = random_perm(channels, rng, channels);
++                let a = apply_perm_convention(&b, &perm);
++                (a, b)
++            }
++            _ => {
++                let steps = 4 + rng.below(8);
++                let s = random_chain(channels, rng, steps);
++                let perm = random_perm(channels, rng, channels);
++                let mut extra = apply_perm_convention(&s, &perm);
++                for _ in 0..(1 + rng.below(3)) {
++                    if let Some(pair) = rng.pair(channels) {
++                        extra.apply_comparator(pair);
++                    }
++                }
++                if rng.below(2) == 0 {
++                    (extra, s)
++                } else {
++                    (s, extra)
++                }
++            }
++        }
++    }
++
++    /// Differential test: `subsumes_permuted_packed` must return `Some`
++    /// exactly when a genuine channel permutation subsumption exists, and
++    /// whenever it returns `Some(perm)`, `perm` (interpreted via
++    /// `apply_perm_convention`) must actually witness the subsumption.
++    ///
++    /// For `channels <= 7` the existence check is exhaustive (enumerate all
++    /// `channels!` permutations, `<= 5040`). For `channels` in `8..=9` only
++    /// the returned-permutation validity is checked exhaustively-in-spirit
++    /// (it is always checked when `Some`), plus a cheap *necessary*
++    /// condition on `None` results: channel permutations preserve Hamming
++    /// weight, so if `hist_subsumes(weight_histogram(a), weight_histogram(b))`
++    /// fails, no permutation of `a` can subsume `b`, and the result must be
++    /// `None`.
++    #[test]
++    fn subsumes_permuted_packed_matches_brute_force() {
++        for channels in 2..=9usize {
++            let mut rng = Xorshift64::new(0xABCD_1234_5678_9ABCu64 ^ (channels as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
++            let exhaustive_perms = if channels <= 7 {
++                Some(all_permutations(channels))
++            } else {
++                None
++            };
++
++            let pairs = if channels <= 6 { 200 } else { 120 };
++            let mut saw_hit = false;
++
++            for _ in 0..pairs {
++                let (a_os, b_os) = generate_pair(channels, &mut rng);
++
++                let a_packed = PackedSet::from_bitmap(a_os.as_ref());
++                let b_packed = PackedSet::from_bitmap(b_os.as_ref());
++
++                let result = subsumes_permuted_packed(&a_packed, &b_packed);
++
++                if let Some(perm) = &result {
++                    assert_eq!(perm.len(), channels);
++                    let permuted_a = apply_perm_convention(&a_os, perm);
++                    assert!(
++                        permuted_a.subsumes_unpermuted(b_os.as_ref()),
++                        "channels={}: returned perm {:?} does not witness subsumption",
++                        channels,
++                        perm
++                    );
++                    saw_hit = true;
++                }
++
++                if let Some(perms) = &exhaustive_perms {
++                    let brute_force = perms
++                        .iter()
++                        .any(|p| apply_perm_convention(&a_os, p).subsumes_unpermuted(b_os.as_ref()));
++                    assert_eq!(
++                        result.is_some(),
++                        brute_force,
++                        "channels={channels}: packed ({:?}) disagrees with brute force ({brute_force})",
++                        result.is_some()
++                    );
++                } else {
++                    // Cheap necessary condition (channels 8..=9, no
++                    // exhaustive check): a channel permutation preserves
++                    // Hamming weight, so if no weight-histogram-respecting
++                    // assignment exists, no permutation can witness
++                    // subsumption either, and the result must be `None`.
++                    let hist_a = a_packed.weight_histogram();
++                    let hist_b = b_packed.weight_histogram();
++                    if !hist_subsumes(&hist_a, &hist_b) {
++                        assert!(
++                            result.is_none(),
++                            "channels={}: hist_subsumes necessary condition violated -- got Some but histograms are incompatible",
++                            channels
++                        );
++                    }
++                }
++            }
++
++            assert!(
++                saw_hit,
++                "channels={}: no genuine subsumption hit generated across {} pairs",
++                channels, pairs
++            );
++        }
+     }
+ }
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/output_set.rs source/src/output_set.rs
+--- a/src/output_set.rs	2026-08-17 16:29:25
++++ b/src/output_set.rs	2026-08-17 15:28:54
+@@ -22,10 +22,13 @@
+ pub type AVec<T> = ArrayVec<[T; 512]>;
+ 
+ pub mod index;
++pub mod packed;
+ 
+ mod canon;
+ mod subsume;
+ 
++pub use subsume::subsumes_permuted_packed;
++
+ #[derive(Copy, Clone, Hash, Debug)]
+ pub struct OutputSet<Bitmap = Vec<bool>> {
+     channels: usize,
+@@ -140,6 +143,12 @@
+         }
+     }
+ 
++    /// Bit-packed mirror of this set, for use with the allocation-free
++    /// `packed::PackedSet` kernels (e.g. `subsumes_permuted_packed`).
++    pub fn packed_set(&self) -> packed::PackedSet {
++        packed::PackedSet::from_bitmap(self.as_ref())
++    }
++
+     pub fn len(&self) -> usize {
+         self.bitmap().iter().map(|&present| present as usize).sum()
+     }
+@@ -375,7 +384,9 @@
+     }
+ 
+     pub fn subsumes_permuted(&self, other: OutputSet<impl AsRef<[bool]>>) -> Option<CVec<usize>> {
+-        subsume::Subsume::new([self.to_owned(), other.to_owned()]).search()
++        let a = packed::PackedSet::from_bitmap(self.as_ref());
++        let b = packed::PackedSet::from_bitmap(other.as_ref());
++        subsume::subsumes_permuted_packed(&a, &b)
+     }
+ 
+     pub fn packed_len(&self) -> usize {
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/proof.rs source/src/proof.rs
+--- a/src/proof.rs	2026-08-17 16:29:25
++++ b/src/proof.rs	2026-08-17 15:46:59
+@@ -15,7 +15,7 @@
+ use crate::{
+     huffman::max_plus_1_huffman,
+     output_set::{
+-        index::{LowerInvert, OutputSetIndex},
++        index::{LowerInvert, OutputSetIndex, SubsumeFilter},
+         CVec, OutputSet,
+     },
+ };
+@@ -65,9 +65,11 @@
+         let stride = OutputSet::packed_len_for_channels(channels);
+         for packed in pruned_data.chunks(stride) {
+             let output_set = OutputSet::from_packed(channels, packed);
++            let filter = SubsumeFilter::from_packed_bytes(channels, packed);
+             pruned_index.insert_new_unchecked_with_abstraction(
+                 output_set.as_ref(),
+                 &output_set.abstraction(),
++                &filter,
+                 bound,
+             );
+         }
+@@ -117,7 +119,7 @@
+     pub fn new(pruned_indexes: BTreeMap<usize, OutputSetIndex<LowerInvert>>) -> Self {
+         let mut output_sets = HashMap::default();
+         for pruned_index in pruned_indexes.values() {
+-            pruned_index.for_each(|output_set, _abstraction, bound| {
++            pruned_index.for_each(|output_set, _abstraction, _sig, bound| {
+                 let shared_output_set = Arc::new(output_set.to_owned());
+                 output_sets.insert(shared_output_set.clone(), (bound, shared_output_set));
+             })
+@@ -232,7 +234,8 @@
+             .pruned_indexes
+             .get(&target.channels())
+             .and_then(|index| {
+-                index.lookup_subsuming_with_abstraction(target, &target.abstraction())
++                let filter = SubsumeFilter::from_output_set(target);
++                index.lookup_subsuming_with_abstraction(target, &target.abstraction(), &filter)
+             });
+ 
+         if let Some((bound, (invert, perm), output_set)) = subsuming {
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/prune.rs source/src/prune.rs
+--- a/src/prune.rs	2026-08-17 16:29:25
++++ b/src/prune.rs	2026-08-17 15:46:47
+@@ -10,7 +10,7 @@
+ use rayon::prelude::*;
+ 
+ use crate::output_set::{
+-    index::{LowerInvert, OutputSetIndex},
++    index::{LowerInvert, OutputSetIndex, SubsumeFilter},
+     OutputSet,
+ };
+ 
+@@ -86,9 +86,14 @@
+                 bar.inc(1);
+                 let packed = packed_output_sets.get_packed(id);
+                 let output_set = OutputSet::from_packed(channels, packed);
++                let filter = SubsumeFilter::from_packed_bytes(channels, packed);
+ 
+                 index
+-                    .lookup_with_abstraction(output_set.as_ref(), &output_set.abstraction())
++                    .lookup_with_abstraction(
++                        output_set.as_ref(),
++                        &output_set.abstraction(),
++                        &filter,
++                    )
+                     .is_none()
+             })
+             .collect::<Vec<_>>();
+@@ -97,10 +102,12 @@
+             let packed = packed_output_sets.get_packed(id);
+             output_file.write_all(packed).unwrap();
+             let output_set = OutputSet::from_packed(channels, packed);
++            let filter = SubsumeFilter::from_packed_bytes(channels, packed);
+ 
+             index.insert_new_unchecked_with_abstraction(
+                 output_set.as_ref(),
+                 &output_set.abstraction(),
++                &filter,
+                 0,
+             );
+         }
+@@ -275,9 +282,14 @@
+                         let packed = packed_output_sets[g].get_packed(i);
+                         let output_set = OutputSet::from_packed(channels, packed);
+                         let bound = bounds[g];
++                        let filter = SubsumeFilter::from_packed_bytes(channels, packed);
+ 
+                         index
+-                            .lookup_with_abstraction(output_set.as_ref(), &output_set.abstraction())
++                            .lookup_with_abstraction(
++                                output_set.as_ref(),
++                                &output_set.abstraction(),
++                                &filter,
++                            )
+                             .map_or(true, |best| best < bound)
+                     })
+                     .collect::<Vec<_>>()
+@@ -286,10 +298,12 @@
+             for (g, i) in survivors {
+                 let packed = packed_output_sets[g].get_packed(i);
+                 let output_set = OutputSet::from_packed(channels, packed);
++                let filter = SubsumeFilter::from_packed_bytes(channels, packed);
+ 
+                 index.insert_new_unchecked_with_abstraction(
+                     output_set.as_ref(),
+                     &output_set.abstraction(),
++                    &filter,
+                     bounds[g],
+                 );
+ 
+diff -ruN --exclude=target --exclude=.git --exclude=Cargo.lock verify-base/src/search/subsume.rs source/src/search/subsume.rs
+--- a/src/search/subsume.rs	2026-08-17 16:29:25
++++ b/src/search/subsume.rs	2026-08-17 15:46:28
+@@ -84,7 +84,7 @@
+ 
+ use crate::instrument;
+ use crate::output_set::{
+-    index::{LowerInvert, OutputSetIndex},
++    index::{LowerInvert, OutputSetIndex, SubsumeFilter},
+     OutputSet,
+ };
+ 
+@@ -149,6 +149,10 @@
+         let popcount = output_set.len();
+         instrument::add_ns(&instrument::IDX_NS_POPCOUNT, t_pop);
+ 
++        // TIER1: built once per query and shared by reference across every
++        // bucket visited below, rather than once per bucket.
++        let filter = SubsumeFilter::from_output_set(output_set);
++
+         let mut best: Option<u8> = None;
+         let mut visited = 0u64;
+         let mut skipped = 0u64;
+@@ -173,7 +177,12 @@
+                 .index
+                 .read()
+                 .unwrap()
+-                .lookup_with_abstraction_from(output_set, abstraction, best);
++                .lookup_with_abstraction_from(
++                    output_set,
++                    abstraction,
++                    &filter,
++                    best,
++                );
+         }
+ 
+         instrument::add(&instrument::IDX_LOOKUP_BUCKETS, visited);
+@@ -204,6 +213,12 @@
+             }
+         }
+ 
++        // TIER1: built once per query and shared by reference across the
++        // home-bucket insert and every bucket visited by the eviction loop
++        // below (a separate query filter than the one `self.lookup` built
++        // internally above).
++        let filter = SubsumeFilter::from_output_set(output_set);
++
+         // (1) Publish into the home bucket first, so that any entry removed in
+         //     step (2) is already covered for concurrent readers.
+         //
+@@ -218,7 +233,13 @@
+         let inner = {
+             let mut index = home.index.write().unwrap();
+             let inner =
+-                index.insert_with_abstraction_collect(output_set, abstraction, value, on_evict);
++                index.insert_with_abstraction_collect(
++                    output_set,
++                    abstraction,
++                    &filter,
++                    value,
++                    on_evict,
++                );
+             home.len.store(index.len() as u64, Relaxed);
+             inner
+         };
+@@ -242,7 +263,13 @@
+             visited += 1;
+             let mut index = bucket.index.write().unwrap();
+             let removed =
+-                index.remove_dominated_with_abstraction(output_set, abstraction, value, on_evict);
++                index.remove_dominated_with_abstraction(
++                    output_set,
++                    abstraction,
++                    &filter,
++                    value,
++                    on_evict,
++                );
+             if removed > 0 {
+                 bucket.len.store(index.len() as u64, Relaxed);
+             }
