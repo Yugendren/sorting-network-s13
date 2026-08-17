@@ -31,9 +31,13 @@ Keep this file below 120 lines. Replace stale facts; do not append a diary.
   `1d6fe20b547fa0e9dd9c899e34b608ac157104f63fd845d858e6e4ae9c0e6cc6`.
 - sortnetopt pin: `0b5d09c47446096f9e3a0812b35afc72b7f2a718`.
 - SENSO matched-compute baseline: 2/60 seeds at ≤45, 50,200 evals/seed.
-- Research snapshot (surveyed 2026-08-17): `44 <= S(13) <= 45`; 44 bound
-  is 2025 folklore (van Voorhis two-channel + S(11)=35), never published;
-  45 witness is Juillé 1995, unimproved.
+- Research snapshot (CORRECTED 2026-08-18): proven state is
+  `43 <= S(13) <= 45`. The folklore 44 rests on van Voorhis's 1972
+  two-channel theorem, whose published proof is INVALID as written
+  (Kraft step refuted by an optimal 3-sorter; see
+  docs/van-voorhis-theory-report.md). The 44 is an empirically
+  unrefuted conjecture; repairing its proof is a blocking theory item
+  and itself publishable. 45 witness is Juillé 1995, unimproved.
 
 ## Measured anchors (evidence/b2, evidence/b3)
 
