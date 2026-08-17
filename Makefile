@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 PYTHON ?= python3
 
-.PHONY: setup verify baseline-b0 baseline-b1 baseline-b2 baseline-b3 baseline-b4 baseline setup-method-instrumented setup-method-v1 setup-method-v2 method-e0 method-e1 method-e2-train method-e2-validate method-e4-train method-e4-exam evidence-check report clean
+.PHONY: setup verify baseline-b0 baseline-b1 baseline-b2 baseline-b3 baseline-b4 baseline setup-method-instrumented setup-method-v1 setup-method-v2 method-e0 method-e1 method-e2-train method-e2-validate method-e4-train method-e4-exam evidence-check report clean track-a-score
 
 setup:
 	$(PYTHON) tools/setup_sources.py
@@ -55,6 +55,9 @@ method-e4-train:
 
 method-e4-exam:
 	$(PYTHON) tools/e4_exam_gate.py
+
+track-a-score:
+	.venv/bin/python track_a/evaluator.py
 
 evidence-check:
 	$(PYTHON) tools/evidence_check.py
