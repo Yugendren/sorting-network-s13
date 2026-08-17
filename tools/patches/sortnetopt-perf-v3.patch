@@ -1,0 +1,1038 @@
+# M2b: throughput repair for the M2a on-line subsumption prototype,
+# plus the cross-bound prune M2a's report made a pre-condition for n>=11.
+#
+# Applies on top of, in order:
+#   tools/patches/sortnetopt-macos-proc.patch
+#   tools/patches/sortnetopt-instrumentation-v3.patch
+#   tools/patches/sortnetopt-online-subsumption-v3.patch
+# against the pinned upstream commit 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+# Apply with:  patch -V none -p1 -i <this file>
+#
+# The Isabelle/HOL-extracted checker (checker/) is not touched.
+#
+# Three structural changes, in the order the M2a profile ranked their cost:
+#
+#  1. src/search/subsume.rs (new) - the per-width on-line subsumption index is
+#     partitioned into one OutputSetIndex, with its own RwLock, per value of
+#     |set| (the popcount of the packed bitmap). Permutation and complement are
+#     bijections of the Boolean cube, so subsumption is cardinality-monotone:
+#     a lookup for Q need only visit buckets 0..=|Q| and the eviction pass of
+#     an insert of A need only visit buckets |A|+1..  . Exact - a skipped
+#     bucket provably contains no entry in a subsumption relation with the
+#     query. This is simultaneously the fix for the single per-width RwLock
+#     (M2a: ~17 % of thread time) and for the k-d traversal (M2a: ~31 %).
+#     Query monotonicity under sharding is re-established by inserting before
+#     evicting and by scanning buckets in DESCENDING popcount order; the
+#     argument is in the module documentation.
+#
+#  2. src/output_set/index.rs - OutputSetIndex::lookup_with_abstraction_from,
+#     a seeded variant of lookup_with_abstraction. Restarting the
+#     best-so-far accumulator in every bucket destroys the value-range pruning
+#     that keeps subsumes_permuted off the hot path; threading it through
+#     restores it (measured 6.4 s -> 3.6 s of the n=9 search-phase wall).
+#     Also OutputSetIndex::remove_dominated_with_abstraction, the eviction half
+#     of insert_with_abstraction_collect, extracted verbatim.
+#
+#  3. src/output_set/index.rs - LowerInvert::test_precise now guards its
+#     complement branch with that branch's own abstraction test. Upstream
+#     guards only the identity branch and then runs the complemented
+#     subsumes_permuted unconditionally; subsumes_permuted is ~61 % of active
+#     thread time. Exact: complementing an output set acts on its abstraction
+#     as the coordinate permutation i^3, so the guard is precisely the
+#     invert=1 disjunct of LowerInvert::test_abstraction that the caller has
+#     already allowed for.
+#
+# Plus, gated and off by default:
+#
+#  4. src/prune.rs - prune_all_cross_bound, enabled by
+#     SORTNETOPT_CROSS_BOUND_PRUNE=1. Drops A at bound b whenever some
+#     same-width Y with bound(Y) >= b subsumes A, processing ascending in
+#     |set| and never dropping the root. With the variable unset, prune_all is
+#     byte-for-byte the upstream per-group prune.
+#
+#     One robustness fix travels with it, in src/proof.rs: gen_proof mmaps
+#     every .pbin listed in index.txt, and memmap refuses a zero-length
+#     mapping. The per-group prune can never empty a group (its smallest-|set|
+#     record has nothing in its own index to be subsumed by), but the
+#     cross-bound prune can, so such a group is now skipped. Behaviour is
+#     unchanged whenever no group is empty, and an empty group contributes no
+#     entries either way. checker/ is still untouched.
+#
+# Environment variables are otherwise unchanged from the M2a patch.
+diff -ruN m2a-tree/src/instrument.rs source/src/instrument.rs
+--- a/src/instrument.rs	2026-08-17 11:46:15
++++ b/src/instrument.rs	2026-08-17 11:55:32
+@@ -88,11 +88,35 @@
+ /// Nanoseconds summed over all threads, inside the index write lock (insert).
+ pub static IDX_NS_INSERT: AtomicU64 = AtomicU64::new(0);
+ 
++// --- M2b popcount-sharded index ----------------------------------------------
++
++/// Popcount buckets actually locked and traversed by lookups.
++pub static IDX_LOOKUP_BUCKETS: AtomicU64 = AtomicU64::new(0);
++/// Popcount buckets a lookup proved it could skip (empty, or value-dominated).
++pub static IDX_LOOKUP_BUCKETS_SKIPPED: AtomicU64 = AtomicU64::new(0);
++/// Popcount buckets actually locked and traversed by the eviction pass.
++pub static IDX_EVICT_BUCKETS: AtomicU64 = AtomicU64::new(0);
++/// Popcount buckets the eviction pass proved it could skip.
++pub static IDX_EVICT_BUCKETS_SKIPPED: AtomicU64 = AtomicU64::new(0);
++/// Nanoseconds summed over all threads, in the eviction pass alone.
++pub static IDX_NS_EVICT: AtomicU64 = AtomicU64::new(0);
++/// Nanoseconds summed over all threads, computing `OutputSet::len` popcounts.
++pub static IDX_NS_POPCOUNT: AtomicU64 = AtomicU64::new(0);
++
+ #[inline]
+ pub fn add_ns(counter: &AtomicU64, start: Instant) {
+     counter.fetch_add(start.elapsed().as_nanos() as u64, Relaxed);
+ }
+ 
++/// One `fetch_add` for a whole call's worth of events: the per-event increment
++/// would itself contend the counter's cache line across ten threads.
++#[inline]
++pub fn add(counter: &AtomicU64, amount: u64) {
++    if amount != 0 {
++        counter.fetch_add(amount, Relaxed);
++    }
++}
++
+ /// `(channels, point_dim, entries, capacity bytes, payload bytes)` at exit.
+ static IDX_CENSUS: Mutex<Vec<(usize, u64, u64, u64, u64)>> = Mutex::new(Vec::new());
+ /// Mode string of the on-line subsumption prototype, for the report header.
+@@ -158,6 +182,13 @@
+     *IDX_CENSUS.lock().unwrap() = census;
+ }
+ 
++/// M2b: `(channels, occupied popcount buckets, total buckets)`.
++static IDX_BUCKET_CENSUS: Mutex<Vec<(usize, u64, u64)>> = Mutex::new(Vec::new());
++
++pub fn record_subsume_buckets(census: Vec<(usize, u64, u64)>) {
++    *IDX_BUCKET_CENSUS.lock().unwrap() = census;
++}
++
+ static INSERTS_BY_CHANNELS: [AtomicU64; MAX_TRACKED_CHANNELS] = [
+     AtomicU64::new(0),
+     AtomicU64::new(0),
+@@ -347,6 +378,18 @@
+         ("idx_ns_abstraction", IDX_NS_ABSTRACTION.load(Relaxed)),
+         ("idx_ns_lookup", IDX_NS_LOOKUP.load(Relaxed)),
+         ("idx_ns_insert", IDX_NS_INSERT.load(Relaxed)),
++        ("idx_ns_evict", IDX_NS_EVICT.load(Relaxed)),
++        ("idx_ns_popcount", IDX_NS_POPCOUNT.load(Relaxed)),
++        ("idx_lookup_buckets", IDX_LOOKUP_BUCKETS.load(Relaxed)),
++        (
++            "idx_lookup_buckets_skipped",
++            IDX_LOOKUP_BUCKETS_SKIPPED.load(Relaxed),
++        ),
++        ("idx_evict_buckets", IDX_EVICT_BUCKETS.load(Relaxed)),
++        (
++            "idx_evict_buckets_skipped",
++            IDX_EVICT_BUCKETS_SKIPPED.load(Relaxed),
++        ),
+     ]
+ }
+ 
+@@ -427,6 +470,13 @@
+         eprintln!(
+             "subsume  channels {:>2}  point_dim {:>4}  index_entries {:>10}  index_bytes {:>12}  payload_bytes {:>12}",
+             k, point_dim, entries, bytes, payload
++        );
++    }
++
++    for &(k, occupied, total) in IDX_BUCKET_CENSUS.lock().unwrap().iter() {
++        eprintln!(
++            "subsume  channels {:>2}  popcount_buckets_occupied {:>6}  popcount_buckets {:>6}",
++            k, occupied, total
+         );
+     }
+ 
+diff -ruN m2a-tree/src/output_set/index.rs source/src/output_set/index.rs
+--- a/src/output_set/index.rs	2026-08-17 11:46:15
++++ b/src/output_set/index.rs	2026-08-17 12:03:00
+@@ -191,6 +191,36 @@
+                 return Some((false, perm));
+             }
+         }
++        // M2b: the complement branch gets its own necessary condition.
++        //
++        // Upstream guards only the identity branch and then runs the
++        // complemented `subsumes_permuted` unconditionally. `Subsume::search`
++        // is ~61 % of active thread time in the on-line configuration, so
++        // running it when it provably cannot succeed is the single most
++        // expensive omission in this file.
++        //
++        // The test is free because complementing an output set acts on its
++        // abstraction as the coordinate permutation `i ^ 3`: the four
++        // `channel_pair_abstraction` groups count the (1,1), (0,1), (1,0) and
++        // (0,0) quadrants of a channel pair, complementing the cube swaps
++        // (1,1) <-> (0,0) and (0,1) <-> (1,0), i.e. group `g` <-> `g ^ 3`, and
++        // the final abstraction layout puts the group in the low two bits of
++        // the coordinate index. So
++        // `abstraction(complement(C))[i] == abstraction(C)[i ^ 3]`, exactly,
++        // and `Lower::test_abstraction(abstraction(complement(C)), L)` is
++        // `for all i: C[i ^ 3] <= L[i]`, i.e. `for all i: C[i] <= L[i ^ 3]`.
++        // That is precisely the `invert = 1` disjunct of
++        // `LowerInvert::test_abstraction`, so this only ever skips work that
++        // the caller's own necessary condition already allowed for on the other
++        // disjunct: no answer changes.
++        //
++        // The length is rounded down to a multiple of four so `i ^ 3` stays in
++        // range even if a caller passes prefixes of different lengths; a
++        // shorter prefix is a weaker, still sound, necessary condition.
++        let dims = candidate_abstraction.len().min(lookup_abstraction.len()) & !3;
++        if !(0..dims).all(|i| candidate_abstraction[i] <= lookup_abstraction[i ^ 3]) {
++            return None;
++        }
+         let mut inverted = candidate.to_owned();
+         inverted.invert();
+         if let Some(perm) = inverted.subsumes_permuted(lookup) {
+@@ -421,8 +451,32 @@
+         output_set: OutputSet<&[bool]>,
+         abstraction: &[u16],
+     ) -> Option<u8> {
+-        let mut best_so_far = None;
++        self.lookup_with_abstraction_from(output_set, abstraction, None)
++    }
+ 
++    /// M2b: `lookup_with_abstraction` with the accumulator seeded.
++    ///
++    /// The single-index M2a design got most of its pruning from
++    /// `Dir::can_improve` / `Dir::does_improve`: once `best_so_far` is high,
++    /// whole k-d subtrees and every individual entry with a smaller value are
++    /// discarded *before* the exact `subsumes_permuted` test, which is by far
++    /// the most expensive thing in the index. Partitioning the index into
++    /// popcount buckets destroys that pruning if each bucket restarts from
++    /// `None` — measured at n=9, restarting cost ~1.7x the whole M2a lookup
++    /// budget. Threading the running maximum across buckets restores it.
++    ///
++    /// Seeding is sound in exactly the same way the internal accumulator is:
++    /// `best_so_far` is only ever used to *skip* candidates that could not
++    /// improve on it, and the caller's seed is itself a value realised by a
++    /// stored subsuming set.
++    pub fn lookup_with_abstraction_from(
++        &self,
++        output_set: OutputSet<&[bool]>,
++        abstraction: &[u16],
++        seed: Option<u8>,
++    ) -> Option<u8> {
++        let mut best_so_far = seed;
++
+         let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
+         let mut candidate_output_set = OutputSet::from_bitmap(self.channels, &mut bitmap[..]);
+ 
+@@ -644,6 +698,108 @@
+ 
+         self.insert_new_unchecked_with_abstraction(output_set, abstraction, value);
+         value
++    }
++
++    /// M2b: the *eviction half* of `insert_with_abstraction_collect`, with
++    /// neither the preceding lookup nor the trailing insert.
++    ///
++    /// Removes every stored entry `C` such that `output_set` is subsumed by `C`
++    /// in this direction's sense and `C`'s value would be superseded by
++    /// `value`, reporting each removed entry's packed bitmap to `on_evict`, and
++    /// returns how many entries were removed.
++    ///
++    /// An entry that is *equal* to `output_set` is retained untouched rather
++    /// than update-in-place: the sharded index in `search::subsume` calls this
++    /// only on popcount buckets that provably cannot contain `output_set`
++    /// itself (subsumption is cardinality-monotone, so a strict subsumer has a
++    /// strictly smaller popcount), and the equal case is handled by the
++    /// unmodified `insert_with_abstraction_collect` on the home bucket.
++    pub fn remove_dominated_with_abstraction(
++        &mut self,
++        output_set: OutputSet<&[bool]>,
++        abstraction: &[u16],
++        value: u8,
++        on_evict: &mut dyn FnMut(&[u8]),
++    ) -> usize {
++        let mut removed = 0usize;
++
++        let mut bitmap = repeat(false).take(1 << self.channels).collect::<BVec<_>>();
++        let mut candidate_output_set = OutputSet::from_bitmap(self.channels, &mut bitmap[..]);
++
++        let mut node_filter =
++            |_: &mut (), augmentation: &Augmentation, ranges: &[[u16; 2]]| -> bool {
++                Dir::can_be_updated(augmentation.value_range, value)
++                    && Dir::test_abstraction_range_update(ranges, abstraction)
++            };
++
++        let mut action = |_: &mut (),
++                          candidate_abstraction: &[u16],
++                          packed_candidate: &[u8],
++                          candidate_value: &mut u8|
++         -> TraversalMut {
++            if !Dir::would_be_updated(*candidate_value, value) {
++                return TraversalMut::Retain;
++            }
++            if !Dir::test_abstraction_update(candidate_abstraction, abstraction) {
++                return TraversalMut::Retain;
++            }
++            candidate_output_set.unpack_from_slice(packed_candidate);
++            if candidate_output_set == output_set {
++                return TraversalMut::Retain;
++            }
++            if !Dir::test_precise_update(
++                candidate_output_set.as_ref(),
++                candidate_abstraction,
++                output_set,
++                abstraction,
++            ) {
++                return TraversalMut::Retain;
++            }
++
++            on_evict(packed_candidate);
++            removed += 1;
++
++            TraversalMut::Remove
++        };
++
++        for tree in self.trees.iter_mut() {
++            tree.traverse_mut((), Dir::lookup_dir(), &mut node_filter, &mut action);
++        }
++
++        self.trees.retain(|tree| !tree.is_empty());
++
++        let mut index = 0;
++
++        while index < self.values.len() {
++            let action_result = action(
++                &mut (),
++                &self.points[index * self.point_dim..][..self.point_dim],
++                &self.packed[index * self.packed_dim..][..self.packed_dim],
++                &mut self.values[index],
++            );
++
++            if action_result == TraversalMut::Remove {
++                self.values.swap_remove(index);
++
++                if index != self.values.len() {
++                    let (keep, last) = self.points.split_at_mut(self.values.len() * self.point_dim);
++                    keep[index * self.point_dim..][..self.point_dim].copy_from_slice(last);
++
++                    let (keep, last) = self
++                        .packed
++                        .split_at_mut(self.values.len() * self.packed_dim);
++                    keep[index * self.packed_dim..][..self.packed_dim].copy_from_slice(last);
++                }
++                self.points.truncate(self.values.len() * self.point_dim);
++                self.packed.truncate(self.values.len() * self.packed_dim);
++            } else {
++                index += 1;
++            }
++        }
++
++        drop(action);
++
++        removed
+     }
+ 
+     pub fn for_each(&self, mut action: impl FnMut(OutputSet<&[bool]>, &[u16], u8)) {
+diff -ruN m2a-tree/src/proof.rs source/src/proof.rs
+--- a/src/proof.rs	2026-08-17 11:46:15
++++ b/src/proof.rs	2026-08-17 12:18:03
+@@ -36,6 +36,26 @@
+         let pruned_path = input.join(line).with_extension("pbin");
+ 
+         let pruned_file = File::open(pruned_path).unwrap();
++
++        // M2b: an empty `.pbin` is possible once `prune` compares across bound
++        // groups (`SORTNETOPT_CROSS_BOUND_PRUNE`): a whole (width, bound) group
++        // can be absorbed by sets that carry a strictly larger bound, and then
++        // the group contributes nothing at all. `memmap` refuses a zero-length
++        // mapping, so the file has to be skipped rather than mapped.
++        //
++        // This is purely a robustness guard: an empty group would add zero
++        // entries to `pruned_index` anyway, so behaviour is unchanged whenever
++        // no group is empty — which is always the case for the per-group prune,
++        // whose smallest-|set| record can never be subsumed by anything already
++        // in its own index.
++        if pruned_file.metadata().unwrap().len() == 0 {
++            log::info!("{}_{} pruned to empty, skipping", channels, bound);
++            pruned_indexes
++                .entry(channels)
++                .or_insert_with(|| OutputSetIndex::<LowerInvert>::new(channels));
++            continue;
++        }
++
+         let pruned_data = unsafe { MmapOptions::new().map(&pruned_file).unwrap() };
+ 
+         let pruned_index = pruned_indexes
+diff -ruN m2a-tree/src/prune.rs source/src/prune.rs
+--- a/src/prune.rs	2026-08-17 11:46:15
++++ b/src/prune.rs	2026-08-17 11:54:09
+@@ -112,7 +112,29 @@
+     fs::rename(output_tmp_path, output_path).unwrap();
+ }
+ 
++/// One `index.txt` line, split into its `(channels, bound, filename)` parts.
++struct IndexLine {
++    bound: u8,
++    name: String,
++}
++
++fn cross_bound_prune_enabled() -> bool {
++    match std::env::var("SORTNETOPT_CROSS_BOUND_PRUNE") {
++        Ok(val) => {
++            let val = val.trim().to_ascii_lowercase();
++            val == "1" || val == "true" || val == "yes"
++        }
++        Err(_) => false,
++    }
++}
++
+ pub fn prune_all(input: PathBuf) {
++    if cross_bound_prune_enabled() {
++        log::info!("SORTNETOPT_CROSS_BOUND_PRUNE set: using cross-bound prune");
++        prune_all_cross_bound(input);
++        return;
++    }
++
+     let index = input.join("index.txt");
+     let index_file = BufReader::new(File::open(index).unwrap());
+     for line in index_file.lines() {
+@@ -121,5 +143,184 @@
+         log::info!("pruning {}", line);
+ 
+         prune(channels, input.join(line));
++    }
++}
++
++/// Cross-bound subsumption prune.
++///
++/// `prune_all` (the default path) prunes each `group_{channels}_{bound}.bin`
++/// file in isolation: within one bound group it drops a set `A` iff some
++/// already-kept set `Y` from the *same* group subsumes it (subset of `A`
++/// modulo channel permutation and/or complement). That is sound but leaves
++/// redundancy across bound groups on the table: if `Y` at bound `b'` and `A`
++/// at bound `b` are both present with `Y` subsuming `A`, the subsumption
++/// lemma used throughout this codebase (`C` subset-of `A` mod
++/// permutation/complement implies `bound(A) >= bound(C)`) means `A` is
++/// pointless to keep whenever `bound(Y) >= bound(A)`: any proof step that
++/// could use `A` at value `b` could instead use `Y` at its (at least as
++/// large) value `bound(Y)`.
++///
++/// This function performs that stronger prune across *all* bound groups of a
++/// given channel count at once: it builds a single index over all groups for
++/// that width and, processing candidate sets in ascending `|set|`
++/// (popcount of the packed bitmap) order, drops `A` at bound `b` iff some
++/// already-inserted `Y` (necessarily from a bucket with `|Y| <= |A|`, so a
++/// single ascending pass suffices, exactly as in `prune`) subsumes `A` with
++/// `bound(Y) >= b`. Sets are inserted into the index tagged with their own
++/// group's bound, not `0`, since a *later* (larger) `A'` must be compared
++/// against `Y`'s actual bound, not against a placeholder.
++///
++/// The root `all_values(channels)` (the full cube, `|set| == 1 << channels`)
++/// is never dropped: `gen_proof::encode_proof` always starts its DFS there,
++/// so it must survive pruning even though every other set subsumes it. Its
++/// bucket is therefore never filtered.
++///
++/// Every group file listed in `index.txt` still gets a `.pbin` sibling, even
++/// if every one of its records is subsumed and the file ends up empty:
++/// `gen_proof` opens `input.join(line).with_extension("pbin")`
++/// unconditionally for every `index.txt` line.
++pub fn prune_all_cross_bound(input: PathBuf) {
++    let index = input.join("index.txt");
++    let index_file = BufReader::new(File::open(index).unwrap());
++
++    let mut groups_by_channels = BTreeMap::<usize, Vec<IndexLine>>::default();
++
++    for line in index_file.lines() {
++        let line = line.unwrap();
++        let channels = str::parse::<usize>(line.split('_').nth(1).unwrap()).unwrap();
++        let bound =
++            str::parse::<u8>(line.split('_').nth(2).unwrap().split('.').next().unwrap()).unwrap();
++
++        groups_by_channels
++            .entry(channels)
++            .or_insert_with(|| vec![])
++            .push(IndexLine { bound, name: line });
++    }
++
++    for (channels, groups) in groups_by_channels {
++        log::info!(
++            "cross-bound pruning {} channels ({} groups)",
++            channels,
++            groups.len()
++        );
++
++        let output_paths = groups
++            .iter()
++            .map(|group| input.join(&group.name).with_extension("pbin"))
++            .collect::<Vec<_>>();
++
++        if output_paths.iter().all(|path| path.exists()) {
++            log::info!("{} channels: all outputs already exist", channels);
++            continue;
++        }
++
++        let packed_output_sets = groups
++            .iter()
++            .map(|group| {
++                let input_file = File::open(input.join(&group.name)).unwrap();
++                let input_data = unsafe { MmapOptions::new().map(&input_file).unwrap() };
++                PackedOutputSets::new(channels, input_data)
++            })
++            .collect::<Vec<_>>();
++
++        let bounds = groups.iter().map(|group| group.bound).collect::<Vec<_>>();
++
++        let mut by_state_len = BTreeMap::<usize, Vec<(usize, usize)>>::default();
++
++        let mut total_input_len = 0u64;
++
++        for (g, packed_output_sets) in packed_output_sets.iter().enumerate() {
++            for (i, packed) in packed_output_sets.iter_packed().enumerate() {
++                let state_len = packed
++                    .iter()
++                    .map(|byte| byte.count_ones() as usize)
++                    .sum::<usize>();
++
++                by_state_len
++                    .entry(state_len)
++                    .or_insert_with(|| vec![])
++                    .push((g, i));
++
++                total_input_len += 1;
++            }
++        }
++
++        let mut index = OutputSetIndex::<LowerInvert>::new(channels);
++
++        let template = "{elapsed_precise} [{wide_bar:.green/blue}] {percent}% {pos}/{len} {eta}";
++        let bar = ProgressBar::new(total_input_len);
++        bar.set_style(
++            ProgressStyle::default_bar()
++                .template(template)
++                .progress_chars("#>-"),
++        );
++
++        // The full cube `all_values(channels)`: every set subsumes it, so it
++        // would always be filtered out; it must never be dropped, since
++        // `gen_proof::encode_proof` always starts its DFS there.
++        let root_state_len = 1usize << channels;
++
++        let mut survivors_by_group = groups.iter().map(|_| vec![]).collect::<Vec<Vec<usize>>>();
++
++        for (state_len, ids) in by_state_len {
++            log::info!("len = {}, count = {}", state_len, ids.len());
++
++            let survivors = if state_len == root_state_len {
++                bar.inc(ids.len() as u64);
++                ids
++            } else {
++                ids.into_par_iter()
++                    .filter(|&(g, i)| {
++                        bar.inc(1);
++                        let packed = packed_output_sets[g].get_packed(i);
++                        let output_set = OutputSet::from_packed(channels, packed);
++                        let bound = bounds[g];
++
++                        index
++                            .lookup_with_abstraction(output_set.as_ref(), &output_set.abstraction())
++                            .map_or(true, |best| best < bound)
++                    })
++                    .collect::<Vec<_>>()
++            };
++
++            for (g, i) in survivors {
++                let packed = packed_output_sets[g].get_packed(i);
++                let output_set = OutputSet::from_packed(channels, packed);
++
++                index.insert_new_unchecked_with_abstraction(
++                    output_set.as_ref(),
++                    &output_set.abstraction(),
++                    bounds[g],
++                );
++
++                survivors_by_group[g].push(i);
++            }
++        }
++
++        let mut total_survivors = 0usize;
++
++        for (g, group) in groups.iter().enumerate() {
++            let output_path = input.join(&group.name).with_extension("pbin");
++            let output_tmp_path = input.join(&group.name).with_extension("tmp");
++            let mut output_file = BufWriter::new(File::create(&output_tmp_path).unwrap());
++
++            for &i in &survivors_by_group[g] {
++                output_file
++                    .write_all(packed_output_sets[g].get_packed(i))
++                    .unwrap();
++            }
++
++            total_survivors += survivors_by_group[g].len();
++
++            drop(output_file);
++            fs::rename(output_tmp_path, output_path).unwrap();
++        }
++
++        log::info!(
++            "{} channels: {} input records, {} survivors",
++            channels,
++            total_input_len,
++            total_survivors
++        );
+     }
+ }
+diff -ruN m2a-tree/src/search/states.rs source/src/search/states.rs
+--- a/src/search/states.rs	2026-08-17 11:46:15
++++ b/src/search/states.rs	2026-08-17 11:55:11
+@@ -13,11 +13,9 @@
+ };
+ use rustc_hash::FxHasher;
+ 
++use super::subsume::ShardedSubsumeIndex;
+ use crate::instrument::{self, Census};
+-use crate::output_set::{
+-    index::{LowerInvert, OutputSetIndex},
+-    OutputSet, PVec, MAX_CHANNELS, PAIR_ABSTRACTION_GROUPS,
+-};
++use crate::output_set::{OutputSet, PVec, MAX_CHANNELS, PAIR_ABSTRACTION_GROUPS};
+ 
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+ pub struct State {
+@@ -75,8 +73,11 @@
+     state_shards: Vec<RwLock<OutputSetMap<State>>>,
+     lock_shards: Vec<RwLock<OutputSetMap<Shared<oneshot::Receiver<()>>>>>,
+     /// M2a. `subsume_indexes[k]` is present exactly for the indexed widths.
++    /// M2b: each one is now itself partitioned by `|set|` (see
++    /// `search::subsume`), which is both the lock shard key and an exact
++    /// traversal filter.
+     subsume_mode: SubsumeMode,
+-    subsume_indexes: Vec<Option<RwLock<OutputSetIndex<LowerInvert>>>>,
++    subsume_indexes: Vec<Option<ShardedSubsumeIndex>>,
+ }
+ 
+ impl StateMap {
+@@ -130,8 +131,7 @@
+                     } else {
+                         ranks * k * PAIR_ABSTRACTION_GROUPS
+                     };
+-                    subsume_indexes[k] =
+-                        Some(RwLock::new(OutputSetIndex::new_with_point_dim(k, point_dim)));
++                    subsume_indexes[k] = Some(ShardedSubsumeIndex::new(k, point_dim));
+                 }
+             }
+         }
+@@ -155,8 +155,7 @@
+             .iter()
+             .enumerate()
+             .filter_map(|(k, slot)| {
+-                slot.as_ref().map(|lock| {
+-                    let index = lock.read().unwrap();
++                slot.as_ref().map(|index| {
+                     (
+                         k,
+                         index.point_dim() as u64,
+@@ -169,8 +168,25 @@
+             .collect()
+     }
+ 
++    /// M2b: `(channels, occupied popcount buckets, total buckets)`.
++    pub fn subsume_bucket_census(&self) -> Vec<(usize, u64, u64)> {
++        self.subsume_indexes
++            .iter()
++            .enumerate()
++            .filter_map(|(k, slot)| {
++                slot.as_ref().map(|index| {
++                    (
++                        k,
++                        index.occupied_buckets() as u64,
++                        index.bucket_count() as u64,
++                    )
++                })
++            })
++            .collect()
++    }
++
+     #[inline]
+-    fn subsume_index(&self, channels: usize) -> Option<&RwLock<OutputSetIndex<LowerInvert>>> {
++    fn subsume_index(&self, channels: usize) -> Option<&ShardedSubsumeIndex> {
+         self.subsume_indexes.get(channels).and_then(|s| s.as_ref())
+     }
+ 
+@@ -275,17 +291,14 @@
+                 // absorbed is gone from the memo table, and this path is how
+                 // its bound is recovered, so `get` stays monotone in time.
+                 if self.subsume_mode >= SubsumeMode::WriteRead {
+-                    if let Some(index_lock) = self.subsume_index(output_set.channels()) {
+-                        let point_dim = index_lock.read().unwrap().point_dim();
++                    if let Some(index) = self.subsume_index(output_set.channels()) {
++                        let point_dim = index.point_dim();
+                         let t0 = Instant::now();
+                         let abstraction = output_set.abstraction_prefix(point_dim);
+                         instrument::add_ns(&instrument::IDX_NS_ABSTRACTION, t0);
+                         instrument::bump(&instrument::IDX_LOOKUPS);
+                         let t1 = Instant::now();
+-                        let subsuming = index_lock
+-                            .read()
+-                            .unwrap()
+-                            .lookup_with_abstraction(output_set, &abstraction);
++                        let subsuming = index.lookup(output_set, &abstraction);
+                         instrument::add_ns(&instrument::IDX_NS_LOOKUP, t1);
+                         if let Some(subsuming) = subsuming {
+                             if subsuming > state.bounds[0] {
+@@ -309,9 +322,9 @@
+         // does store-and-evict: it returns the best bound over stored subsuming
+         // sets and removes every stored entry the new one dominates.
+         if self.subsume_mode >= SubsumeMode::Write && output_set.channels() > 2 {
+-            if let Some(index_lock) = self.subsume_index(output_set.channels()) {
++            if let Some(index) = self.subsume_index(output_set.channels()) {
+                 if !output_set.is_sorted() {
+-                    let point_dim = index_lock.read().unwrap().point_dim();
++                    let point_dim = index.point_dim();
+                     let t0 = Instant::now();
+                     let abstraction = output_set.abstraction_prefix(point_dim);
+                     instrument::add_ns(&instrument::IDX_NS_ABSTRACTION, t0);
+@@ -322,19 +335,16 @@
+ 
+                     instrument::bump(&instrument::IDX_INSERTS);
+                     let t1 = Instant::now();
+-                    let best = {
+-                        let mut index = index_lock.write().unwrap();
+-                        index.insert_with_abstraction_collect(
+-                            output_set,
+-                            &abstraction,
+-                            state.bounds[0],
+-                            &mut |packed| {
+-                                if evicting {
+-                                    evicted.extend_from_slice(packed);
+-                                }
+-                            },
+-                        )
+-                    };
++                    let best = index.insert_collect(
++                        output_set,
++                        &abstraction,
++                        state.bounds[0],
++                        &mut |packed| {
++                            if evicting {
++                                evicted.extend_from_slice(packed);
++                            }
++                        },
++                    );
+                     instrument::add_ns(&instrument::IDX_NS_INSERT, t1);
+ 
+                     if best > state.bounds[0] {
+diff -ruN m2a-tree/src/search/subsume.rs source/src/search/subsume.rs
+--- a/src/search/subsume.rs	1970-01-01 07:30:00
++++ b/src/search/subsume.rs	2026-08-17 11:57:40
+@@ -0,0 +1,297 @@
++//! M2b: the on-line subsumption index, sharded and bucketed by popcount.
++//!
++//! M2a used a single `RwLock<OutputSetIndex<LowerInvert>>` per indexed width.
++//! Profiling of the M2a prototype attributed **31.2 %** of all thread time to
++//! index lookups and **17.5 %** to index inserts (write-lock waiting included),
++//! against 1.0 % for the abstraction computation that had been the predicted
++//! bottleneck. Both of those costs have the same two causes: one lock per
++//! width, and a k-d traversal that visits entries which cannot possibly be in a
++//! subsumption relation with the query.
++//!
++//! Both are fixed by the same key.
++//!
++//! # Popcount is an exact subsumption invariant
++//!
++//! Write `|A|` for the number of Boolean vectors in the output set `A`, i.e.
++//! the popcount of its packed bitmap. The subsumption relation this index
++//! implements is `C ⊆ π(A)` or `C ⊆ π(¬A)` for some channel permutation `π`,
++//! where `¬` is the complement/reversal symmetry. Both `π` and `¬` act as
++//! *bijections of the Boolean cube*, so they preserve cardinality. Hence
++//!
++//! ```text
++//!     C subsumes A   ⟹   |C| ≤ |A|
++//!     C subsumes A and |C| = |A|   ⟹   C = A  (as canonical sets)
++//! ```
++//!
++//! (the second line because the search only ever stores `canonicalize(true)`
++//! representatives, so two sets equal modulo permutation *and* complement have
++//! identical bitmaps).
++//!
++//! Partitioning the stored entries into one `OutputSetIndex` per value of
++//! `|set|` therefore makes both directions exact:
++//!
++//! * a **lookup** for `Q` — "maximum value over stored `C` with `C ⊆ Q`" — only
++//!   has to visit buckets `0 ..= |Q|`;
++//! * the **eviction** pass of an insert of `A` — "remove stored `C` with
++//!   `A ⊆ C`" — only has to visit buckets `|A| ..= 2^k`, and the bucket `|A|`
++//!   can contain no evictable entry at all, only `A` itself.
++//!
++//! Skipped buckets provably contain no entry in a subsumption relation with the
++//! query, so this introduces no false negatives: the index returns exactly the
++//! answers the unsharded M2a index returns.
++//!
++//! # Lock discipline and query monotonicity under sharding
++//!
++//! Each bucket carries its own `RwLock`, so the critical sections are short and
++//! contention is spread over up to `2^k + 1` locks instead of one. A lookup and
++//! an insert never hold two bucket locks at once, so no lock-ordering cycle can
++//! exist, and (as in M2a) no lock is held across an `.await`.
++//!
++//! The one property a single global lock gave for free is
++//! `docs/sortnetopt-internals.md` §3.6 invariant 2: *the maximum over subsuming
++//! entries, as seen by a concurrent reader, never decreases in time.* With one
++//! lock per bucket a lookup is no longer an atomic snapshot, so the invariant
++//! has to be re-established. Two rules do it:
++//!
++//! 1. **Insert before evict.** `insert_collect` publishes `A` into bucket `|A|`
++//!    *before* it removes any dominated `C` from higher buckets. So whenever
++//!    `C` is absent, its evictor `A` (with `value(A) ≥ value(C)`) is already
++//!    present.
++//! 2. **Scan buckets in descending popcount order.** Suppose a reader misses
++//!    `C` in bucket `p = |C|`, i.e. `C` was removed before time `t_p`. Its
++//!    evictor `A` has `|A| < p` strictly, and was inserted before that removal,
++//!    hence before `t_p`, hence before `t_{|A|} > t_p` — the descending scan
++//!    reaches bucket `|A|` *later*, so the reader sees `A`, or (inductively, on
++//!    the strictly decreasing popcount, so the induction terminates) sees `A`'s
++//!    own evictor, whose value is at least as large.
++//!
++//! Therefore the value a reader computes is still monotone non-decreasing in
++//! time, and is in every case realised by some entry that was genuinely in the
++//! index — which is what soundness needs (an ascending scan would *not* have
++//! this property, and would admit a transient dip).
++//!
++//! Every individual bucket read returns a value realised by a stored `C ⊆ Q`,
++//! so the max over buckets is a sound lower bound regardless of interleaving;
++//! non-atomicity can only ever cost precision, never soundness.
++
++use std::{
++    sync::{
++        atomic::{AtomicU64, AtomicU8, Ordering::Relaxed},
++        RwLock,
++    },
++    time::Instant,
++};
++
++use crate::instrument;
++use crate::output_set::{
++    index::{LowerInvert, OutputSetIndex},
++    OutputSet,
++};
++
++struct Bucket {
++    index: RwLock<OutputSetIndex<LowerInvert>>,
++    /// Live entry count. Maintained under the write lock, read without one; a
++    /// stale non-zero read only costs an unnecessary lock acquisition, and it
++    /// can never be a stale zero for a bucket this thread must visit because
++    /// the only writer that could have made it non-zero also published the
++    /// entry before the counter (see `insert_collect`).
++    len: AtomicU64,
++    /// High-water mark of the values ever stored in this bucket. Never
++    /// decreases, so it is always an *upper* bound on the values currently
++    /// stored, which makes `max_value <= best_so_far ⟹ skip` sound for the
++    /// lookup direction (`Lower*::does_improve` is `value > best_so_far`).
++    max_value: AtomicU8,
++    /// Low-water mark, symmetrically: never increases, so it is always a
++    /// *lower* bound on the values currently stored, which makes
++    /// `min_value > value ⟹ skip` sound for the eviction direction
++    /// (`Lower*::would_be_updated` is `candidate_value <= value`).
++    min_value: AtomicU8,
++}
++
++impl Bucket {
++    fn new(channels: usize, point_dim: usize) -> Self {
++        Bucket {
++            index: RwLock::new(OutputSetIndex::new_with_point_dim(channels, point_dim)),
++            len: AtomicU64::new(0),
++            max_value: AtomicU8::new(0),
++            min_value: AtomicU8::new(u8::MAX),
++        }
++    }
++}
++
++/// One indexed width's on-line subsumption index, partitioned by `|set|`.
++pub struct ShardedSubsumeIndex {
++    point_dim: usize,
++    /// `buckets[p]` holds exactly the stored sets with `|set| == p`; length is
++    /// `2^channels + 1`.
++    buckets: Vec<Bucket>,
++}
++
++impl ShardedSubsumeIndex {
++    pub fn new(channels: usize, point_dim: usize) -> Self {
++        let buckets = (0..=(1usize << channels))
++            .map(|_| Bucket::new(channels, point_dim))
++            .collect::<Vec<_>>();
++        let point_dim = buckets[0].index.read().unwrap().point_dim();
++        Self { point_dim, buckets }
++    }
++
++    pub fn point_dim(&self) -> usize {
++        self.point_dim
++    }
++
++    /// Maximum value over stored sets that subsume `output_set`, or `None`.
++    ///
++    /// Visits buckets `|output_set| ..= 0` in **descending** order; see the
++    /// module documentation for why the direction matters.
++    pub fn lookup(&self, output_set: OutputSet<&[bool]>, abstraction: &[u16]) -> Option<u8> {
++        let t_pop = Instant::now();
++        let popcount = output_set.len();
++        instrument::add_ns(&instrument::IDX_NS_POPCOUNT, t_pop);
++
++        let mut best: Option<u8> = None;
++        let mut visited = 0u64;
++        let mut skipped = 0u64;
++
++        for bucket in self.buckets[..=popcount].iter().rev() {
++            if bucket.len.load(Relaxed) == 0 {
++                skipped += 1;
++                continue;
++            }
++            if let Some(best) = best {
++                if bucket.max_value.load(Relaxed) <= best {
++                    skipped += 1;
++                    continue;
++                }
++            }
++
++            visited += 1;
++            // The running maximum is threaded in, not restarted: it is what
++            // lets `can_improve` / `does_improve` discard whole subtrees and
++            // individual entries before the exact `subsumes_permuted` test.
++            best = bucket
++                .index
++                .read()
++                .unwrap()
++                .lookup_with_abstraction_from(output_set, abstraction, best);
++        }
++
++        instrument::add(&instrument::IDX_LOOKUP_BUCKETS, visited);
++        instrument::add(&instrument::IDX_LOOKUP_BUCKETS_SKIPPED, skipped);
++
++        best
++    }
++
++    /// Store-and-evict, sharded. Returns the best value over stored sets that
++    /// subsume `output_set` (a sound lower bound for it), exactly as
++    /// `OutputSetIndex::insert_with_abstraction_collect` does.
++    pub fn insert_collect(
++        &self,
++        output_set: OutputSet<&[bool]>,
++        abstraction: &[u16],
++        value: u8,
++        on_evict: &mut dyn FnMut(&[u8]),
++    ) -> u8 {
++        let popcount = output_set.len();
++
++        let best = self.lookup(output_set, abstraction);
++
++        // `LowerInvert::does_improve`: nothing to publish, and nothing this
++        // insert could dominate that the incumbent does not already dominate.
++        if let Some(best) = best {
++            if value <= best {
++                return best;
++            }
++        }
++
++        // (1) Publish into the home bucket first, so that any entry removed in
++        //     step (2) is already covered for concurrent readers.
++        //
++        //     The unmodified `insert_with_abstraction_collect` is used here on
++        //     purpose: within this bucket every stored entry has the same
++        //     popcount as `output_set`, so its eviction traversal can only ever
++        //     reach the `candidate == output_set` update-in-place branch and
++        //     can never remove anything. `on_evict` is passed through anyway so
++        //     the accounting cannot silently diverge if that reasoning is ever
++        //     violated.
++        let home = &self.buckets[popcount];
++        let inner = {
++            let mut index = home.index.write().unwrap();
++            let inner =
++                index.insert_with_abstraction_collect(output_set, abstraction, value, on_evict);
++            home.len.store(index.len() as u64, Relaxed);
++            inner
++        };
++        home.max_value.fetch_max(value, Relaxed);
++        home.min_value.fetch_min(value, Relaxed);
++
++        // (2) Absorb strictly larger stored sets.
++        let t_evict = Instant::now();
++        let mut visited = 0u64;
++        let mut skipped = 0u64;
++        for bucket in self.buckets[popcount + 1..].iter() {
++            if bucket.len.load(Relaxed) == 0 {
++                skipped += 1;
++                continue;
++            }
++            if bucket.min_value.load(Relaxed) > value {
++                skipped += 1;
++                continue;
++            }
++
++            visited += 1;
++            let mut index = bucket.index.write().unwrap();
++            let removed =
++                index.remove_dominated_with_abstraction(output_set, abstraction, value, on_evict);
++            if removed > 0 {
++                bucket.len.store(index.len() as u64, Relaxed);
++            }
++        }
++
++        instrument::add_ns(&instrument::IDX_NS_EVICT, t_evict);
++        instrument::add(&instrument::IDX_EVICT_BUCKETS, visited);
++        instrument::add(&instrument::IDX_EVICT_BUCKETS_SKIPPED, skipped);
++
++        inner.max(best.unwrap_or(0))
++    }
++
++    pub fn len(&self) -> usize {
++        self.buckets
++            .iter()
++            .map(|bucket| bucket.index.read().unwrap().len())
++            .sum()
++    }
++
++    /// Content bytes, charging `len` — directly comparable with M2a's
++    /// `index_payload_bytes`.
++    pub fn payload_bytes(&self) -> usize {
++        self.buckets
++            .iter()
++            .map(|bucket| bucket.index.read().unwrap().payload_bytes())
++            .sum()
++    }
++
++    /// Heap bytes charging `capacity`, **plus** the bucket array itself, so the
++    /// price of sharding is visible rather than hidden.
++    pub fn estimated_bytes(&self) -> usize {
++        self.buckets.len() * std::mem::size_of::<Bucket>()
++            + self
++                .buckets
++                .iter()
++                .map(|bucket| bucket.index.read().unwrap().estimated_bytes())
++                .sum::<usize>()
++    }
++
++    /// Number of buckets that hold at least one entry (reported so the
++    /// effectiveness of the partition is measurable rather than assumed).
++    pub fn occupied_buckets(&self) -> usize {
++        self.buckets
++            .iter()
++            .filter(|bucket| bucket.len.load(Relaxed) > 0)
++            .count()
++    }
++
++    pub fn bucket_count(&self) -> usize {
++        self.buckets.len()
++    }
++}
+diff -ruN m2a-tree/src/search.rs source/src/search.rs
+--- a/src/search.rs	2026-08-17 11:46:15
++++ b/src/search.rs	2026-08-17 11:55:35
+@@ -13,6 +13,7 @@
+ use rustc_hash::FxHashMap as HashMap;
+ 
+ mod states;
++mod subsume;
+ 
+ use self::states::{State, StateMap};
+ use crate::{
+@@ -86,6 +87,7 @@
+             search.states.subsume_mode().name(),
+             search.states.subsume_census(),
+         );
++        instrument::record_subsume_buckets(search.states.subsume_bucket_census());
+         instrument::report(channels, final_bound, &search.states.census());
+ 
+         if let Some(output) = output {
