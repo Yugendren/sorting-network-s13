@@ -1,0 +1,1091 @@
+# Tier 2a: lazy early-exit propagation filter, a thread-local depth-0
+# abstraction cache, removal of the matcher's remaining per-test heap
+# allocations, and batched thread-local instrumentation counters.
+#
+# Applies on top of, in order:
+#   tools/patches/sortnetopt-macos-proc.patch
+#   tools/patches/sortnetopt-instrumentation-v3.patch
+#   tools/patches/sortnetopt-online-subsumption-v3.patch
+#   tools/patches/sortnetopt-perf-v3.patch
+#   tools/patches/sortnetopt-tier1-v3.patch
+# against the pinned upstream commit 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+# Apply with:  patch -V none -p1 -i <this file>
+#
+# The Isabelle/HOL-extracted checker (checker/) is not touched. Only two files
+# change: src/output_set/subsume.rs and src/instrument.rs.
+#
+# ---------------------------------------------------------------------------
+# WHAT THE MEASUREMENTS SAID, BEFORE ANY CODE WAS WRITTEN
+#
+# 8.84 million real matcher input pairs were dumped from n=9 and n=10 search,
+# prune-all and gen-proof runs and profiled. The search tree inside the exact
+# test is essentially trivial:
+#
+#   nodes per test, rejecting pairs:  1.058 (k=7)  1.059 (k=8)  1.487 (k=9)
+#   ... of which single-node:          94.5 %       94.8 %       57.7 %
+#   nodes per test, accepting pairs:  3.155        3.485        4.269
+#   maximum node count over all 8.84 M pairs: 47
+#
+# So the cost of the exact test is NOT search. It is the 2*channels
+# per-channel abstraction computations that the depth-0 filter performed
+# EAGERLY, before comparing any of them. This patch attacks exactly that, and
+# the Glasgow/Django search techniques the campaign was sent to transplant are
+# rejected with measurement (see the bottom of this header).
+# ---------------------------------------------------------------------------
+#
+#  A. Lazy outer side with early exit (SORTNETOPT_T2A_LAZY, default 1).
+#     One side ("inner") is materialised in full; the other ("outer") is
+#     computed one channel at a time and tested against every inner channel
+#     immediately, so a domain wipeout can return after computing as few as
+#     ONE abstraction instead of 2*channels.
+#
+#  B. Thread-local depth-0 abstraction cache (SORTNETOPT_T2A_D0CACHE,
+#     default 1). 4 slots, keyed by channel count plus the set's live u64
+#     words. At fixed_channels == 0 the working sets have not been permuted
+#     yet, so a side's abstractions are a pure function of that side's
+#     PackedSet. In the real workload one side is a FIXED query reused across
+#     a long run of consecutive exact tests: measured 89.4 % (k=7) and 92.4 %
+#     (k=8) of records repeat the previous record's `b` side, mean run length
+#     9.4-13.2, max 2,299. Measured cache hit rate in-stack: 93.7 %.
+#     This is a per-thread cache of a deterministically recomputable value. It
+#     is NOT a stored per-entry abstraction -- the memory-negative mistake M2a
+#     measured and rejected -- and index memory is untouched.
+#
+#  C. Minimum-domain-first outer ordering (SORTNETOPT_T2A_MINDOM, default 0).
+#     Implemented, measured, and DEFAULTED OFF because it did not pay: on real
+#     corpora it cost about 1 % (k=8: 890 ns on / 880 ns off; k=9: 1,992 /
+#     1,979). The code and the gate are retained so the measurement stays
+#     reproducible.
+#
+#  D. The matcher's remaining per-test heap allocations are removed. Tier 1
+#     removed the two Vec<bool> output-set allocations but left three: the
+#     abstraction scratch buffer, the undo stack, and the deep-node inner
+#     buffer. A fresh `Subsume` is built per exact test, so each was one
+#     malloc+free per test. They now come from a thread-local pool.
+#
+#  E. Batched thread-local instrumentation counters. THIS IS THE LARGEST
+#     SINGLE IN-STACK EFFECT IN THE PATCH, and it is a fix to a cost Tier 1
+#     introduced and flagged but did not quantify. `Subsume` is constructed
+#     and dropped ~3.9 M times per n=10 search across 10 threads, and its
+#     Drop flushed diagnostics with fetch_add on GLOBAL AtomicU64s. Measured
+#     in-stack at n=10 on a quiet M4, 4 rounds each:
+#         Tier-1 binary                                    3,373 ms
+#         Tier-2a binary, ALL gates disabled (i.e. running
+#           the ORIGINAL eager algorithm)                  3,812 ms
+#     The new binary running the original algorithm was 13 % slower, which
+#     isolates the cost to something paid regardless of the gates: the extra
+#     contended atomics. Counters are now accumulated in a thread-local batch
+#     and flushed every FLUSH_EVERY = 1024 tests, plus at thread exit, plus
+#     via instrument::drain_all_batches() at report time (a registry of
+#     Arc<Mutex<Batch>> is kept so rayon's unjoined prune/proof workers do not
+#     lose counts). Counter names, output format and totals are unchanged.
+#
+# SOUNDNESS. Every edge removal the filter performs is justified either by
+# abstraction-dominance failure -- a necessary condition for that channel
+# pairing -- or by the pre-existing singleton-exclusivity rule. Both are sound
+# regardless of the order in which pairs are examined, and `Subsume::search`
+# is complete over whatever edges remain. Reordering the pair iteration and
+# short-circuiting once a wipeout is detected therefore cannot change the
+# accept/reject verdict; it can only change how much pruning happens, hence
+# performance and which witness permutation is returned. Empirically the
+# fixpoint is reached identically: subsume_nodes/subsume_calls is 1.2274 with
+# the changes and 1.2288 without (0.11 % apart).
+#
+# Setting LAZY=0 D0CACHE=0 MINDOM=0 restores the original eager code path,
+# which is kept intact and reachable, so all four transformations can be A/B'd
+# inside one binary.
+#
+# New counters (per-`Subsume` usize fields folded into the thread-local batch,
+# deliberately NOT per-call atomics, which would distort the very measurement
+# they exist for): subsume_abstractions, subsume_d0_cache_hits,
+# subsume_d0_cache_misses, subsume_filter_fail.
+# subsume_abstractions is the campaign's headline work counter: it falls from
+# 15.79 to 4.60 per exact test at n=10, a 3.43x reduction.
+#
+# ---------------------------------------------------------------------------
+# REJECTED WITH MEASUREMENT (details in evidence/v3/tier2a/report.md)
+#
+#  * Nogood recording + restarts, and independent-component decomposition
+#    (survey techniques 3 and 2): inapplicable. Both attack search-tree size;
+#    the tree averages 1.06-1.49 nodes on rejects and never exceeded 47 nodes
+#    across 8.84 M real pairs. There is no subtree to avoid revisiting and no
+#    product to turn into a sum.
+#  * Hall-set and full Regin all-different filtering (survey technique 1,
+#    beyond the forward checking already present): implemented in full and
+#    verified against a brute-force oracle on 217,000 random configurations,
+#    then measured. It found a genuine infeasibility the cheap filter had
+#    missed in 221-245 cases out of ~3.8 M exact tests -- about 1 in 16,000 --
+#    and moved neither subsume_nodes/subsume_calls nor
+#    subsume_abstractions/subsume_calls outside run-to-run noise, while
+#    costing 448-883 ns per call at n=10. NOT LANDED. The verified module is
+#    preserved out-of-tree at .build/v3-tier2a/rejected/alldiff.rs.
+# ---------------------------------------------------------------------------
+diff -ruN --exclude=target --exclude=.git a/src/instrument.rs b/src/instrument.rs
+--- a/src/instrument.rs	2026-08-17 16:17:24
++++ b/src/instrument.rs	2026-08-17 19:03:59
+@@ -24,7 +24,7 @@
+     fmt::Write as _,
+     sync::{
+         atomic::{AtomicU64, Ordering::Relaxed},
+-        Mutex, OnceLock,
++        Arc, Mutex, OnceLock,
+     },
+     time::Instant,
+ };
+@@ -124,6 +124,95 @@
+ /// `SUBSUME_FILTER_MATCHING`).
+ pub static SUBSUME_NODES: AtomicU64 = AtomicU64::new(0);
+ 
++// --- Tier-2a: filter_matching propagation restructure ------------------------
++
++/// Headline Tier-2a work counter: number of per-channel abstraction
++/// computations (`low_channels_channel_abstraction_with` calls) actually
++/// performed by `Subsume::filter_matching`, summed and flushed the same way
++/// as `SUBSUME_FILTER_MATCHING`. The eager (pre-Tier-2a) code path always
++/// performs `2 * (channels - fixed_channels)` of these per call; the lazy
++/// path (Change A) performs as few as one before an early exit fires.
++pub static SUBSUME_ABSTRACTIONS: AtomicU64 = AtomicU64::new(0);
++/// Depth-0 abstraction cache (Change B) hits / misses.
++pub static SUBSUME_D0_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
++pub static SUBSUME_D0_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
++/// `Subsume::filter_matching` calls that returned `false` (a domain wiped
++/// out, so the exact test can terminate without exploring further).
++pub static SUBSUME_FILTER_FAIL: AtomicU64 = AtomicU64::new(0);
++
++// --- Tier-2a Change E: thread-local batching for the Subsume counters -------
++//
++// `Subsume` is constructed and dropped once per exact subsumption test --
++// about 3.9 million times per n=10 search, across 10 threads. Flushing each
++// instance's diagnostic fields straight into `SUBSUME_CALLS` /
++// `SUBSUME_NODES` / ... via `fetch_add` (as TIER1 / early Tier-2a did) means
++// every exact test pays for a *contended* atomic RMW (all 10 threads bounce
++// the same cache lines): measured at roughly 280ns per op on this hardware,
++// which alone accounted for a measured 13% search-wall regression between
++// Tier-1 and Tier-2a with all Tier-2a gates disabled. `Batch` lets a thread
++// accumulate many `Subsume` lifetimes' worth of counts locally (plain field
++// adds, no atomics, no cross-thread traffic) and pay the real `fetch_add`s
++// only once every [`FLUSH_EVERY`]-ish calls (see `output_set::subsume`'s
++// thread-local usage of this type).
++#[derive(Clone, Default)]
++pub struct Batch {
++    pub calls: u64,
++    pub nodes: u64,
++    pub filter_matching: u64,
++    pub abstractions: u64,
++    pub d0_hits: u64,
++    pub d0_misses: u64,
++    pub filter_fail: u64,
++    pub since_flush: u32,
++}
++
++/// Flushes one batch's worth of accumulated counts into the real
++/// `SUBSUME_*` atomics (one `fetch_add` per nonzero field, via [`add`]) and
++/// zeroes `b` in place.
++pub fn flush_batch(b: &mut Batch) {
++    add(&SUBSUME_CALLS, b.calls);
++    add(&SUBSUME_NODES, b.nodes);
++    add(&SUBSUME_FILTER_MATCHING, b.filter_matching);
++    add(&SUBSUME_ABSTRACTIONS, b.abstractions);
++    add(&SUBSUME_D0_CACHE_HITS, b.d0_hits);
++    add(&SUBSUME_D0_CACHE_MISSES, b.d0_misses);
++    add(&SUBSUME_FILTER_FAIL, b.filter_fail);
++    *b = Batch::default();
++}
++
++/// Every thread's shared batch handle, registered once (on first use) via
++/// [`register_batch`]. Exists purely as a safety net: `-m prune-all` and
++/// `-m gen-proof` drive work through rayon's *global* thread pool, whose
++/// worker threads are parked and eventually killed rather than joined at
++/// process exit, so thread-local destructors never run for them and any
++/// unflushed remainder sitting in a thread-local batch would otherwise be
++/// silently lost. Every entry here is periodically folded into the shared
++/// handle by its owning thread (see `output_set::subsume`), so
++/// [`drain_all_batches`] can recover it from any thread, at any time,
++/// without needing that owning thread to have exited cleanly.
++static BATCH_REGISTRY: Mutex<Vec<Arc<Mutex<Batch>>>> = Mutex::new(Vec::new());
++
++/// Registers a new shared batch handle for the calling thread and returns it.
++/// Call once per thread (e.g. from a thread-local's initializer).
++pub fn register_batch() -> Arc<Mutex<Batch>> {
++    let handle = Arc::new(Mutex::new(Batch::default()));
++    BATCH_REGISTRY.lock().unwrap().push(Arc::clone(&handle));
++    handle
++}
++
++/// Locks every registered shared batch and flushes it into the `SUBSUME_*`
++/// atomics. Called at the start of [`report`] so the final counters include
++/// every thread's most recently checkpointed (but not-yet-atomic) counts.
++/// Safe to call more than once: a drained batch is left at zero, so a
++/// repeat call folds in nothing new.
++pub fn drain_all_batches() {
++    let registry = BATCH_REGISTRY.lock().unwrap();
++    for handle in registry.iter() {
++        let mut batch = handle.lock().unwrap();
++        flush_batch(&mut batch);
++    }
++}
++
+ // --- TIER1: signature / histogram pre-filters --------------------------------
+ 
+ /// Per-entry candidates that reached the TIER1 filter chain (i.e. passed the
+@@ -439,7 +528,17 @@
+         ),
+         ("subsume_table_builds", SUBSUME_TABLE_BUILDS.load(Relaxed)),
+         ("subsume_nodes", SUBSUME_NODES.load(Relaxed)),
++        ("subsume_abstractions", SUBSUME_ABSTRACTIONS.load(Relaxed)),
+         (
++            "subsume_d0_cache_hits",
++            SUBSUME_D0_CACHE_HITS.load(Relaxed),
++        ),
++        (
++            "subsume_d0_cache_misses",
++            SUBSUME_D0_CACHE_MISSES.load(Relaxed),
++        ),
++        ("subsume_filter_fail", SUBSUME_FILTER_FAIL.load(Relaxed)),
++        (
+             "tier1_sig_filter",
+             crate::output_set::index::sig_filter_enabled() as u64,
+         ),
+@@ -477,6 +576,10 @@
+ /// Final report. Called from `Search::search` after the main loop has closed the
+ /// interval and before `dump_states` consumes the map.
+ pub fn report(channels: usize, result: usize, final_census: &Census) {
++    // Tier-2a Change E: fold every thread's checkpointed-but-not-yet-atomic
++    // `Subsume` counter batch in before reading the atomics below (see
++    // `drain_all_batches`'s doc comment).
++    drain_all_batches();
+     note_peak(final_census.total());
+ 
+     let counters = counter_lines();
+diff -ruN --exclude=target --exclude=.git a/src/output_set/subsume.rs b/src/output_set/subsume.rs
+--- a/src/output_set/subsume.rs	2026-08-17 16:24:55
++++ b/src/output_set/subsume.rs	2026-08-17 19:04:58
+@@ -1,7 +1,13 @@
+-use std::{cell::RefCell, iter::repeat, mem::replace, rc::Rc};
++use std::{
++    cell::RefCell,
++    iter::repeat,
++    mem::replace,
++    rc::Rc,
++    sync::{Arc, Mutex, OnceLock},
++};
+ 
+ use super::{
+-    packed::{AbstractionTables, PackedSet},
++    packed::{AbstractionTables, PackedSet, MAX_WORDS},
+     CVec, MAX_CHANNELS,
+ };
+ 
+@@ -18,6 +24,29 @@
+     },
+ }
+ 
++/// Tier-2a Change D: the fully materialized inner-side abstraction buffer
++/// used by [`Subsume::filter_matching_lazy`], either borrowed from
++/// [`DEPTH0_CACHE`] (`Cached`, when the result is being kept alive across
++/// many future `Subsume` instances) or computed into `Subsume`'s pooled
++/// `inner` scratch buffer (`Owned`, when the result is only ever read
++/// within the current call). `Deref` lets the rest of `filter_matching_lazy`
++/// index either variant the same way.
++enum InnerAbs {
++    Cached(Rc<Vec<usize>>),
++    Owned(Vec<usize>),
++}
++
++impl std::ops::Deref for InnerAbs {
++    type Target = [usize];
++
++    fn deref(&self) -> &[usize] {
++        match self {
++            InnerAbs::Cached(rc) => &rc[..],
++            InnerAbs::Owned(buf) => &buf[..],
++        }
++    }
++}
++
+ /// M2c: thread-local cache of [`AbstractionTables`] keyed by
+ /// `(channels, low_channels)`.
+ ///
+@@ -66,6 +95,276 @@
+     static TABLE_CACHE: RefCell<TableCache> = RefCell::new(TableCache::new());
+ }
+ 
++/// Tier-2a Change B: thread-local cache of the *fully materialized* set of
++/// per-channel `low_channels == 0` (depth-0) abstractions for a `PackedSet`.
++///
++/// At `fixed_channels == 0` the working sets have not been permuted yet, so a
++/// side's `channels` depth-0 abstractions are a pure function of that side's
++/// `PackedSet` (channel count + bitmap). In the real workload one side of a
++/// `Subsume` pair is typically a fixed query reused across many consecutive
++/// exact tests (see `output_set::index::test_precise_packed` /
++/// `test_precise_packed_update`), so recomputing that side's abstractions
++/// from scratch on every call is pure waste. This cache closes that gap.
++///
++/// Capped at [`DEPTH0_SLOTS`] entries, round-robin eviction. Lookups only
++/// ever hand back a value that a full computation would have produced --
++/// this changes no answer, only how often the underlying (deterministic)
++/// computation is repeated.
++struct Depth0Cache {
++    /// `channels` this cache's `slots` were built for; a mismatch means the
++    /// whole cache is stale (a different search width is running on this
++    /// thread) and must be cleared before use.
++    channels: usize,
++    /// `(key, key_len, abstractions)` triples, capped at `DEPTH0_SLOTS`.
++    /// `key[..key_len]` is the set's live `u64` words (the rest of `key` is
++    /// unused padding, never read); `abstractions` is the `channels`-many
++    /// per-channel depth-0 abstractions laid out contiguously (channel `c`
++    /// at offset `c * abstraction_len(0)`).
++    slots: Vec<([u64; MAX_WORDS], usize, Rc<Vec<usize>>)>,
++    /// Round-robin victim index once `slots.len() == DEPTH0_SLOTS`.
++    next: usize,
++}
++
++/// Fixed cache capacity for [`Depth0Cache`]; kept as a named constant so it
++/// is easy to sweep during evaluation.
++const DEPTH0_SLOTS: usize = 4;
++
++impl Depth0Cache {
++    fn new() -> Self {
++        Self {
++            channels: usize::MAX,
++            slots: Vec::new(),
++            next: 0,
++        }
++    }
++
++    /// Clears the cache if it was built for a different `channels` count.
++    fn ensure_channels(&mut self, channels: usize) {
++        if self.channels != channels {
++            self.channels = channels;
++            self.slots.clear();
++            self.next = 0;
++        }
++    }
++
++    /// Key-comparison-only lookup (no abstraction computation, and -- unlike
++    /// the pre-optimization version -- no 256-byte zero-padded key
++    /// materialization either). `bits` is the set's live `u64` words
++    /// (`PackedSet::bits()`) taken directly; each stored key is compared
++    /// against it by slicing to the stored key's own live length, so a
++    /// mismatched length is simply never equal (and in practice never
++    /// occurs within one `ensure_channels` epoch, since `bits().len()` is a
++    /// pure function of `channels`). Clears the cache first if it is stale
++    /// for `channels`.
++    fn probe(&mut self, channels: usize, bits: &[u64]) -> Option<Rc<Vec<usize>>> {
++        self.ensure_channels(channels);
++        self.slots
++            .iter()
++            .find(|(key, len, _)| &key[..*len] == bits)
++            .map(|(_, _, v)| Rc::clone(v))
++    }
++
++    /// Inserts `bits` (the set's live `u64` words) as the key for `value`.
++    /// This is the only place a full `[u64; MAX_WORDS]` key is
++    /// materialized (zero-padded), since it is the only place one needs to
++    /// be stored.
++    fn insert(&mut self, channels: usize, bits: &[u64], value: Rc<Vec<usize>>) {
++        self.ensure_channels(channels);
++        let mut key = [0u64; MAX_WORDS];
++        let len = bits.len();
++        key[..len].copy_from_slice(bits);
++        if self.slots.len() < DEPTH0_SLOTS {
++            self.slots.push((key, len, value));
++        } else {
++            self.slots[self.next] = (key, len, value);
++            self.next = (self.next + 1) % DEPTH0_SLOTS;
++        }
++    }
++}
++
++thread_local! {
++    static DEPTH0_CACHE: RefCell<Depth0Cache> = RefCell::new(Depth0Cache::new());
++}
++
++/// Tier-2a Change D: thread-local pool of `Subsume`'s three per-instance
++/// scratch buffers (`buffer`, `inner`, `undo_stack`).
++///
++/// A fresh `Subsume` is built and dropped for *every* exact subsumption
++/// test -- millions per search -- so leaving these as `vec![]` in `new` and
++/// letting them grow on first use costs one malloc (and, once the
++/// `Subsume` is dropped, one free) per test, same shape of waste as
++/// `TABLE_CACHE` / `DEPTH0_CACHE` were built to avoid for
++/// `AbstractionTables` / depth-0 abstractions. Since exactly one `Subsume`
++/// is ever live on a given thread at a time (see `Subsume::new` / `Drop for
++/// Subsume`), a single pooled triple of buffers, taken out on construction
++/// and returned (length cleared, capacity kept) on drop, amortizes the
++/// allocation to "at most a few, ever, per thread" instead of "one per
++/// test".
++///
++/// Wrapped in `Option` so a (never-expected-but-checked-for) nested
++/// `Subsume` construction on the same thread -- i.e. a second `new()` while
++/// the first pool borrower has not yet dropped -- degrades to a fresh,
++/// unpooled `Vec` rather than corrupting the pooled buffers out from under
++/// the live outer `Subsume`. See `Subsume::pool_borrowed`.
++struct ScratchPool {
++    buffer: Vec<usize>,
++    inner: Vec<usize>,
++    undo: Vec<UndoAction>,
++}
++
++impl ScratchPool {
++    fn new() -> Self {
++        Self {
++            buffer: Vec::new(),
++            inner: Vec::new(),
++            undo: Vec::new(),
++        }
++    }
++}
++
++thread_local! {
++    static SCRATCH: RefCell<Option<ScratchPool>> = RefCell::new(Some(ScratchPool::new()));
++}
++
++/// Tier-2a Change E: per-thread accumulator for the `Subsume` diagnostic
++/// counters (`instrument::SUBSUME_CALLS`, `..._NODES`, `..._FILTER_MATCHING`,
++/// `..._ABSTRACTIONS`, `..._D0_CACHE_HITS`, `..._D0_CACHE_MISSES`,
++/// `..._FILTER_FAIL`).
++///
++/// `Drop for Subsume` used to flush its diagnostic fields straight into
++/// those `AtomicU64`s (one contended `fetch_add` each, ~280ns measured on
++/// this hardware, across the ~3.9M exact tests a search runs) -- see
++/// `instrument::Batch`'s doc comment for the measured cost this caused.
++/// `LocalBatch` instead accumulates counts into a plain `instrument::Batch`
++/// (lock-free field adds, see `note_subsume_counts`) and only checks in with
++/// the wider process every [`FLUSH_EVERY`] calls, via `shared`: an
++/// `Arc<Mutex<instrument::Batch>>` this thread registered once with
++/// `instrument::register_batch()`. Locking `shared` is a lock/unlock of a
++/// handle only this thread normally touches (the only other locker is
++/// `instrument::drain_all_batches`, which runs once, at `report` time), so
++/// it is cheap and, crucially, not cross-thread-contended the way the
++/// atomics were.
++struct LocalBatch {
++    counts: instrument::Batch,
++    shared: Arc<Mutex<instrument::Batch>>,
++}
++
++impl LocalBatch {
++    fn new() -> Self {
++        Self {
++            counts: instrument::Batch::default(),
++            shared: instrument::register_batch(),
++        }
++    }
++
++    /// Folds `counts` into `shared` and zeroes `counts`.
++    fn flush(&mut self) {
++        let mut shared = self.shared.lock().unwrap();
++        shared.calls += self.counts.calls;
++        shared.nodes += self.counts.nodes;
++        shared.filter_matching += self.counts.filter_matching;
++        shared.abstractions += self.counts.abstractions;
++        shared.d0_hits += self.counts.d0_hits;
++        shared.d0_misses += self.counts.d0_misses;
++        shared.filter_fail += self.counts.filter_fail;
++        self.counts = instrument::Batch::default();
++    }
++}
++
++impl Drop for LocalBatch {
++    fn drop(&mut self) {
++        // A joined thread's thread-local destructors run at thread exit, so
++        // this flushes whatever is left uncommitted rather than losing it.
++        // Rayon's *global* thread pool (used by `-m prune-all` / `-m
++        // gen-proof`) parks and kills its workers instead of joining them,
++        // so this never fires for those threads -- but any count that
++        // already crossed a `FLUSH_EVERY` boundary was checked into `shared`
++        // long before thread exit, and `instrument::drain_all_batches` can
++        // recover `shared` from any thread regardless of whether this ever
++        // runs. Only a same-thread remainder smaller than `FLUSH_EVERY`,
++        // pending at the moment such a worker is parked forever, can still
++        // be lost; see `instrument::BATCH_REGISTRY`'s doc comment.
++        self.flush();
++    }
++}
++
++/// Number of `Subsume` lifetimes' worth of counts a thread accumulates
++/// locally before paying one lock/unlock of its shared handle to check them
++/// in (see `LocalBatch`). Chosen so that cost is negligible next to the
++/// ~1,126ns a bare exact test itself takes.
++const FLUSH_EVERY: u32 = 1024;
++
++thread_local! {
++    static BATCH: RefCell<LocalBatch> = RefCell::new(LocalBatch::new());
++}
++
++/// Adds one `Subsume` instance's worth of diagnostic counts into this
++/// thread's local batch (see `LocalBatch`), flushing to the shared handle
++/// every [`FLUSH_EVERY`] calls.
++fn note_subsume_counts(
++    calls: u64,
++    nodes: u64,
++    filter_matching: u64,
++    abstractions: u64,
++    d0_hits: u64,
++    d0_misses: u64,
++    filter_fail: u64,
++) {
++    BATCH.with(|cell| {
++        let mut batch = cell.borrow_mut();
++        batch.counts.calls += calls;
++        batch.counts.nodes += nodes;
++        batch.counts.filter_matching += filter_matching;
++        batch.counts.abstractions += abstractions;
++        batch.counts.d0_hits += d0_hits;
++        batch.counts.d0_misses += d0_misses;
++        batch.counts.filter_fail += filter_fail;
++        batch.counts.since_flush += 1;
++        if batch.counts.since_flush >= FLUSH_EVERY {
++            batch.flush();
++        }
++    });
++}
++
++/// Reads an env var once, treating any value other than the literal string
++/// `"0"` as "enabled" (unset also means the `default`).
++fn env_flag(name: &str, default: bool) -> bool {
++    match std::env::var(name) {
++        Ok(value) => value != "0",
++        Err(_) => default,
++    }
++}
++
++/// Tier-2a Change A: lazy outer side with early exit in `filter_matching`.
++/// Default on (`1`); set to `0` to fall back to the original eager
++/// both-sides-materialized structure.
++static LAZY_FLAG: OnceLock<bool> = OnceLock::new();
++/// Tier-2a Change B: thread-local depth-0 abstraction cache. Default on
++/// (`1`); set to `0` to never consult or fill [`DEPTH0_CACHE`].
++static D0CACHE_FLAG: OnceLock<bool> = OnceLock::new();
++/// Tier-2a Change C: minimum-domain-first outer channel order. Default OFF
++/// (`0`); set to `1` for the minimum-domain-first order.
++///
++/// Measured neutral-to-slightly-negative and left off by default: an
++/// isolated microbenchmark on real corpora gave, per exact test, 890ns with
++/// it on vs. 880ns off at k=8, and 1,992ns vs. 1,979ns at k=9. Reordering
++/// the outer loop by domain size does not pay for its own bookkeeping on
++/// this workload, so the code and gate are kept (`SORTNETOPT_T2A_MINDOM=1`
++/// reproduces the measurement) but disabled by default.
++static MINDOM_FLAG: OnceLock<bool> = OnceLock::new();
++
++fn lazy_enabled() -> bool {
++    *LAZY_FLAG.get_or_init(|| env_flag("SORTNETOPT_T2A_LAZY", true))
++}
++
++fn d0cache_enabled() -> bool {
++    *D0CACHE_FLAG.get_or_init(|| env_flag("SORTNETOPT_T2A_D0CACHE", true))
++}
++
++fn mindom_enabled() -> bool {
++    *MINDOM_FLAG.get_or_init(|| env_flag("SORTNETOPT_T2A_MINDOM", false))
++}
++
+ pub struct Subsume {
+     channels: usize,
+     output_sets: [PackedSet; 2],
+@@ -74,6 +373,18 @@
+     undo_stack: Vec<UndoAction>,
+     fixed_channels: usize,
+     buffer: Vec<usize>,
++    /// Tier-2a Change D: scratch for `filter_matching_lazy`'s non-cached
++    /// inner-side materialization (see that function). Pooled the same way
++    /// as `buffer` / `undo_stack`.
++    inner: Vec<usize>,
++    /// Tier-2a Change D: `true` iff `buffer` / `inner` / `undo_stack` above
++    /// were taken out of the thread-local `SCRATCH` pool by `new` (the
++    /// common case) rather than freshly allocated because the pool slot was
++    /// already borrowed by a live outer `Subsume` on this thread (should
++    /// never happen given the current call structure, but see `SCRATCH`'s
++    /// doc comment). Only when this is `true` does `Drop` return the
++    /// buffers to the pool.
++    pool_borrowed: bool,
+     /// M2c: refreshed from the thread-local `TABLE_CACHE` only when
+     /// `fixed_channels` changes (see `filter_matching`), so this is an
+     /// `Rc` clone in the common case, not a fresh `AbstractionTables::new`.
+@@ -87,15 +398,53 @@
+     /// call since only one `Subsume` value exists per such call.
+     diag_filter_matching: usize,
+     diag_nodes: usize,
++    /// Tier-2a headline counter: number of per-channel abstraction
++    /// computations (`low_channels_channel_abstraction_with` calls) actually
++    /// performed by `filter_matching`, across this `Subsume`'s whole
++    /// lifetime. Flushed into `instrument::SUBSUME_ABSTRACTIONS` on `Drop`,
++    /// same pattern as `diag_filter_matching` / `diag_nodes` above.
++    diag_abstractions: usize,
++    /// Depth-0 cache (`DEPTH0_CACHE`) hits / misses, only ever incremented
++    /// when `fixed_channels == 0` and the depth-0 cache is enabled.
++    diag_d0_cache_hits: usize,
++    diag_d0_cache_misses: usize,
++    /// `filter_matching` calls that returned `false` (domain wipeout).
++    diag_filter_fail: usize,
+ }
+ 
+ impl Drop for Subsume {
+     fn drop(&mut self) {
+-        instrument::add(
+-            &instrument::SUBSUME_FILTER_MATCHING,
++        // Tier-2a Change D: return the scratch buffers to the thread-local
++        // pool -- but only if this `Subsume` actually borrowed them from
++        // there (see `pool_borrowed`'s doc comment). Clearing (not
++        // `shrink_to_fit`) keeps the allocated capacity around for the next
++        // `Subsume::new` on this thread.
++        if self.pool_borrowed {
++            let mut buffer = replace(&mut self.buffer, Vec::new());
++            let mut inner = replace(&mut self.inner, Vec::new());
++            let mut undo = replace(&mut self.undo_stack, Vec::new());
++            buffer.clear();
++            inner.clear();
++            undo.clear();
++            SCRATCH.with(|cell| {
++                *cell.borrow_mut() = Some(ScratchPool { buffer, inner, undo });
++            });
++        }
++
++        // Tier-2a Change E: one `Subsume` lifetime's worth of diagnostic
++        // counts (including the `SUBSUME_CALLS` increment formerly done as
++        // an atomic in `Subsume::new`) goes into this thread's local batch
++        // instead of six-plus per-instance atomic `fetch_add`s -- see
++        // `LocalBatch` / `note_subsume_counts`'s doc comments.
++        note_subsume_counts(
++            1,
++            self.diag_nodes as u64,
+             self.diag_filter_matching as u64,
++            self.diag_abstractions as u64,
++            self.diag_d0_cache_hits as u64,
++            self.diag_d0_cache_misses as u64,
++            self.diag_filter_fail as u64,
+         );
+-        instrument::add(&instrument::SUBSUME_NODES, self.diag_nodes as u64);
+     }
+ }
+ 
+@@ -107,27 +456,66 @@
+ 
+ impl Subsume {
+     pub fn new(output_sets: [PackedSet; 2]) -> Self {
+-        instrument::bump(&instrument::SUBSUME_CALLS);
++        // Tier-2a Change E: the `SUBSUME_CALLS` increment used to happen
++        // here as its own atomic `fetch_add`; it is now folded into the
++        // single batched flush `Drop for Subsume` does at the end of this
++        // instance's lifetime (see `note_subsume_counts`'s `calls`
++        // argument), since exactly one `Subsume` is constructed and dropped
++        // per top-level call either way.
+         assert_eq!(output_sets[0].channels(), output_sets[1].channels());
+         let channels = output_sets[0].channels();
+         let identity_perm = (0..channels).collect::<CVec<_>>();
+         let all_mask = (1 << channels) - 1;
+         let full_matching = repeat(all_mask).take(channels).collect::<CVec<_>>();
++
++        // Tier-2a Change D: borrow the scratch buffers from the
++        // thread-local pool instead of allocating fresh `vec![]`s. See
++        // `SCRATCH` / `pool_borrowed`'s doc comments: the pool slot should
++        // always be occupied here (only one `Subsume` is ever live per
++        // thread), but if it is not (nested construction), fall back to
++        // fresh empty `Vec`s rather than corrupt a live outer `Subsume`'s
++        // buffers.
++        let (buffer, inner, undo_stack, pool_borrowed) = SCRATCH.with(|cell| {
++            match cell.borrow_mut().take() {
++                Some(pool) => (pool.buffer, pool.inner, pool.undo, true),
++                None => (Vec::new(), Vec::new(), Vec::new(), false),
++            }
++        });
++
+         Self {
+             channels,
+             output_sets,
+             perms: [identity_perm.clone(), identity_perm],
+             matching: [full_matching.clone(), full_matching],
+-            undo_stack: vec![],
++            undo_stack,
+             fixed_channels: 0,
+-            buffer: vec![],
++            buffer,
++            inner,
++            pool_borrowed,
+             tables: None,
+             diag_filter_matching: 0,
+             diag_nodes: 0,
++            diag_abstractions: 0,
++            diag_d0_cache_hits: 0,
++            diag_d0_cache_misses: 0,
++            diag_filter_fail: 0,
+         }
+     }
+ 
+     pub fn search(&mut self) -> Option<CVec<usize>> {
++        let lazy = lazy_enabled();
++        let d0cache = d0cache_enabled();
++        let mindom = mindom_enabled();
++        self.search_with(lazy, d0cache, mindom)
++    }
++
++    /// Same as [`Self::search`], but with the three Tier-2a gates passed
++    /// explicitly instead of read from the environment. `search` is a thin
++    /// wrapper around this (reading each `OnceLock`-cached gate once per
++    /// call, not per env lookup); tests use this directly to exercise all
++    /// eight gate combinations within a single process, since the
++    /// `OnceLock`s can only ever be initialized once.
++    fn search_with(&mut self, lazy: bool, d0cache: bool, mindom: bool) -> Option<CVec<usize>> {
+         loop {
+             loop {
+                 self.diag_nodes += 1;
+@@ -144,7 +532,7 @@
+                         return None;
+                     }
+                 }
+-                if !self.filter_matching() {
++                if !self.filter_matching_with(lazy, d0cache, mindom) {
+                     return None;
+                 }
+                 if !self.move_unique() {
+@@ -159,7 +547,7 @@
+ 
+             if self.isolate_matching(guess) {
+                 self.move_unique();
+-                let result = self.search();
++                let result = self.search_with(lazy, d0cache, mindom);
+                 if result.is_some() {
+                     self.rollback(stack_depth, fixed_channels);
+                     return result;
+@@ -303,7 +691,15 @@
+         result
+     }
+ 
+-    fn filter_matching(&mut self) -> bool {
++    /// Core of the (formerly parameterless) `filter_matching`, parameterized
++    /// by the three Tier-2a gates
++    /// so tests can exercise every combination directly (see
++    /// `Subsume::search_with`'s doc comment for why: the gates are cached in
++    /// `OnceLock`s and so can only ever be set once per process via env).
++    ///
++    /// `lazy == false && d0cache == false && mindom == false` reproduces the
++    /// pre-Tier-2a code path exactly (see [`Self::filter_matching_eager`]).
++    fn filter_matching_with(&mut self, lazy: bool, d0cache: bool, mindom: bool) -> bool {
+         self.diag_filter_matching += 1;
+         // Take the cached tables out of `self` (same style as `self.buffer`
+         // below) so `self.output_sets` can be borrowed independently of
+@@ -325,6 +721,25 @@
+ 
+         let abstraction_len = tables.abstraction_len();
+ 
++        let result = if lazy {
++            self.filter_matching_lazy(&tables, abstraction_len, d0cache, mindom)
++        } else {
++            self.filter_matching_eager(&tables, abstraction_len)
++        };
++
++        self.tables = Some(tables);
++        if !result {
++            self.diag_filter_fail += 1;
++        }
++        result
++    }
++
++    /// Original (pre-Tier-2a) structure: both sides' full `2 *
++    /// (channels - fixed_channels)` abstractions are computed up front, then
++    /// compared pairwise. Kept byte-for-byte behaviorally identical (modulo
++    /// the `diag_abstractions` bookkeeping) so `SORTNETOPT_T2A_LAZY=0`
++    /// reproduces the exact pre-existing code path for A/B comparison.
++    fn filter_matching_eager(&mut self, tables: &AbstractionTables, abstraction_len: usize) -> bool {
+         self.buffer.resize(
+             abstraction_len * (self.channels - self.fixed_channels) * 2,
+             0,
+@@ -340,11 +755,12 @@
+                 let (current_buffer, buffer_rest) = buffer.split_at_mut(abstraction_len);
+ 
+                 self.output_sets[side].low_channels_channel_abstraction_with(
+-                    &tables,
++                    tables,
+                     self.fixed_channels,
+                     channel,
+                     current_buffer,
+                 );
++                self.diag_abstractions += 1;
+ 
+                 buffer = buffer_rest;
+                 buffers.push(current_buffer);
+@@ -378,10 +794,191 @@
+         drop(abstraction_buffers);
+ 
+         self.buffer = buffer_vec;
+-        self.tables = Some(tables);
+         result
+     }
+ 
++    /// Tier-2a Change A (+ optionally B, C): the "inner" side `si` is fully
++    /// materialized (from the depth-0 cache when `d0cache` applies, else
++    /// computed fresh); the "outer" side `so = 1 - si` is computed one
++    /// channel at a time and tested against every inner channel immediately,
++    /// so a domain wipeout can return after as few as one outer abstraction.
++    ///
++    /// Order-independence argument (see module-level Tier-2a notes): the set
++    /// of `(side-0-channel, side-1-channel)` pairs whose abstraction
++    /// dominance fails is a static function of the two sides' abstractions,
++    /// independent of iteration order. `remove_matching` only ever removes
++    /// edges and propagates a monotone rule, so the final `matching` state is
++    /// the unique fixpoint of (initial matching minus that failing set) under
++    /// that rule -- independent of the order pairs are offered to
++    /// `remove_matching`, and independent of whether we stop early once
++    /// `result` is known to be `false`. Every pair in the failing set is
++    /// still offered to `remove_matching` (guarded by `get_matching`, same as
++    /// the eager path) whenever this function returns `true`.
++    fn filter_matching_lazy(
++        &mut self,
++        tables: &AbstractionTables,
++        abstraction_len: usize,
++        d0cache: bool,
++        mindom: bool,
++    ) -> bool {
++        let depth0 = self.fixed_channels == 0;
++        let use_cache = depth0 && d0cache;
++
++        // Probe both sides first (key comparison only -- no computation).
++        // Tier-2a Change D/4: probe directly against each side's live
++        // `bits()` slice -- no 256-byte zero-padded key temporary is built
++        // just to probe; padding only ever happens inside
++        // `Depth0Cache::insert`, on an actual cache miss.
++        let (opt0, opt1) = if use_cache {
++            let bits0 = self.output_sets[0].bits();
++            let bits1 = self.output_sets[1].bits();
++            let opt0 = DEPTH0_CACHE.with(|cache| cache.borrow_mut().probe(self.channels, bits0));
++            let opt1 = DEPTH0_CACHE.with(|cache| cache.borrow_mut().probe(self.channels, bits1));
++            (opt0, opt1)
++        } else {
++            (None, None)
++        };
++
++        // Side selection: an exact one-side hit makes that side the (free)
++        // inner side; otherwise (both hit, or neither hit, or the cache is
++        // not in play at all) inner = 1 / outer = 0, matching the original
++        // nesting (side 0 was the outer loop variable, side 1 fully
++        // materialized inside it).
++        let (si, so, inner_hit) = match (opt0, opt1) {
++            (Some(a), None) => (0usize, 1usize, Some(a)),
++            (None, Some(b)) => (1usize, 0usize, Some(b)),
++            (Some(_), Some(b)) => (1usize, 0usize, Some(b)),
++            (None, None) => (1usize, 0usize, None),
++        };
++
++        // Materialize the inner side in full. Only the side actually
++        // computed in full is ever inserted into the depth-0 cache -- the
++        // lazily-computed outer side never is.
++        //
++        // Tier-2a Change D (allocation #2): when the result is going into
++        // the depth-0 cache (`use_cache` true, on a miss) it must live in a
++        // fresh `Rc<Vec<usize>>` -- unavoidable, since the cache keeps it
++        // alive across many future `Subsume` instances. But when
++        // `use_cache` is `false` (not depth-0, or the cache gate is off),
++        // the buffer is only ever read within this one call, so it is
++        // computed into the pooled `self.inner` scratch instead, with no
++        // heap allocation at all. `InnerAbs` (below) lets the rest of this
++        // function index either case uniformly via `Deref<Target = [usize]>`.
++        let inner_abs: InnerAbs = match inner_hit {
++            Some(abs) => {
++                self.diag_d0_cache_hits += 1;
++                InnerAbs::Cached(abs)
++            }
++            None if use_cache => {
++                self.diag_d0_cache_misses += 1;
++                let weights = self.channels - self.fixed_channels;
++                let mut buf = vec![0usize; abstraction_len * weights];
++                for channel in self.fixed_channels..self.channels {
++                    let idx = channel - self.fixed_channels;
++                    let slice = &mut buf[idx * abstraction_len..(idx + 1) * abstraction_len];
++                    self.output_sets[si].low_channels_channel_abstraction_with(
++                        tables,
++                        self.fixed_channels,
++                        channel,
++                        slice,
++                    );
++                    self.diag_abstractions += 1;
++                }
++                let abs = Rc::new(buf);
++                let bits = self.output_sets[si].bits();
++                DEPTH0_CACHE
++                    .with(|cache| cache.borrow_mut().insert(self.channels, bits, Rc::clone(&abs)));
++                InnerAbs::Cached(abs)
++            }
++            None => {
++                let weights = self.channels - self.fixed_channels;
++                let mut buf = replace(&mut self.inner, vec![]);
++                buf.clear();
++                buf.resize(abstraction_len * weights, 0);
++                for channel in self.fixed_channels..self.channels {
++                    let idx = channel - self.fixed_channels;
++                    let slice = &mut buf[idx * abstraction_len..(idx + 1) * abstraction_len];
++                    self.output_sets[si].low_channels_channel_abstraction_with(
++                        tables,
++                        self.fixed_channels,
++                        channel,
++                        slice,
++                    );
++                    self.diag_abstractions += 1;
++                }
++                InnerAbs::Owned(buf)
++            }
++        };
++
++        // Outer channel order: plain ascending, or (Change C) ascending by
++        // domain size at loop entry -- computed once, before the loop, into
++        // a fixed-size array (no heap allocation).
++        let n_outer = self.channels - self.fixed_channels;
++        let mut outer_order = [0usize; MAX_CHANNELS];
++        for (i, channel) in (self.fixed_channels..self.channels).enumerate() {
++            outer_order[i] = channel;
++        }
++        let outer_order = &mut outer_order[..n_outer];
++        if mindom {
++            let perms_so = &self.perms[so];
++            let matching_so = &self.matching[so];
++            outer_order.sort_by_key(|&channel| {
++                let mc = perms_so[channel];
++                matching_so[mc].count_ones()
++            });
++        }
++
++        // Reuse `self.buffer` as the reusable per-outer-channel scratch
++        // abstraction, same amortization idea as the eager path's buffer.
++        let mut scratch = replace(&mut self.buffer, vec![]);
++        scratch.resize(abstraction_len, 0);
++
++        let mut result = true;
++
++        'outer: for &channel_o in outer_order.iter() {
++            let mc_o = self.perms[so][channel_o];
++
++            self.output_sets[so].low_channels_channel_abstraction_with(
++                tables,
++                self.fixed_channels,
++                channel_o,
++                &mut scratch,
++            );
++            self.diag_abstractions += 1;
++
++            for channel_i in self.fixed_channels..self.channels {
++                let mc_i = self.perms[si][channel_i];
++                let pair = if so == 0 { [mc_o, mc_i] } else { [mc_i, mc_o] };
++                if self.get_matching(pair) {
++                    let idx = channel_i - self.fixed_channels;
++                    let inner_slice = &inner_abs[idx * abstraction_len..(idx + 1) * abstraction_len];
++                    let (lo, hi): (&[usize], &[usize]) = if so == 0 {
++                        (&scratch[..], inner_slice)
++                    } else {
++                        (inner_slice, &scratch[..])
++                    };
++                    if (0..abstraction_len).any(|i| lo[i] > hi[i]) {
++                        if !self.remove_matching(pair) {
++                            result = false;
++                            break 'outer;
++                        }
++                    }
++                }
++            }
++        }
++
++        self.buffer = scratch;
++        // Tier-2a Change D: return the pooled inner scratch (if this call
++        // used it -- i.e. `InnerAbs::Owned`) to `self.inner` for reuse by
++        // the next `filter_matching_lazy` call on this same `Subsume`.
++        // `InnerAbs::Cached` holds an `Rc` into `DEPTH0_CACHE` instead, so
++        // there is nothing of `self`'s to reclaim in that case.
++        if let InnerAbs::Owned(buf) = inner_abs {
++            self.inner = buf;
++        }
++        result
++    }
++
+     fn move_unique(&mut self) -> bool {
+         let mut moved = false;
+ 
+@@ -596,8 +1193,29 @@
+     /// weight, so if `hist_subsumes(weight_histogram(a), weight_histogram(b))`
+     /// fails, no permutation of `a` can subsume `b`, and the result must be
+     /// `None`.
++    ///
++    /// Tier-2a: every pair is additionally run under all eight combinations
++    /// of the `SORTNETOPT_T2A_LAZY` / `SORTNETOPT_T2A_D0CACHE` /
++    /// `SORTNETOPT_T2A_MINDOM` gates, via `Subsume::search_with` directly
++    /// (bypassing env entirely -- the gates are cached in `OnceLock`s and so
++    /// cannot be varied across env values within a single process). Every
++    /// combination must agree on `is_some()` (the module-level
++    /// order-independence argument says the exact-test answer cannot depend
++    /// on any of the three gates) and, when `Some`, must return a witnessing
++    /// permutation.
+     #[test]
+     fn subsumes_permuted_packed_matches_brute_force() {
++        const GATE_COMBOS: [(bool, bool, bool); 8] = [
++            (false, false, false),
++            (false, false, true),
++            (false, true, false),
++            (false, true, true),
++            (true, false, false),
++            (true, false, true),
++            (true, true, false),
++            (true, true, true),
++        ];
++
+         for channels in 2..=9usize {
+             let mut rng = Xorshift64::new(0xABCD_1234_5678_9ABCu64 ^ (channels as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+             let exhaustive_perms = if channels <= 7 {
+@@ -606,7 +1224,13 @@
+                 None
+             };
+ 
+-            let pairs = if channels <= 6 { 200 } else { 120 };
++            let pairs = if channels <= 6 {
++                2000
++            } else if channels == 7 {
++                800
++            } else {
++                200
++            };
+             let mut saw_hit = false;
+ 
+             for _ in 0..pairs {
+@@ -652,6 +1276,46 @@
+                             result.is_none(),
+                             "channels={}: hist_subsumes necessary condition violated -- got Some but histograms are incompatible",
+                             channels
++                        );
++                    }
++                }
++
++                // Tier-2a: all eight gate combinations must agree with each
++                // other (and with `result` / the brute-force verdict above)
++                // on whether a subsumption exists, and every `Some` must
++                // still be a genuine witness.
++                for &(lazy, d0cache, mindom) in GATE_COMBOS.iter() {
++                    let combo_result =
++                        Subsume::new([a_packed, b_packed]).search_with(lazy, d0cache, mindom);
++
++                    assert_eq!(
++                        combo_result.is_some(),
++                        result.is_some(),
++                        "channels={channels}: gate combo (lazy={lazy}, d0cache={d0cache}, mindom={mindom}) disagrees with default gates on is_some()"
++                    );
++
++                    if let Some(perm) = &combo_result {
++                        assert_eq!(perm.len(), channels);
++                        let permuted_a = apply_perm_convention(&a_os, perm);
++                        assert!(
++                            permuted_a.subsumes_unpermuted(b_os.as_ref()),
++                            "channels={}: gate combo (lazy={}, d0cache={}, mindom={}) returned perm {:?} that does not witness subsumption",
++                            channels,
++                            lazy,
++                            d0cache,
++                            mindom,
++                            perm
++                        );
++                    }
++
++                    if let Some(perms) = &exhaustive_perms {
++                        let brute_force = perms
++                            .iter()
++                            .any(|p| apply_perm_convention(&a_os, p).subsumes_unpermuted(b_os.as_ref()));
++                        assert_eq!(
++                            combo_result.is_some(),
++                            brute_force,
++                            "channels={channels}: gate combo (lazy={lazy}, d0cache={d0cache}, mindom={mindom}) disagrees with brute force ({brute_force})"
+                         );
+                     }
+                 }
