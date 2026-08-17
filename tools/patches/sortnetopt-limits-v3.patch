@@ -1,0 +1,982 @@
+# v3 engine limits: MAX_CHANNELS 11 -> 12/13 behind cargo features, and a
+# versioned wide certificate container (v2) for proofs that outgrow the u32
+# step-id space.
+#
+# Applies on top of, in order:
+#   tools/patches/sortnetopt-macos-proc.patch
+#   tools/patches/sortnetopt-instrumentation-v3.patch
+#   tools/patches/sortnetopt-online-subsumption-v3.patch
+#   tools/patches/sortnetopt-perf-v3.patch
+#   tools/patches/sortnetopt-tier1-v3.patch
+#   tools/patches/sortnetopt-tier2a-v3.patch
+#   tools/patches/sortnetopt-tier2b-v3.patch
+# against the pinned upstream commit 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+# Apply with:  patch -V none -p1 -i <this file>
+#
+# checker/ is NOT touched. Six files change: Cargo.toml, src/output_set.rs,
+# src/output_set/packed.rs, src/search/states.rs, src/search.rs (one
+# visibility keyword), src/proof.rs, src/bin/sortnetopt.rs.
+#
+# ---------------------------------------------------------------------------
+# THE DEFAULT BUILD IS UNCHANGED, BY CONSTRUCTION AND BY MEASUREMENT
+#
+# `MAX_CHANNELS` is selected by cargo feature: none = 11 (upstream), `wide12`
+# = 12, `wide13` = 13. With no feature every constant, every array capacity,
+# every match arm and every emitted byte is what it was before this patch, so
+# the n<=11 regression bar is met structurally rather than argued.
+#
+# This is a feature and not a plain constant raise because several hot-path
+# types are fixed-capacity arrays sized from MAX_CHANNELS. `PackedSet` is
+# `{usize, usize, [u64; 2^MAX_CHANNELS/64]}` and is `Copy`; `Subsume` holds two
+# by value, so every exact subsumption test copies 2 x 272 bytes at
+# MAX_CHANNELS=11 and 2 x 1040 at 13. `BVec<u16>`, the BFS queue inside
+# `prune_extremal_channel_into`, is a 4 KB stack object at 11 and 16 KB at 13.
+# `PVec<u8>`, rebuilt on every `StateMap` get and set, goes 256 -> 1024 bytes.
+# None of this is stored - every persistent structure (the memo table's
+# `BTreeMap` keys, the subsumption index's flat `Vec<u8>` payload arrays) is
+# already sized from the actual channel count, which is why the raise costs
+# only transient/stack space. But it is enough to be measurable, so it is
+# gated.
+# ---------------------------------------------------------------------------
+#
+# WHAT HAD TO CHANGE, AND WHY EACH ONE WOULD HAVE BROKEN SILENTLY
+#
+#  1. `AVec` capacity (src/output_set.rs). Upstream hard-codes
+#     `ArrayVec<[T; 512]>` while the value it must hold is
+#     `MAX_ABSTRACTION_SIZE = MAX_CHANNELS * (MAX_CHANNELS - 1) * 4` - 440 at
+#     n=11 (fits), 528 at n=12 and 624 at n=13 (do not). A bare constant bump
+#     overflows the ArrayVec inside `OutputSet::abstraction`. Capacity is now
+#     512 for the default build and 768 (the next size `arrayvec` 0.5
+#     implements) for the wide builds, with a compile-time assertion that it
+#     is at least `MAX_ABSTRACTION_SIZE`.
+#
+#  2. `histogram_signature` (src/output_set/packed.rs) - THE ONE REAL BUG.
+#     The Tier-1 thermometer pre-filter packs 5 bits per weight class and
+#     there are `channels + 1` classes, so it needs `(channels+1)*5 <= 64`.
+#     That holds exactly up to channels == 11 (60 bits) and FAILS at 12 (65).
+#     `1u64 << 65` is a shift-out-of-range: in a release build the shift
+#     amount wraps modulo 64 and the signature is silently scrambled. It is
+#     not unsound in the "accepts a bad proof" direction - the filter is only
+#     a necessary condition, so corruption can only make it reject candidates
+#     that really do subsume - but a missed subsumer strands witnesses at
+#     proof time and `GenProof::prove_all` panics with "no valid proof step
+#     found" after the whole search has already been paid for. The slot width
+#     is now `hist_sig_bits(channels) = min(5, 64/(channels+1))`, which is 5
+#     for every channels <= 11 (so the default build's signatures are
+#     bit-identical) and 4 at 12 and 13. The threshold denominator follows the
+#     slot width, so the thermometer stays monotone and the filter stays
+#     one-sided at every width. New test
+#     `histogram_signature_fits_and_is_monotone_at_every_width` asserts both
+#     properties for every width up to MAX_CHANNELS.
+#
+#  3. `OutputSetMap` (src/search/states.rs). Upstream has hand-written arms
+#     for widths 3..11 only, and the fall-through is asymmetric: `set_` and
+#     `remove_with_packed` hit `unreachable!()`, but `get_with_packed` returns
+#     `None`. So a missing arm does not crash on the read path - it reports
+#     "not memoised" for every query at that width, turning the DP into
+#     unbounded re-exploration, visible only as inexplicable slowness. Arms
+#     for 12 and 13 are added under the features, using flat `[u8; N]` keys
+#     (the 9/10/11 arms use nested `[[u8; 32]; m]` only because in 2020 arrays
+#     implemented `Ord` only up to length 32; the two layouts have identical
+#     bytes and identical lexicographic order, so the `BTreeMap` behaviour is
+#     the same). The `unreachable!()`s now name the feature to rebuild with.
+#     New test `output_set_map_has_an_arm_at_every_width` exercises
+#     set/get/for_each/census/remove at every width 3..=MAX_CHANNELS; nothing
+#     else in the suite touches a width above 6.
+#
+#  4. `known_bounds` seed table (src/search/states.rs), extended from 11 to 13
+#     entries: S(12) = 39 (proved, arXiv:2012.04400) and 45 for width 13, the
+#     size of the best known 13-channel network. These seed `bounds[1]` only;
+#     the lower seed stays at the universal 1. Indices 0..=11 are untouched,
+#     so n<=11 searches seed identically. Without them a width-12/13 node
+#     seeds at the quadratic fallback, 66 and 78.
+#
+#  5. `cmd_search` had NO width check - only a `debug_assert!` inside
+#     `OutputSet::all_values`, which release builds drop. An over-wide request
+#     failed deep inside an ArrayVec capacity panic. It now fails immediately
+#     and names the feature to rebuild with.
+#
+# ---------------------------------------------------------------------------
+# CERTIFICATE CONTAINER v2 (src/proof.rs; spec in docs/certificate-format-v2.md)
+#
+# The legacy container writes the step count and every witness step id as a
+# `u32`, capping a proof at 4.29e9 steps against an n=13 estimate of 1.5e11.
+# The frozen Isabelle-extracted checker reads that format and must not change,
+# so this patch is emitter-side only and strictly additive:
+#
+#   * `write_proof_v1` is upstream's `write_proof`, byte for byte. It is taken
+#     whenever the step count fits in a u32, which is every proof the
+#     programme can currently produce (n=11: 1.3e7 steps, a factor of ~340
+#     below the cap). Verified: running `gen-proof` on ONE fixed pruned
+#     directory with the pre-patch binary, this binary, and the wide13 binary
+#     produced byte-identical `proof.bin` at n=9 and n=10.
+#
+#   * `write_proof_v2` emits the wide container: 8-byte magic "SNOCERT2",
+#     version, flags, u64 step count / offsets / lengths, an FNV-1a-64 header
+#     hash, a SHA-256 over the step table plus payloads, and an end magic.
+#     Step payloads are the same bytes as v1 except that witness step ids are
+#     8 bytes rather than 4.
+#
+#   * The choice is made BEFORE encoding, from `output_sets.len()` (an upper
+#     bound on the step count), because the id width is baked into the
+#     payloads and so cannot be decided from the final count.
+#     `SORTNETOPT_CERT_FORMAT=v2` forces it, for producing small v2 files to
+#     test against; `=v1` forces the legacy container and asserts rather than
+#     truncating.
+#
+#   * The SHA-256 is the dependency-free one Tier-2b already ships in
+#     `search/checkpoint.rs` (unit-tested against the FIPS 180-4 vectors);
+#     the only change to that module is `mod` -> `pub mod`. NO NEW CRATES.
+#
+# The verified checker cannot read v2 and is not asked to. `tools/cert_v2.py`
+# is an unverified reference reader/checker/transcoder; extending the Isabelle
+# checker is a separate campaign.
+# ---------------------------------------------------------------------------
+diff -ruN a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml	2026-08-17 22:46:42
++++ b/Cargo.toml	2026-08-17 22:53:49
+@@ -12,6 +12,27 @@
+ [profile.bench]
+ debug = true # Enables profiling
+ 
++[features]
++# LIMITS-V3: compile-time selection of MAX_CHANNELS.
++#
++# Default (no feature): MAX_CHANNELS = 11 — byte-for-byte the pre-LIMITS-V3
++# code, so every n<=11 run is unaffected and the regression bar is met by
++# construction rather than by measurement.
++#
++# `wide12` raises it to 12, `wide13` to 13. They are additive (wide13 implies
++# wide12) so that `cfg(feature = "wide12")` reads as ">= 12" everywhere.
++#
++# What the wide builds cost, and why this is a feature rather than a plain
++# constant raise: several hot-path types are fixed-capacity arrays sized from
++# MAX_CHANNELS — `PackedSet` is `[u64; 2^MAX_CHANNELS / 64]` and is `Copy`,
++# and `subsumes_permuted_packed` copies two of them per exact test. Raising
++# MAX_CHANNELS to 13 makes that 2 x 1040 bytes instead of 2 x 272 on every
++# exact subsumption test, at every width, including n=9. Feature-gating keeps
++# that cost off the n<=11 builds entirely.
++default = []
++wide12 = []
++wide13 = ["wide12"]
++
+ [dependencies]
+ log = "0.4.11"
+ env_logger = "0.7.1"
+diff -ruN a/src/bin/sortnetopt.rs b/src/bin/sortnetopt.rs
+--- a/src/bin/sortnetopt.rs	2026-08-17 22:46:42
++++ b/src/bin/sortnetopt.rs	2026-08-17 23:03:48
+@@ -101,6 +101,19 @@
+ fn cmd_search(opt: OptSearch) {
+     log::info!("options: {:?}", opt);
+ 
++    // LIMITS-V3: `cmd_search` had no width check at all — only a
++    // `debug_assert!` inside `OutputSet::all_values`, which a release build
++    // drops. Over-wide requests then failed deep inside an `ArrayVec` capacity
++    // panic with no indication of the real cause. Now they fail immediately and
++    // say what to rebuild with.
++    assert!(
++        opt.channels <= MAX_CHANNELS,
++        "this build supports at most {} channels (requested {}); \
++         rebuild with `--features wide12` or `--features wide13`",
++        MAX_CHANNELS,
++        opt.channels
++    );
++
+     let mut initial = OutputSet::all_values(opt.channels);
+ 
+     for pair in opt.prefix.chunks(2) {
+diff -ruN a/src/output_set/packed.rs b/src/output_set/packed.rs
+--- a/src/output_set/packed.rs	2026-08-17 22:46:42
++++ b/src/output_set/packed.rs	2026-08-17 22:59:15
+@@ -724,13 +724,43 @@
+ 
+ const BINOM: [[u64; BINOM_ROWS]; BINOM_ROWS] = binomials();
+ 
+-/// `T(channels, w, j) = ceil(C(channels, w) * (j + 1) / 6)`, computed in
+-/// integer arithmetic. Non-decreasing in `j` (since the numerator is
+-/// non-decreasing in `j` and the denominator is fixed), and `>= 1` at `j ==
+-/// 0` (since `C(channels, w) >= 1` for `w <= channels`).
++/// LIMITS-V3: number of thermometer bits per weight slot.
++///
++/// The signature packs one slot per weight class `w` in `0..=channels`, so
++/// `(channels + 1) * SIG_BITS` must fit in a `u64`. Upstream hard-codes 5
++/// bits, which is exactly right up to `channels == 11` (12 slots x 5 = 60
++/// bits) and **overflows at `channels == 12`** (13 x 5 = 65): the top slot's
++/// `1u64 << 65` is a shift-out-of-range, which in a release build wraps the
++/// shift amount modulo 64 and silently scrambles the low bits of the
++/// signature. That would not be unsound in the "accepts a wrong proof" sense
++/// — the filter is only a necessary condition and a corrupted one can only
++/// make it reject candidates that do subsume — but a missed subsumer strands
++/// witnesses at proof time (`GenProof::prove_all` panics), so it is a hard
++/// bug.
++///
++/// The fix keeps 5 bits wherever 5 bits fit, i.e. for every `channels <= 11`,
++/// so the default build's signatures are bit-identical to upstream's, and
++/// drops to `64 / (channels + 1)` = 4 bits at `channels` 12 and 13.
++pub const fn hist_sig_bits(channels: usize) -> usize {
++    let slots = channels + 1;
++    let bits = 64 / slots;
++    if bits > 5 {
++        5
++    } else {
++        bits
++    }
++}
++
++/// `T(channels, w, j) = ceil(C(channels, w) * (j + 1) / (B + 1))` where
++/// `B == hist_sig_bits(channels)`, computed in integer arithmetic.
++/// Non-decreasing in `j` (since the numerator is non-decreasing in `j` and
++/// the denominator is fixed), and `>= 1` at `j == 0` (since
++/// `C(channels, w) >= 1` for `w <= channels`). `B == 5` for every
++/// `channels <= 11`, so the denominator is 6 there, exactly as upstream.
+ fn histogram_threshold(channels: usize, w: usize, j: usize) -> u64 {
++    let denominator = hist_sig_bits(channels) as u64 + 1;
+     let numerator = BINOM[channels][w] * (j as u64 + 1);
+-    (numerator + 5) / 6
++    (numerator + denominator - 1) / denominator
+ }
+ 
+ /// `true` iff `a[w] <= b[w]` for all `w`. Necessary condition for "exists
+@@ -773,18 +803,24 @@
+ /// `a[w] <= b[w]` and both are compared against the *same* thresholds means
+ /// every threshold `a[w]` clears, `b[w]` also clears.
+ ///
+-/// `channels <= MAX_CHANNELS == 11`, so at most `12 * 5 == 60` bits are
+-/// used; this fits comfortably in a `u64`.
++/// LIMITS-V3: the slot width is `hist_sig_bits(channels)` — 5 for every
++/// `channels <= 11` (so at most `12 * 5 == 60` bits, exactly as upstream), 4
++/// for `channels` 12 and 13 (at most `14 * 4 == 56` bits). In every case
++/// `(channels + 1) * hist_sig_bits(channels) <= 64` by construction, so the
++/// shift below is always in range.
+ pub fn histogram_signature(channels: usize, hist: &[u32]) -> u64 {
+     debug_assert!(channels <= MAX_CHANNELS);
+     debug_assert_eq!(hist.len(), channels + 1);
+ 
++    let bits = hist_sig_bits(channels);
++    debug_assert!((channels + 1) * bits <= 64);
++
+     let mut sig = 0u64;
+     for w in 0..=channels {
+         let hw = hist[w] as u64;
+-        for j in 0..5usize {
++        for j in 0..bits {
+             if hw >= histogram_threshold(channels, w, j) {
+-                sig |= 1u64 << (5 * w + j);
++                sig |= 1u64 << (bits * w + j);
+             }
+         }
+     }
+@@ -1253,6 +1289,76 @@
+                 "channels={}: no inverted subsumption hit generated",
+                 channels
+             );
++        }
++    }
++
++    /// LIMITS-V3 regression test for the thermometer signature at the widths
++    /// the limits raise makes reachable.
++    ///
++    /// Upstream packs 5 bits per weight slot unconditionally, which needs
++    /// `(channels + 1) * 5 <= 64` and therefore silently breaks at
++    /// `channels >= 12` (65 bits): `1u64 << 65` wraps the shift amount to
++    /// `1u64 << 1` in a release build and corrupts the signature. This checks
++    /// the two properties that matter, at every width up to `MAX_CHANNELS`:
++    ///
++    /// 1. the signature never uses a bit index >= 64, and
++    /// 2. the one-sided filter property `hist_subsumes(a, b) =>
++    ///    sig(a) & !sig(b) == 0` — the property the whole pre-filter rests on.
++    ///
++    /// Property 2 is checked on synthetic dominating histogram pairs rather
++    /// than on real output sets, so it exercises the arithmetic directly and
++    /// at widths where enumerating real sets is impractical.
++    #[test]
++    fn histogram_signature_fits_and_is_monotone_at_every_width() {
++        for channels in 0..=MAX_CHANNELS {
++            let bits = hist_sig_bits(channels);
++            assert!(bits >= 1, "channels={}: zero-bit slots", channels);
++            assert!(
++                (channels + 1) * bits <= 64,
++                "channels={}: {} slots x {} bits overflows a u64",
++                channels,
++                channels + 1,
++                bits
++            );
++
++            let mut rng = Xorshift64::new(0x5EED_0000_0000_0013 ^ channels as u64);
++
++            for _ in 0..2000 {
++                // `a` is dominated by `b` slot-by-slot by construction, so
++                // `hist_subsumes(a, b)` holds and the implication must too.
++                let mut a: WVec<u32> = WVec::new();
++                let mut b: WVec<u32> = WVec::new();
++                for w in 0..=channels {
++                    let cap = BINOM[channels][w] as u32;
++                    let hi = (rng.next() % (cap as u64 + 1)) as u32;
++                    let lo = (rng.next() % (hi as u64 + 1)) as u32;
++                    a.push(lo);
++                    b.push(hi);
++                }
++
++                assert!(hist_subsumes(&a, &b));
++
++                let sig_a = histogram_signature(channels, &a);
++                let sig_b = histogram_signature(channels, &b);
++
++                assert_eq!(
++                    sig_a & !sig_b,
++                    0,
++                    "channels={}: thermometer filter is not one-sided for {:?} <= {:?}",
++                    channels,
++                    a.as_slice(),
++                    b.as_slice()
++                );
++
++                let used_bits = 64 - (sig_b | 1).leading_zeros() as usize;
++                assert!(
++                    used_bits <= (channels + 1) * bits,
++                    "channels={}: signature used bit {} beyond the {} allotted",
++                    channels,
++                    used_bits,
++                    (channels + 1) * bits
++                );
++            }
+         }
+     }
+ }
+diff -ruN a/src/output_set.rs b/src/output_set.rs
+--- a/src/output_set.rs	2026-08-17 22:46:42
++++ b/src/output_set.rs	2026-08-17 22:54:06
+@@ -10,16 +10,46 @@
+ 
+ pub const PAIR_ABSTRACTION_GROUPS: usize = 4;
+ 
++// LIMITS-V3: `MAX_CHANNELS` is selected at compile time by the `wide12` /
++// `wide13` cargo features (see `Cargo.toml`). With neither feature it is 11,
++// exactly as upstream, so a default build is unchanged.
++#[cfg(not(feature = "wide12"))]
+ pub const MAX_CHANNELS: usize = 11;
++#[cfg(all(feature = "wide12", not(feature = "wide13")))]
++pub const MAX_CHANNELS: usize = 12;
++#[cfg(feature = "wide13")]
++pub const MAX_CHANNELS: usize = 13;
++
+ pub const MAX_BITMAP_SIZE: usize = 1 << MAX_CHANNELS;
+ pub const MAX_PACKED_SIZE: usize = 1 << (MAX_CHANNELS - 3);
+ pub const MAX_ABSTRACTION_SIZE: usize = MAX_CHANNELS * (MAX_CHANNELS - 1) * PAIR_ABSTRACTION_GROUPS;
+ 
++/// LIMITS-V3: backing-array capacity for [`AVec`].
++///
++/// Upstream hard-codes 512 while the value that must fit is
++/// `MAX_ABSTRACTION_SIZE` = `MAX_CHANNELS * (MAX_CHANNELS - 1) * 4`: 440 at
++/// n=11 (fits), **528 at n=12 and 624 at n=13 (does not)**. A naive
++/// `MAX_CHANNELS` bump therefore silently overflows the `ArrayVec` inside
++/// `OutputSet::abstraction`. `arrayvec` 0.5 only implements its `Array` trait
++/// for a fixed size list (…, 256, 384, 512, 768, 1024, …), so the capacity is
++/// rounded up to the next supported size rather than set to
++/// `MAX_ABSTRACTION_SIZE` itself. 512 is kept for the default build so its
++/// stack layout is unchanged.
++#[cfg(not(feature = "wide12"))]
++pub const MAX_ABSTRACTION_CAP: usize = 512;
++#[cfg(feature = "wide12")]
++pub const MAX_ABSTRACTION_CAP: usize = 768;
++
++/// LIMITS-V3: compile-time proof that [`AVec`] can hold a full abstraction.
++/// A zero-length array with a negative length is a compile error, so this
++/// fails the build rather than overflowing at run time.
++const _: [(); 0] = [(); (MAX_ABSTRACTION_SIZE > MAX_ABSTRACTION_CAP) as usize * usize::MAX];
++
+ pub type CVec<T> = ArrayVec<[T; MAX_CHANNELS]>;
+ pub type WVec<T> = ArrayVec<[T; MAX_CHANNELS + 1]>;
+ pub type BVec<T> = ArrayVec<[T; MAX_BITMAP_SIZE]>;
+ pub type PVec<T> = ArrayVec<[T; MAX_PACKED_SIZE]>;
+-pub type AVec<T> = ArrayVec<[T; 512]>;
++pub type AVec<T> = ArrayVec<[T; MAX_ABSTRACTION_CAP]>;
+ 
+ pub mod index;
+ pub mod packed;
+diff -ruN a/src/proof.rs b/src/proof.rs
+--- a/src/proof.rs	2026-08-17 22:46:42
++++ b/src/proof.rs	2026-08-17 22:57:08
+@@ -18,6 +18,10 @@
+         index::{LowerInvert, OutputSetIndex, SubsumeFilter},
+         CVec, OutputSet,
+     },
++    // LIMITS-V3: the v2 container's payload digest. Reuses the dependency-free
++    // SHA-256 the Tier-2b checkpoint format already ships and unit-tests
++    // against the FIPS 180-4 vectors, rather than adding a crate.
++    search::checkpoint::Sha256,
+ };
+ 
+ pub fn gen_proof(input: PathBuf) {
+@@ -113,8 +117,62 @@
+     steps: HashMap<Arc<OutputSet>, ProofStep>,
+     step_ids: HashMap<Arc<OutputSet>, usize>,
+     step_data: Vec<Box<[u8]>>,
++    /// LIMITS-V3: emit the v2 wide container (`docs/certificate-format-v2.md`)
++    /// instead of the legacy one. Decided **before** any step is encoded,
++    /// because it changes the width of every witness step id inside the step
++    /// payloads and therefore cannot be decided from the final step count.
++    wide: bool,
+ }
+ 
++/// LIMITS-V3: the legacy container's step count and witness step ids are
++/// `u32`, capping a certificate at this many steps. The n=13 extrapolation is
++/// ~1.5e11 steps, 35x beyond it. Every certificate produced to date is many
++/// orders of magnitude below it (n=11: 12,659,079 steps).
++const LEGACY_MAX_STEPS: usize = u32::MAX as usize;
++
++/// LIMITS-V3: choose the container.
++///
++/// The upper bound on the eventual step count is `output_sets.len()`:
++/// `encode_proof` assigns at most one step id per pruned output set. Deciding
++/// from that bound rather than from the realised count is what makes the
++/// decision available before encoding starts.
++///
++/// `SORTNETOPT_CERT_FORMAT` overrides: `v2` forces the wide container (used to
++/// produce small v2 files for validation), `v1`/`auto`/unset use the rule. A
++/// forced `v1` that would overflow is refused rather than silently truncated.
++fn choose_wide(step_upper_bound: usize) -> bool {
++    let forced = std::env::var("SORTNETOPT_CERT_FORMAT")
++        .map(|v| v.trim().to_ascii_lowercase())
++        .unwrap_or_default();
++    match forced.as_str() {
++        "v2" | "2" | "wide" => true,
++        "v1" | "1" | "legacy" => {
++            assert!(
++                step_upper_bound <= LEGACY_MAX_STEPS,
++                "SORTNETOPT_CERT_FORMAT=v1 requested but the proof may need up to {} steps, \
++                 beyond the legacy container's {} step cap",
++                step_upper_bound,
++                LEGACY_MAX_STEPS
++            );
++            false
++        }
++        _ => step_upper_bound > LEGACY_MAX_STEPS,
++    }
++}
++
++/// LIMITS-V3: FNV-1a 64. Used for the v2 header hash; see
++/// `docs/certificate-format-v2.md` §1. Every step of the update is a
++/// bijection of the accumulator, so any single-byte change is guaranteed to
++/// change the result.
++fn fnv1a64(data: &[u8]) -> u64 {
++    let mut hash = 0xcbf2_9ce4_8422_2325u64;
++    for &byte in data {
++        hash ^= byte as u64;
++        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
++    }
++    hash
++}
++
+ impl GenProof {
+     pub fn new(pruned_indexes: BTreeMap<usize, OutputSetIndex<LowerInvert>>) -> Self {
+         let mut output_sets = HashMap::default();
+@@ -124,12 +182,20 @@
+                 output_sets.insert(shared_output_set.clone(), (bound, shared_output_set));
+             })
+         }
++        let wide = choose_wide(output_sets.len());
++        if wide {
++            log::info!(
++                "certificate container: v2 (wide, 64-bit step ids), {} candidate sets",
++                output_sets.len()
++            );
++        }
+         Self {
+             output_sets,
+             pruned_indexes,
+             steps: Default::default(),
+             step_ids: Default::default(),
+             step_data: vec![],
++            wide,
+         }
+     }
+ 
+@@ -193,7 +259,19 @@
+                 }) {
+                     step_data.push(invert as u8);
+                     step_data.extend(perm.iter().map(|&index| index as u8));
+-                    step_data.write_u32::<LittleEndian>(id as u32).unwrap();
++                    // LIMITS-V3: 4-byte ids in the legacy container, 8-byte in
++                    // v2. `self.wide` is fixed before encoding starts, so a
++                    // single certificate never mixes the two.
++                    if self.wide {
++                        step_data.write_u64::<LittleEndian>(id as u64).unwrap();
++                    } else {
++                        assert!(
++                            id <= LEGACY_MAX_STEPS,
++                            "step id {} overflows the legacy certificate container",
++                            id
++                        );
++                        step_data.write_u32::<LittleEndian>(id as u32).unwrap();
++                    }
+                 } else {
+                     step_data.push(2);
+                 }
+@@ -209,6 +287,24 @@
+     }
+ 
+     pub fn write_proof(&self, target: &mut impl Write) {
++        if self.wide {
++            self.write_proof_v2(target)
++        } else {
++            self.write_proof_v1(target)
++        }
++    }
++
++    /// The legacy container, unchanged from upstream. `write_proof` reaches
++    /// this for every proof whose step count fits in a `u32`, which is every
++    /// proof the programme can currently produce, so the emitted bytes are
++    /// identical to the pre-LIMITS-V3 emitter's.
++    fn write_proof_v1(&self, target: &mut impl Write) {
++        assert!(
++            self.step_data.len() <= LEGACY_MAX_STEPS,
++            "{} steps overflow the legacy certificate container",
++            self.step_data.len()
++        );
++
+         target
+             .write_u32::<LittleEndian>(self.step_data.len() as u32)
+             .unwrap();
+@@ -224,6 +320,75 @@
+         for step in self.step_data.iter() {
+             target.write_all(step).unwrap();
+         }
++    }
++
++    /// LIMITS-V3: the v2 wide container, specified in
++    /// `docs/certificate-format-v2.md`. 64-bit step count, offsets and
++    /// lengths; the step payloads are the same bytes as v1 except that
++    /// witness step ids are 8 bytes (written by `encode_proof`).
++    ///
++    /// The frozen Isabelle-extracted checker does **not** read this format.
++    /// `tools/cert_v2.py` is the unverified reference reader.
++    fn write_proof_v2(&self, target: &mut impl Write) {
++        const HEADER_LEN: u64 = 64;
++        const TABLE_ENTRY_LEN: u64 = 16;
++
++        let step_count = self.step_data.len() as u64;
++        assert!(step_count >= 1, "refusing to write an empty certificate");
++
++        let table_offset = HEADER_LEN;
++        let payload_offset = HEADER_LEN + TABLE_ENTRY_LEN * step_count;
++        let payload_bytes: u64 = self.step_data.iter().map(|s| s.len() as u64).sum();
++
++        // The claim: channels and bound of the last step, byte 0 and byte 1 of
++        // its payload. Mirrored into the header so a tool can report what a
++        // file claims without decoding it; a reader must still check it
++        // against the decoded step.
++        let last = self.step_data.last().unwrap();
++        let root_channels = last[0] as u16;
++        let root_bound = last[1] as u16;
++
++        let mut header = Vec::with_capacity(HEADER_LEN as usize);
++        header.extend_from_slice(b"SNOCERT2");
++        header.write_u32::<LittleEndian>(2).unwrap(); // format_version
++        header.write_u32::<LittleEndian>(0).unwrap(); // flags
++        header.write_u64::<LittleEndian>(step_count).unwrap();
++        header.write_u64::<LittleEndian>(table_offset).unwrap();
++        header.write_u64::<LittleEndian>(payload_offset).unwrap();
++        header.write_u64::<LittleEndian>(payload_bytes).unwrap();
++        header.write_u16::<LittleEndian>(root_channels).unwrap();
++        header.write_u16::<LittleEndian>(root_bound).unwrap();
++        header.write_u32::<LittleEndian>(0).unwrap(); // reserved
++        debug_assert_eq!(header.len(), 56);
++        let header_hash = fnv1a64(&header);
++        header.write_u64::<LittleEndian>(header_hash).unwrap();
++        debug_assert_eq!(header.len(), HEADER_LEN as usize);
++
++        target.write_all(&header).unwrap();
++
++        // The payload digest covers the step table and the payloads, i.e.
++        // every byte from `table_offset` to the trailer. Hashed as it is
++        // written so the whole certificate is never held twice in memory.
++        let mut digest = Sha256::new();
++
++        let mut offset = payload_offset;
++        for step in self.step_data.iter() {
++            let mut entry = [0u8; TABLE_ENTRY_LEN as usize];
++            entry[0..8].copy_from_slice(&offset.to_le_bytes());
++            entry[8..16].copy_from_slice(&(step.len() as u64).to_le_bytes());
++            digest.update(&entry);
++            target.write_all(&entry).unwrap();
++            offset += step.len() as u64;
++        }
++        debug_assert_eq!(offset, payload_offset + payload_bytes);
++
++        for step in self.step_data.iter() {
++            digest.update(step);
++            target.write_all(step).unwrap();
++        }
++
++        target.write_all(&digest.finalize()).unwrap();
++        target.write_all(b"SNOCEND2").unwrap();
+     }
+ 
+     fn lookup_witness(
+diff -ruN a/src/search/states.rs b/src/search/states.rs
+--- a/src/search/states.rs	2026-08-17 22:46:42
++++ b/src/search/states.rs	2026-08-17 23:23:13
+@@ -408,7 +408,17 @@
+             } else {
+                 let quadratic_bound = (output_set.channels() * (output_set.channels() - 1)) / 2;
+ 
+-                let known_bounds = [0, 0, 1, 3, 5, 9, 12, 16, 19, 25, 29, 35];
++                // LIMITS-V3: extended from 11 to 13 entries. Indices 0..=11 are
++                // unchanged, so every n<=11 search seeds identically.
++                //
++                // These are *upper* bounds on the number of comparators still
++                // needed and are only used to seed `bounds[1]`; the lower seed
++                // stays at the universal 1. Index 12 is S(12) = 39 (proved,
++                // arXiv:2012.04400); index 13 is 45, the size of the best known
++                // 13-channel network, hence a sound upper bound. Without them a
++                // width-12/13 node would seed at the quadratic fallback (66 and
++                // 78), which is sound but a much weaker starting interval.
++                let known_bounds = [0, 0, 1, 3, 5, 9, 12, 16, 19, 25, 29, 35, 39, 45];
+ 
+                 let bound = known_bounds
+                     .get(output_set.channels())
+@@ -643,6 +653,21 @@
+     states_9_channels: BTreeMap<[[u8; 1 << 5]; 1 << 1], T>,
+     states_10_channels: BTreeMap<[[u8; 1 << 5]; 1 << 2], T>,
+     states_11_channels: BTreeMap<[[u8; 1 << 5]; 1 << 3], T>,
++    /// LIMITS-V3. Upstream stops at 11, and the fall-through arms are
++    /// asymmetric traps: `get_with_packed` returns `None` (a *silent* memo
++    /// miss) while `set_with_packed` hits `unreachable!()`. Raising
++    /// `MAX_CHANNELS` without extending this type produces a search that
++    /// silently loses all memoisation at the new widths and then panics.
++    ///
++    /// The 9/10/11 keys are nested `[[u8; 32]; m]` arrays because in 2020
++    /// `Ord`/`Eq` were only implemented for arrays up to length 32. That is no
++    /// longer a restriction, so the new arms use flat `[u8; N]` keys; the
++    /// `BTreeMap` order is unaffected, since `[[u8; 32]; m]` and `[u8; 32*m]`
++    /// have identical layout *and* identical lexicographic order.
++    #[cfg(feature = "wide12")]
++    states_12_channels: BTreeMap<[u8; 1 << 9], T>,
++    #[cfg(feature = "wide13")]
++    states_13_channels: BTreeMap<[u8; 1 << 10], T>,
+ }
+ 
+ impl<T> Default for OutputSetMap<T> {
+@@ -657,6 +682,10 @@
+             states_9_channels: Default::default(),
+             states_10_channels: Default::default(),
+             states_11_channels: Default::default(),
++            #[cfg(feature = "wide12")]
++            states_12_channels: Default::default(),
++            #[cfg(feature = "wide13")]
++            states_13_channels: Default::default(),
+         }
+     }
+ }
+@@ -674,8 +703,25 @@
+             + self.states_9_channels.len()
+             + self.states_10_channels.len()
+             + self.states_11_channels.len()
++            + self.len_wide()
+     }
+ 
++    /// LIMITS-V3: population of the widths that only exist in a wide build.
++    #[cfg(not(feature = "wide12"))]
++    fn len_wide(&self) -> usize {
++        0
++    }
++
++    #[cfg(all(feature = "wide12", not(feature = "wide13")))]
++    fn len_wide(&self) -> usize {
++        self.states_12_channels.len()
++    }
++
++    #[cfg(feature = "wide13")]
++    fn len_wide(&self) -> usize {
++        self.states_12_channels.len() + self.states_13_channels.len()
++    }
++
+     /// Instrumentation (M0b): accumulate this map's population into `census`,
+     /// bucketed by channel count. Pure: `BTreeMap::len` is O(1) and const.
+     pub fn add_len_by_channels(&self, census: &mut Census) {
+@@ -688,6 +734,14 @@
+         census.entries[9] += self.states_9_channels.len() as u64;
+         census.entries[10] += self.states_10_channels.len() as u64;
+         census.entries[11] += self.states_11_channels.len() as u64;
++        #[cfg(feature = "wide12")]
++        {
++            census.entries[12] += self.states_12_channels.len() as u64;
++        }
++        #[cfg(feature = "wide13")]
++        {
++            census.entries[13] += self.states_13_channels.len() as u64;
++        }
+     }
+ 
+     pub fn drain_packed(&mut self) -> impl Iterator<Item = (usize, Vec<u8>, T)> {
+@@ -757,7 +811,9 @@
+                             state,
+                         )
+                     }),
+-            );
++            )
++            .chain(self.drain_packed_12())
++            .chain(self.drain_packed_13());
+ 
+         // Works around vscode's broken syntax highlighting
+         let _ignored: [(); 0 >> 1] = [];
+@@ -767,6 +823,33 @@
+         result
+     }
+ 
++    /// LIMITS-V3: the width-12/13 tails of `drain_packed`, factored out so the
++    /// chain expression itself does not have to be `cfg`-spliced. In a default
++    /// build both are `iter::empty()` and optimise away entirely.
++    #[cfg(not(feature = "wide12"))]
++    fn drain_packed_12(&mut self) -> impl Iterator<Item = (usize, Vec<u8>, T)> {
++        std::iter::empty()
++    }
++
++    #[cfg(feature = "wide12")]
++    fn drain_packed_12(&mut self) -> impl Iterator<Item = (usize, Vec<u8>, T)> {
++        replace(&mut self.states_12_channels, Default::default())
++            .into_iter()
++            .map(|(packed, state)| (12, packed.as_ref().to_owned(), state))
++    }
++
++    #[cfg(not(feature = "wide13"))]
++    fn drain_packed_13(&mut self) -> impl Iterator<Item = (usize, Vec<u8>, T)> {
++        std::iter::empty()
++    }
++
++    #[cfg(feature = "wide13")]
++    fn drain_packed_13(&mut self) -> impl Iterator<Item = (usize, Vec<u8>, T)> {
++        replace(&mut self.states_13_channels, Default::default())
++            .into_iter()
++            .map(|(packed, state)| (13, packed.as_ref().to_owned(), state))
++    }
++
+     /// TIER2b: visit every `(packed key, value)` at one channel count, without
+     /// consuming the map (`drain_packed` is the destructive counterpart used by
+     /// `dump_states`, whose behaviour is unchanged).
+@@ -815,6 +898,16 @@
+                 let bytes = unsafe { &*(packed as *const _ as *const [u8; 1 << 8]) };
+                 action(bytes.as_ref(), value)
+             }),
++            #[cfg(feature = "wide12")]
++            12 => self
++                .states_12_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
++            #[cfg(feature = "wide13")]
++            13 => self
++                .states_13_channels
++                .iter()
++                .for_each(|(packed, value)| action(packed.as_ref(), value)),
+             _ => {}
+         }
+ 
+@@ -863,6 +956,16 @@
+                 .states_11_channels
+                 .get(unsafe { &transmute::<_, [_; 1 << 3]>(*array_ref!(packed, 0, 1 << 8)) })
+                 .cloned(),
++            #[cfg(feature = "wide12")]
++            12 => self
++                .states_12_channels
++                .get(array_ref!(packed, 0, 1 << 9))
++                .cloned(),
++            #[cfg(feature = "wide13")]
++            13 => self
++                .states_13_channels
++                .get(array_ref!(packed, 0, 1 << 10))
++                .cloned(),
+             _ => None,
+         };
+ 
+@@ -912,7 +1015,19 @@
+                 unsafe { transmute::<_, [_; 1 << 3]>(*array_ref!(packed, 0, 1 << 8)) },
+                 value,
+             ),
+-            _ => unreachable!(),
++            #[cfg(feature = "wide12")]
++            12 => self
++                .states_12_channels
++                .insert(*array_ref!(packed, 0, 1 << 9), value),
++            #[cfg(feature = "wide13")]
++            13 => self
++                .states_13_channels
++                .insert(*array_ref!(packed, 0, 1 << 10), value),
++            _ => unreachable!(
++                "OutputSetMap has no arm for {} channels (MAX_CHANNELS = {}); \
++                 rebuild with the wide12/wide13 cargo feature",
++                channels, MAX_CHANNELS
++            ),
+         };
+ 
+         // Works around vscode's broken syntax highlighting
+@@ -945,7 +1060,17 @@
+             11 => self
+                 .states_11_channels
+                 .remove(unsafe { &transmute::<_, [_; 1 << 3]>(*array_ref!(packed, 0, 1 << 8)) }),
+-            _ => unreachable!(),
++            #[cfg(feature = "wide12")]
++            12 => self.states_12_channels.remove(array_ref!(packed, 0, 1 << 9)),
++            #[cfg(feature = "wide13")]
++            13 => self
++                .states_13_channels
++                .remove(array_ref!(packed, 0, 1 << 10)),
++            _ => unreachable!(
++                "OutputSetMap has no arm for {} channels (MAX_CHANNELS = {}); \
++                 rebuild with the wide12/wide13 cargo feature",
++                channels, MAX_CHANNELS
++            ),
+         };
+ 
+         // Works around vscode's broken syntax highlighting
+@@ -954,5 +1079,134 @@
+         let _ignored: [(); 0 >> 1] = [];
+ 
+         previous.is_some()
++    }
++}
++
++#[cfg(test)]
++mod limits_tests {
++    use super::*;
++    use crate::output_set::OutputSet;
++
++    /// LIMITS-V3: `OutputSetMap` must have a real arm for **every** width from
++    /// 3 to `MAX_CHANNELS`.
++    ///
++    /// This is the specific trap the limits raise had to defuse. Upstream's
++    /// fall-through arms are asymmetric: `get_with_packed` returns `None` and
++    /// `set_with_packed`/`remove_with_packed` hit `unreachable!()`. A width
++    /// with no arm therefore does not fail loudly on the read path — it
++    /// silently reports "not memoised" for every query, which turns the DP
++    /// into an exponential re-exploration and is invisible except as
++    /// inexplicable slowness. Nothing else in the test suite touches widths
++    /// above 6 (`checkpoint::tests::round_trip_states` uses 6), so without
++    /// this test a missing 12- or 13-channel arm would ship.
++    ///
++    /// Covered per width: insert-returns-new, get round-trips the value,
++    /// insert-again-returns-not-new and updates, `for_each_packed_at` visits
++    /// the entry with the right key bytes, `add_len_by_channels` counts it in
++    /// the right census slot, and `remove_with_packed` actually removes.
++    #[test]
++    fn output_set_map_has_an_arm_at_every_width() {
++        for channels in 3..=MAX_CHANNELS {
++            let len = OutputSet::packed_len_for_channels(channels);
++            let mut map: OutputSetMap<u32> = Default::default();
++
++            // Two distinct keys of the right length; the byte pattern varies
++            // along the key so a wrong `array_ref!` length would collide.
++            let key_a: Vec<u8> = (0..len).map(|i| (i as u8).wrapping_mul(31) | 1).collect();
++            let mut key_b = key_a.clone();
++            key_b[len - 1] ^= 0x80;
++
++            assert!(
++                map.set_with_packed(channels, &key_a, 111),
++                "width {}: first insert did not report a new key",
++                channels
++            );
++            assert_eq!(
++                map.get_with_packed(channels, &key_a),
++                Some(111),
++                "width {}: get missed a key that was just set — this is the \
++                 SILENT memoisation loss a missing arm produces",
++                channels
++            );
++            assert_eq!(
++                map.get_with_packed(channels, &key_b),
++                None,
++                "width {}: get returned a value for a key that was never set",
++                channels
++            );
++
++            assert!(
++                !map.set_with_packed(channels, &key_a, 222),
++                "width {}: overwrite reported a new key",
++                channels
++            );
++            assert_eq!(map.get_with_packed(channels, &key_a), Some(222));
++
++            map.set_with_packed(channels, &key_b, 333);
++            assert_eq!(map.len(), 2, "width {}: wrong population", channels);
++
++            let mut census = Census::default();
++            map.add_len_by_channels(&mut census);
++            assert_eq!(
++                census.entries[channels], 2,
++                "width {}: census counted the entries in the wrong slot",
++                channels
++            );
++            assert_eq!(census.total(), 2);
++
++            let mut seen: Vec<(Vec<u8>, u32)> = vec![];
++            map.for_each_packed_at(channels, &mut |packed, value| {
++                seen.push((packed.to_vec(), *value))
++            });
++            seen.sort();
++            let mut want = vec![(key_a.clone(), 222u32), (key_b.clone(), 333u32)];
++            want.sort();
++            assert_eq!(
++                seen, want,
++                "width {}: for_each_packed_at did not reproduce the stored keys \
++                 (checkpointing would silently drop this width)",
++                channels
++            );
++
++            assert!(map.remove_with_packed(channels, &key_a));
++            assert!(!map.remove_with_packed(channels, &key_a));
++            assert_eq!(map.get_with_packed(channels, &key_a), None);
++            assert_eq!(map.get_with_packed(channels, &key_b), Some(333));
++            assert_eq!(map.len(), 1);
++        }
++    }
++
++    /// LIMITS-V3: the seed table must cover every width the build supports,
++    /// and every seeded upper bound must be a real upper bound (it is only
++    /// ever used to seed `bounds[1]`, so a value below the true optimum would
++    /// make the search close the interval at a wrong answer).
++    #[test]
++    fn known_bounds_cover_every_width() {
++        // S(0..=11) as upstream, then S(12) = 39 (proved, arXiv:2012.04400)
++        // and 45 for width 13 (the size of the best known 13-channel network,
++        // hence an upper bound).
++        let known_bounds = [0, 0, 1, 3, 5, 9, 12, 16, 19, 25, 29, 35, 39, 45];
++        assert!(
++            known_bounds.len() > MAX_CHANNELS,
++            "the known_bounds seed table stops at width {} but this build \
++             supports {}",
++            known_bounds.len() - 1,
++            MAX_CHANNELS
++        );
++        for channels in 2..known_bounds.len() {
++            let quadratic = (channels * (channels - 1)) / 2;
++            assert!(
++                (known_bounds[channels] as usize) <= quadratic,
++                "width {}: seed {} exceeds the quadratic ceiling {}",
++                channels,
++                known_bounds[channels],
++                quadratic
++            );
++            assert!(
++                known_bounds[channels] >= known_bounds[channels - 1],
++                "width {}: seed table is not monotone",
++                channels
++            );
++        }
+     }
+ }
+diff -ruN a/src/search.rs b/src/search.rs
+--- a/src/search.rs	2026-08-17 22:46:42
++++ b/src/search.rs	2026-08-17 22:57:20
+@@ -15,7 +15,10 @@
+ use futures::{pending, poll, task::Poll};
+ use rustc_hash::FxHashMap as HashMap;
+ 
+-mod checkpoint;
++// LIMITS-V3: made `pub` so `proof::write_proof_v2` can reuse the
++// dependency-free SHA-256 this module already carries and unit-tests against
++// the FIPS 180-4 vectors. No item's visibility inside the module changed.
++pub mod checkpoint;
+ mod states;
+ mod subsume;
+ 
