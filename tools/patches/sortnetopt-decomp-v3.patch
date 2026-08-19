@@ -1,0 +1,1866 @@
+sortnetopt-decomp-v3 — decomposition machinery: shell counters, the shared
+bound oracle, and prefix-job identity
+
+Applies on top of the nine-patch v3 stack, in this order:
+
+    sortnetopt-macos-proc.patch
+    sortnetopt-instrumentation-v3.patch
+    sortnetopt-online-subsumption-v3.patch
+    sortnetopt-perf-v3.patch
+    sortnetopt-tier1-v3.patch
+    sortnetopt-tier2a-v3.patch
+    sortnetopt-tier2b-v3.patch
+    sortnetopt-limits-v3.patch
+    sortnetopt-zm-v3.patch
+    sortnetopt-decomp-v3.patch      <- this one
+
+Base pin: 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+Nothing in checker/ is touched. The frozen snocheck is never rebuilt.
+
+This patch implements Steps 1 and 2 of the composed plan in
+docs/lowmem-endgame-assessment.md §11, plus the engine-side identity hook the
+per-(class x prefix) job decomposition needs. It adds no search heuristic, no
+pruning rule and no bound. Every feature is env- or subcommand-gated and inert
+by default.
+
+
+================================================================================
+PART 1 — SHELL INSTRUMENTATION (§11 Step 1 items 1 and 3)
+================================================================================
+
+Gate: SORTNETOPT_SHELL_STATS=1 (default off; when off, no popcount is computed,
+no allocation happens, and the run is bit-identical to the nine-patch stack).
+
+A state's *shell* is the pair (width, popcount) — the channel count of the
+sub-problem and |X|, the number of set bits of the packed key. Because
+packed_len_for_channels(k) = 2^(k-3) bytes exactly, with no padding bits at any
+k >= 3, popcount(packed) == |X| exactly.
+
+§7.1 of the assessment establishes, by exhaustive BFS at n <= 5 and random DP
+walks at n <= 10, that (width, |X|) is a topological quasi-order on the DP DAG:
+every edge decreases it, except for a measured 4-7% of comparator edges after
+channel pruning that stay inside the same shell. Same-shell edges are the one
+open risk in the shell-bucketed external memo design, because they force an inner
+fixpoint whose depth is the number of sub-passes a k-pass sorted merge needs.
+The assessment could only measure that depth along random walks (max 5 in ~9,700
+edges) and named a counter as "the cheapest possible instrumentation ask in this
+document". This is that counter, measured on the real DAG.
+
+Counters added:
+    shell_stats_enabled          config echo
+    succ_edges_examined          denominator
+    succ_same_shell              child (width, popcount) == parent's
+    succ_width_drop              child width < parent width
+    succ_smaller_same_width      same width, smaller popcount
+    succ_shell_violation         MUST BE 0 — the Shell Lemma's machine check
+    same_shell_chain_max         longest run of consecutive same-shell edges
+    same_shell_chain_total       for a mean
+    same_shell_chain_starts
+
+instrument.json gains a "shell_census" object mapping "width,popcount" -> live
+count (zeros omitted), plus the summary columns of assessment §7.2
+(shells_nonzero, largest_shell, largest_shell_frac, top16_frac, top64_frac), so
+a run reproduces shells.py for free instead of requiring a dump.
+
+filter_exact_hits, the third Step-1 ask, already landed in the zm patch.
+
+
+================================================================================
+PART 2 — THE SHARED BOUND ORACLE (§11 Step 2, §6.3)
+================================================================================
+
+Gate: SORTNETOPT_BOUND_SEED=<path to a checkpoint.bin> (default off, inert).
+
+A read-only seed-import path *beside* the existing checkpoint resume. It loads a
+prior run's StateMap as {(width, packed key) -> bounds} seeds and merges them
+into this run's StateMap. It is deliberately NOT the resume path:
+SORTNETOPT_CHECKPOINT_RESUME still refuses any file whose identity string
+differs (exit 3, no override), and that refusal is correct and unchanged. The
+seed path accepts foreign identities on purpose, and the rest of this section is
+the argument for why that is sound.
+
+--- Soundness ---------------------------------------------------------------
+
+State.bounds is, by construction, a closed interval on the minimum number of
+comparators required to sort every vector of the output set. It is a property of
+the SET. It does not depend on the root, the prefix, the class, or the channel
+count n of the run that produced it.
+
+The memo key is (width w, packed bitmap over the 2^w Boolean vectors). Because
+packed_len_for_channels(w) = 2^(w-3) bytes exactly with no padding bits, the key
+is a faithful, width-tagged encoding of the set and carries no residue of the
+producing run. Therefore an entry stored at width w by an n'-channel run is a
+statement about exactly the same mathematical object as an entry stored at
+width w by an n-channel run.
+
+BE PRECISE ABOUT WHAT IS IMPORTED:
+  * bounds only, and only for entries with 3 <= w <= min(this run's channels,
+    this build's MAX_CHANNELS). Wider entries are skipped and counted.
+  * huffman_bounds are NOT imported. They are an internal headroom memo tied to
+    the producing run's Huffman recursion, not a property of the set.
+  * the on-line subsumption INDEX section of the checkpoint is not read at all.
+  * the merge is
+        lower := max(lower_existing, lower_imported)
+        upper := min(upper_existing, upper_imported)
+    which is sound because both are valid bounds on the same quantity, and
+    monotone, which is exactly what improve() already requires
+    (docs/sortnetopt-internals.md §3.6 invariants 1-2: the reader-visible lower
+    bound never decreases).
+  * a merge that would empty the interval is a CONTRADICTION and cannot happen
+    if both runs are correct. It bumps seed_contradictions, logs both intervals
+    and the key, and aborts with exit code 4. It is a corruption detector, not a
+    recovery path.
+
+The measurement in assessment §6.1 — level-4 memo tables of a full n=9 run and a
+full n=10 run agreeing as sets of (width, packed key) pairs at Jaccard 0.9936,
+with widths 3, 4, 5 and 9 bit-identical, and 99.9163% of the 207,777 shared keys
+carrying the identical stored lower bound — is what justifies *expecting the
+reuse to be large*. It is NOT what makes the import sound; soundness is the
+definitional argument above, which holds at equal width for any pair of n. The
+174 value disagreements are weakenings, not contradictions (a run stops improving
+a node once the root's race is settled), which is why max/min is the right merge
+and why no disagreement can be a soundness event.
+
+--- The certificate obligation, and why this design discharges it ------------
+
+assessment §6.3 item 3 warns that imported bounds have no in-run justification
+and would strand GenProof::prove_all (internals §3.6 invariant 4). This design
+avoids that, as follows.
+
+The certificate is not generated from the search's stored bound VALUES. The
+pipeline is search -> dump_states -> prune-all -> gen-proof, and dump_states
+writes group_{w}_{b}.bin files containing packed keys ONLY — no State. gen-proof
+re-derives every justification from the dumped collection of SETS. So the only
+way seeding can break the certificate is by causing the search to omit a state
+the proof needs.
+
+Seed import therefore inserts the seed entries INTO the StateMap (with merged
+bounds), not into a side table. dump_states drains the whole StateMap, so every
+seeded state is dumped. The seed came from a run whose own dumped collection was
+self-sufficient (it produced an accepted certificate); the union of two
+self-sufficient collections is self-sufficient, because each state's
+justification chain lies inside its own origin collection and the union preserves
+membership. The obligation is discharged by construction — and it is checked
+empirically by the validation gate, which is what actually decides it.
+
+Seed entries are inserted by a dedicated StateMap::seed_state that mirrors
+restore_state's discipline: the key is rebuilt as a PVec so the FxHasher shard is
+computed identically to get/set (which is why the shard count is not part of any
+identity and seeds are portable across machines and core counts); it bypasses
+set() entirely (no index insert, no eviction) and does not inflate
+set_calls/set_inserts.
+
+The seed file is validated exactly as a checkpoint is — magic, format version,
+header hash, trailer magic, and the FULL payload SHA-256 — with the single
+deliberate exception of the identity-hash equality check. The seed's identity
+string and its SHA-256 are read, logged, and recorded in instrument.json, so
+every seeded run states on the record what it was seeded from.
+
+Counters: seed_enabled, seed_entries_read, seed_entries_imported,
+seed_entries_new, seed_entries_merged_stronger, seed_skipped_width,
+seed_contradictions (must be 0), seed_import_ns; plus a "seed" object in
+instrument.json carrying the path, the file hash and the per-width counts.
+
+No new writer is needed to produce a seed: a final checkpoint already IS this
+table. SORTNETOPT_CHECKPOINT_DIR=<d> with SORTNETOPT_CHECKPOINT_INTERVAL_SECS=0
+writes <d>/checkpoint.bin, and that is the seed.
+
+
+================================================================================
+PART 3 — PREFIX-JOB IDENTITY (canon-key subcommand)
+================================================================================
+
+The engine already accepts a comparator prefix (-p/--prefix, flat i,j pairs),
+which is all the *search* side of a per-(class x prefix) decomposition needs. The
+missing piece is job IDENTITY: two different prefixes very often yield the same
+canonical output set and therefore the same bound, and the campaign must
+deduplicate jobs by that canonical key. At n=13 the canonicalisation is not
+computable outside the engine.
+
+    sortnetopt canon-key <channels> [--prefix-file PATH] [--prefix "a-b,c-d"]
+
+applies each prefix to the full cube exactly as cmd_search does, canonicalises it
+exactly as the search memoises its root, and prints
+    <prefix>\t<width>\t<popcount>\t<hex canonical packed key>
+It does not start the thread pool, the stats thread or a StateMap, so it has none
+of search's ~10-second process-wall floor.
+
+The decomposition identity this serves, and its proof, for the record:
+
+    For any depth L and any n, letting X_P be the canonical output set obtained
+    by applying a length-L comparator prefix P to the full n-cube and s(X_P) the
+    minimum number of comparators sorting X_P,
+
+        S(n)  =  min over all length-L prefixes P of ( L + s(X_P) ).
+
+    (>=) An optimal n-sorter's first L comparators form some P and its tail
+    sorts X_P, so S(n) - L >= s(X_P). (<=) P followed by an optimal completion
+    of X_P is an n-sorter. Prefixes with equal canonical X_P have equal s, so
+    deduplication by canonical key is exact.
+
+
+================================================================================
+EPISTEMIC STATUS OF THE CAMPAIGN THIS SERVES — READ BEFORE USING PART 3
+================================================================================
+
+Parts 1 and 2 are unconditional engine machinery. Part 3 is unconditional as
+stated above (the prefix decomposition identity is elementary).
+
+What is CONDITIONAL is the *class* restriction that tools/class_filter.py layers
+on top of Part 3. The three classes C1 (root split 5|8), C2 (6|7) and C3 (4|9)
+are exhaustive over admissible shapes only under the bridge statement E1' /
+eq (8) of van Voorhis's two-channel argument. Per docs/van-voorhis-theory-report.md
+and docs/kraft-repair-report.md:
+
+  * E1' is confirmed to be the primary source's own statement, and the tree is
+    confirmed to be the MAX branch tree rooted at the max output;
+  * eq (8) is PROVED only for *clean* sorters (no pass-through comparators on
+    any max-path). Pass-throughs are the sole obstruction, and they occur in 27
+    of 43 constructed sorters — the common case, not a corner case;
+  * the proposed general repair (LEMMA-star and the whole family of per-node
+    charging arguments) was REFUTED by an independent adversarial verifier.
+    eq (8) now needs a global argument that does not exist.
+
+Therefore: a completed C1 + C2 + C3 exhaustion is a CONDITIONAL result. An
+unconditional lower-bound conclusion needs either the Kraft repair or
+all-shapes coverage — the latter being available today as the root-split
+partition over ALL shapes, which is exhaustive by construction and depends on no
+conjecture, at the cost of covering root splits that the case split would have
+excluded.
+
+One further correction is baked into the filter and is worth restating here
+because it is easy to get wrong: the class filters must be computed on the
+BRANCH TREE — the tree whose nodes are the comparators at which two max-paths
+MERGE — and not on literal comparator counts along a max-path. Literal depth is
+>= branch depth and the two differ in 27 of 43 networks tested; using literal
+depth REJECTS VALID NETWORKS and is unsound as a prune (van-voorhis-theory-report
+§6.2). Only Filter 0 (max literal delta <= 5, from the one-channel theorem)
+is correct with the literal count.
+
+Nowhere in this patch, in the campaign tool, or in the class filter is any
+comparator count used as a search target, bound, feature or stopping condition.
+diff -ruN --exclude=target --exclude=*.orig --exclude=*.rej decomp-base/src/bin/sortnetopt.rs /Users/yugendren/experiments/sorting_network_s13/.build/v3-decomp/integrated/source/src/bin/sortnetopt.rs
+--- a/src/bin/sortnetopt.rs	2026-08-20 00:32:11
++++ b/src/bin/sortnetopt.rs	2026-08-20 01:02:28
+@@ -35,6 +35,7 @@
+     GenProof(OptGenProof),
+     FixProof(OptFixProof),
+     Gnp(OptGnp),
++    CanonKey(OptCanonKey),
+ }
+ 
+ #[derive(Debug, StructOpt)]
+@@ -84,6 +85,38 @@
+     dump_index: bool,
+ }
+ 
++/// V3-DECOMP-CANON: batch canonical-key emission for the decomposition
++/// campaign. For each input prefix this starts from `OutputSet::all_values`,
++/// applies the comparators in order and computes exactly the canonical form
++/// `Search::search` would memoise that state under (see `cmd_canon_key`),
++/// then prints its packed key as hex. It never touches the thread pool, the
++/// stats thread, `Search::search` or a `StateMap`, so it is inert with
++/// respect to an ordinary `search` run and has none of that command's 10 s
++/// wall floor.
++///
++/// Convention: an `a-b` pair is passed straight through as
++/// `apply_comparator([a, b])`, exactly like the existing `-p/--prefix` flat
++/// pair list already does. Per `OutputSet::apply_comparator` (see
++/// `src/output_set.rs`), that call makes channel `a` (`channels[0]`) receive
++/// the pairwise MAXIMUM and channel `b` (`channels[1]`) the pairwise MINIMUM
++/// of the two inputs — i.e. `a-b` means "max on a, min on b", not "min-max".
++#[derive(Debug, StructOpt)]
++struct OptCanonKey {
++    /// Number of channels in the sorting network
++    channels: usize,
++    /// File with one prefix per line. Each line is a comma-separated list of
++    /// `a-b` comparator pairs (e.g. `0-1,2-3`); an empty line means the empty
++    /// prefix. `a-b` is passed to `apply_comparator([a, b])` verbatim: channel
++    /// `a` gets the pairwise max, channel `b` gets the pairwise min.
++    #[structopt(long, parse(from_os_str))]
++    prefix_file: Option<PathBuf>,
++    /// A single prefix given directly on the command line, same syntax as one
++    /// line of `--prefix-file` (comma-separated `a-b` pairs, or empty for the
++    /// empty prefix).
++    #[structopt(long)]
++    prefix: Option<String>,
++}
++
+ fn main() {
+     let opt = Opt::from_args();
+     logging::setup(opt.mem_usage);
+@@ -95,6 +128,7 @@
+         OptCommand::GenProof(opt) => cmd_gen_proof(opt),
+         OptCommand::FixProof(opt) => cmd_fix_proof(opt),
+         OptCommand::Gnp(opt) => cmd_gnp(opt),
++        OptCommand::CanonKey(opt) => cmd_canon_key(opt),
+     }
+ }
+ 
+@@ -208,4 +242,128 @@
+                 .unwrap();
+         }
+     }
++}
++
++/// V3-DECOMP-CANON. For each input prefix, reproduces exactly the state
++/// `Search::search` looks up as its root:
++///
++/// ```ignore
++/// let mut initial = OutputSet::all_values(opt.channels);
++/// for pair in opt.prefix.chunks(2) {
++///     initial.apply_comparator([pair[0], pair[1]]);
++/// }
++/// // (this is `cmd_search`'s own prefix-application loop, verbatim)
++/// initial.canonicalize(true);
++/// // `Search::search` then does `search.states.get(initial.as_ref())`, and
++/// // `StateMap::get`/`set` key exclusively on `output_set.packed_pvec()` of
++/// // exactly that canonicalised set (src/search/states.rs) -- no further
++/// // reduction (forced-channel pruning only ever applies to *descendants*
++/// // inside `Search::improve`, never to the literal root). So
++/// // `canonicalize(true)` followed by `packed_pvec()` is precisely the memo
++/// // key the search would use for this prefix's root.
++/// ```
++///
++/// This performs no search: no thread pool, no stats thread, no `StateMap`,
++/// no `instrument::init()`. It is therefore fast (no 10 s wall floor) and
++/// cannot perturb anything `search` touches.
++fn cmd_canon_key(opt: OptCanonKey) {
++    log::info!("options: {:?}", opt);
++
++    assert!(
++        opt.channels <= MAX_CHANNELS,
++        "this build supports at most {} channels (requested {}); \
++         rebuild with `--features wide12` or `--features wide13`",
++        MAX_CHANNELS,
++        opt.channels
++    );
++
++    let mut prefixes: Vec<String> = Vec::new();
++
++    if let Some(path) = opt.prefix_file.as_ref() {
++        let contents = std::fs::read_to_string(path)
++            .unwrap_or_else(|err| panic!("canon-key: cannot read {}: {}", path.display(), err));
++        for line in contents.lines() {
++            prefixes.push(line.to_owned());
++        }
++    }
++
++    if let Some(prefix) = opt.prefix.as_ref() {
++        prefixes.push(prefix.clone());
++    }
++
++    // Convention documented on `OptCanonKey` and proved in the report: `a-b`
++    // is `apply_comparator([a, b])` verbatim, so `a` gets the pairwise max
++    // and `b` the pairwise min.
++    println!(
++        "# sortnetopt-canon-key/v1 channels={} pair=a-b->apply_comparator([a,b]) \
++         (a=channels[0]=pairwise max, b=channels[1]=pairwise min; empty line/string = empty prefix)",
++        opt.channels
++    );
++
++    for prefix_str in prefixes {
++        let comparators = parse_canon_key_prefix(&prefix_str);
++
++        let mut set = OutputSet::all_values(opt.channels);
++        for [a, b] in comparators {
++            assert!(
++                a < opt.channels && b < opt.channels,
++                "canon-key: prefix {:?} has a channel index out of range for channels={}",
++                prefix_str,
++                opt.channels
++            );
++            assert_ne!(
++                a, b,
++                "canon-key: prefix {:?} has a degenerate pair {}-{}",
++                prefix_str, a, b
++            );
++            set.apply_comparator([a, b]);
++        }
++
++        set.canonicalize(true);
++
++        let packed = set.packed_pvec();
++        let popcount: u32 = packed.iter().map(|byte| byte.count_ones()).sum();
++        let mut key_hex = String::with_capacity(packed.len() * 2);
++        for byte in packed.iter() {
++            key_hex.push_str(&format!("{:02x}", byte));
++        }
++
++        println!("{}\t{}\t{}\t{}", prefix_str, opt.channels, popcount, key_hex);
++    }
++}
++
++/// Parses one `--prefix`/`--prefix-file`-line value: a comma-separated list
++/// of `a-b` pairs, or the empty string/whitespace-only string for the empty
++/// prefix. `a`/`b` become `apply_comparator`'s two arguments in that order --
++/// see `cmd_canon_key`'s doc comment for what that means.
++fn parse_canon_key_prefix(spec: &str) -> Vec<[usize; 2]> {
++    let spec = spec.trim();
++    if spec.is_empty() {
++        return Vec::new();
++    }
++
++    spec.split(',')
++        .map(|pair| {
++            let pair = pair.trim();
++            let mut parts = pair.split('-');
++            let a = parts
++                .next()
++                .unwrap_or_else(|| panic!("canon-key: malformed pair {:?}", pair))
++                .trim()
++                .parse::<usize>()
++                .unwrap_or_else(|err| panic!("canon-key: bad channel in {:?}: {}", pair, err));
++            let b = parts
++                .next()
++                .unwrap_or_else(|| panic!("canon-key: malformed pair {:?} (expected a-b)", pair))
++                .trim()
++                .parse::<usize>()
++                .unwrap_or_else(|err| panic!("canon-key: bad channel in {:?}: {}", pair, err));
++            assert!(
++                parts.next().is_none(),
++                "canon-key: malformed pair {:?} (too many '-')",
++                pair
++            );
++            [a, b]
++        })
++        .collect()
+ }
+diff -ruN --exclude=target --exclude=*.orig --exclude=*.rej decomp-base/src/instrument.rs /Users/yugendren/experiments/sorting_network_s13/.build/v3-decomp/integrated/source/src/instrument.rs
+--- a/src/instrument.rs	2026-08-20 00:32:15
++++ b/src/instrument.rs	2026-08-20 01:03:36
+@@ -277,7 +277,296 @@
+ /// Subsumption-index entries reinstated from a checkpoint.
+ pub static CKPT_RESTORED_INDEX: AtomicU64 = AtomicU64::new(0);
+ 
++// --- Objective 1: shell instrumentation (`SORTNETOPT_SHELL_STATS`) ----------
++//
++// A state's *shell* is the pair `(width, popcount)` where `width` is the
++// `channels` field carried out-of-band and `popcount = |X|` is the number of
++// set bits in the packed key (exact: `packed_len_for_channels(k) = 2^(k-3)`
++// bytes with no padding bits, so `popcount(packed) == |X|`).
++// `docs/lowmem-endgame-assessment.md` §7.1 measures `(width, |X|)` as a
++// topological quasi-order on the DP DAG: every edge goes to a strictly
++// smaller shell except a measured 4-7% of comparator edges (after channel
++// pruning) that stay in the same shell. Those ties are what force an inner
++// fixpoint in a shell-bucketed external memo (§7); the counters here turn
++// that "k-pass merge" indication into a number instead of leaving it a
++// property only visible in an offline dump.
++//
++// Entirely OFF by default and behaviour-preserving when off: every branch
++// that touches a popcount or the census below is gated by
++// [`shell_stats_enabled`], a single `OnceLock<bool>` read cached at first
++// use (the same idiom as `output_set::index`'s `env_flag_default_on`
++// family). With the flag unset, no popcount is ever computed, the
++// `ShellCensus` table is never allocated, and every counter registered in
++// `counter_lines_core` below reads 0.
++//
++// Chain measurement: exact, not approximate. `Search::improve`'s successor
++// expansion is async but *not* a work-stealing pool where a task's parent is
++// statically unknown -- `search::Edges::add_edge` builds one `EdgeTarget` per
++// distinct successor and `Edges::improve_next` is the only place that spawns
++// `Search::improve_boxed` for it, so the edge that produced a given
++// recursive call is always in hand at the call site. A `same_shell_run: u32`
++// argument is threaded through `improve` / `improve_boxed` / `EdgeTarget`
++// (`parent_run + 1` on a same-shell comparator edge, `0` on every other
++// edge kind, including every extremal-channel-pruning edge, which always
++// drops width and therefore always breaks a chain) and `fetch_max`'d into
++// [`SAME_SHELL_CHAIN_MAX`] at the point each edge is examined. This is exact
++// over the real DAG traversal actually performed by the run, not a sampled
++// or per-thread approximation.
++
++fn shell_stats_env_flag(name: &str) -> bool {
++    match std::env::var(name) {
++        Ok(val) => {
++            let val = val.trim().to_ascii_lowercase();
++            val == "1" || val == "true" || val == "yes"
++        }
++        Err(_) => false,
++    }
++}
++
++static SHELL_STATS: OnceLock<bool> = OnceLock::new();
++
++/// Whether `SORTNETOPT_SHELL_STATS` is enabled, read from the environment
++/// exactly once (subsequent calls hit the cached `OnceLock`). Default OFF.
+ #[inline]
++pub fn shell_stats_enabled() -> bool {
++    *SHELL_STATS.get_or_init(|| shell_stats_env_flag("SORTNETOPT_SHELL_STATS"))
++}
++
++/// Comparator-successor edges examined while the feature is on (the
++/// denominator for `succ_same_shell / succ_edges_examined`).
++pub static SUCC_EDGES_EXAMINED: AtomicU64 = AtomicU64::new(0);
++/// ... of which the child's `(width, popcount)` equalled the parent's.
++pub static SUCC_SAME_SHELL: AtomicU64 = AtomicU64::new(0);
++/// ... of which the child's width was strictly less than the parent's.
++/// Structurally always 0 at the comparator-loop call site this module is
++/// wired to (`apply_comparator` never changes `channels()`); registered
++/// anyway because the Shell Lemma is stated over both DP edge kinds and a
++/// nonzero value here would itself be a signal something upstream changed.
++pub static SUCC_WIDTH_DROP: AtomicU64 = AtomicU64::new(0);
++/// ... of which the width tied and the child's popcount was strictly less.
++pub static SUCC_SMALLER_SAME_WIDTH: AtomicU64 = AtomicU64::new(0);
++/// Shell Lemma violations: child width > parent width, or same width and
++/// child popcount > parent popcount. Must always be 0; `log::warn!`'d once
++/// per occurrence, rate-limited to the first 16.
++pub static SUCC_SHELL_VIOLATION: AtomicU64 = AtomicU64::new(0);
++/// Longest observed run of consecutive same-shell edges along any traversal
++/// path actually taken by this run.
++pub static SAME_SHELL_CHAIN_MAX: AtomicU64 = AtomicU64::new(0);
++/// Sum, over every maximal same-shell chain, of its length. Every same-shell
++/// edge belongs to exactly one chain and contributes exactly one unit to
++/// that chain's length, so this is tracked simply as one `add` per
++/// same-shell edge -- it is therefore always equal to `SUCC_SAME_SHELL`, and
++/// `same_shell_chain_total / same_shell_chain_starts` is the mean chain
++/// length.
++pub static SAME_SHELL_CHAIN_TOTAL: AtomicU64 = AtomicU64::new(0);
++/// Number of chains started, i.e. same-shell edges whose incoming run was 0
++/// (a length-0 -> length-1 transition).
++pub static SAME_SHELL_CHAIN_STARTS: AtomicU64 = AtomicU64::new(0);
++
++/// Examine one comparator-successor edge for the Shell Lemma counters.
++/// Callers must already have checked [`shell_stats_enabled`] and computed
++/// both popcounts (typically `OutputSet::len()`, which is exact for `|X|`);
++/// this function performs no I/O and touches no popcount itself. Returns the
++/// same-shell run length to thread into the recursive expansion of the
++/// child (`parent_run + 1` if this edge stayed in the same shell, `0`
++/// otherwise), per [`SAME_SHELL_CHAIN_MAX`]'s doc comment.
++pub fn record_shell_edge(
++    parent_width: usize,
++    parent_popcount: usize,
++    child_width: usize,
++    child_popcount: usize,
++    parent_run: u32,
++) -> u32 {
++    bump(&SUCC_EDGES_EXAMINED);
++
++    if child_width < parent_width {
++        bump(&SUCC_WIDTH_DROP);
++        return 0;
++    }
++
++    if child_width > parent_width
++        || (child_width == parent_width && child_popcount > parent_popcount)
++    {
++        let occurrence = SUCC_SHELL_VIOLATION.fetch_add(1, Relaxed);
++        if occurrence < 16 {
++            log::warn!(
++                "shell lemma violation: parent=(width={}, |X|={}) child=(width={}, |X|={})",
++                parent_width,
++                parent_popcount,
++                child_width,
++                child_popcount
++            );
++        }
++        return 0;
++    }
++
++    if child_popcount == parent_popcount {
++        bump(&SUCC_SAME_SHELL);
++        let run = parent_run + 1;
++        SAME_SHELL_CHAIN_MAX.fetch_max(run as u64, Relaxed);
++        add(&SAME_SHELL_CHAIN_TOTAL, 1);
++        if parent_run == 0 {
++            bump(&SAME_SHELL_CHAIN_STARTS);
++        }
++        run
++    } else {
++        bump(&SUCC_SMALLER_SAME_WIDTH);
++        0
++    }
++}
++
++/// Per-`(width, popcount)` live counts ("shell census"), maintained
++/// incrementally by [`record_entry_added_shell`] / [`record_entry_removed_shell`]
++/// so the shell histogram falls out of a run instead of out of a dump.
++/// `popcount` ranges `0..=2^width`; lazily allocated (only when
++/// [`shell_stats_enabled`] is true) as one `Vec<AtomicU64>` per tracked
++/// width.
++type ShellCensusTable = Vec<Vec<AtomicU64>>;
++
++static SHELL_CENSUS: OnceLock<ShellCensusTable> = OnceLock::new();
++
++fn shell_census_table() -> &'static ShellCensusTable {
++    SHELL_CENSUS.get_or_init(|| {
++        (0..MAX_TRACKED_CHANNELS)
++            .map(|w| (0..=(1usize << w)).map(|_| AtomicU64::new(0)).collect())
++            .collect()
++    })
++}
++
++/// Increment the live count for `(channels, popcount)`. Callers must already
++/// have checked [`shell_stats_enabled`] and computed `popcount` themselves
++/// (e.g. `key.iter().map(|b| b.count_ones() as u64).sum()` on the packed
++/// key); this is the sibling of [`record_entry_added`], called from the
++/// same sites in `search::states`.
++#[inline]
++pub fn record_entry_added_shell(channels: usize, popcount: u64) {
++    if channels < MAX_TRACKED_CHANNELS {
++        if let Some(slot) = shell_census_table()[channels].get(popcount as usize) {
++            slot.fetch_add(1, Relaxed);
++        }
++    }
++}
++
++/// Sibling of [`record_entry_removed`]; see [`record_entry_added_shell`].
++#[inline]
++pub fn record_entry_removed_shell(channels: usize, popcount: u64) {
++    if channels < MAX_TRACKED_CHANNELS {
++        if let Some(slot) = shell_census_table()[channels].get(popcount as usize) {
++            slot.fetch_sub(1, Relaxed);
++        }
++    }
++}
++
++/// `(shells_nonzero, largest_shell, largest_shell_frac, top16_frac,
++/// top64_frac, nonzero_entries)`, `nonzero_entries` sorted descending by
++/// count. These are exactly the columns of `assessment` §7.2's table.
++/// Callers must already have checked [`shell_stats_enabled`]: this function
++/// reads (and, on first call, allocates) the shell census table.
++pub fn shell_histogram_summary() -> (u64, u64, f64, f64, f64, Vec<((usize, u64), u64)>) {
++    let table = shell_census_table();
++    let mut entries: Vec<((usize, u64), u64)> = Vec::new();
++    for (width, counts) in table.iter().enumerate() {
++        for (popcount, slot) in counts.iter().enumerate() {
++            let count = slot.load(Relaxed);
++            if count > 0 {
++                entries.push(((width, popcount as u64), count));
++            }
++        }
++    }
++    entries.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
++
++    let total: u64 = entries.iter().map(|(_, count)| *count).sum();
++    let frac = |n: u64| {
++        if total > 0 {
++            n as f64 / total as f64
++        } else {
++            0.0
++        }
++    };
++
++    let shells_nonzero = entries.len() as u64;
++    let largest_shell = entries.first().map(|(_, count)| *count).unwrap_or(0);
++    let top16: u64 = entries.iter().take(16).map(|(_, count)| *count).sum();
++    let top64: u64 = entries.iter().take(64).map(|(_, count)| *count).sum();
++
++    (
++        shells_nonzero,
++        largest_shell,
++        frac(largest_shell),
++        frac(top16),
++        frac(top64),
++        entries,
++    )
++}
++
++fn json_shell_census(pairs: &[((usize, u64), u64)]) -> String {
++    let mut out = String::from("{");
++    for (index, ((width, popcount), count)) in pairs.iter().enumerate() {
++        if index > 0 {
++            out.push_str(", ");
++        }
++        let _ = write!(out, "\"{},{}\": {}", width, popcount, count);
++    }
++    out.push('}');
++    out
++}
++
++// --- Objective 2: bound-seed import (read-only, beside checkpoint resume) ---
++
++/// Memo-table entries read from the seed file's STATES section (includes
++/// entries skipped for width -- see `SEED_SKIPPED_WIDTH`).
++pub static SEED_ENTRIES_READ: AtomicU64 = AtomicU64::new(0);
++/// ... of which were imported (width `<= channels`): inserted new or merged.
++pub static SEED_ENTRIES_IMPORTED: AtomicU64 = AtomicU64::new(0);
++/// ... of which the merge strictly raised a lower bound or strictly lowered
++/// an upper bound already present in this run's `StateMap`.
++pub static SEED_ENTRIES_MERGED_STRONGER: AtomicU64 = AtomicU64::new(0);
++/// ... of which the key was not previously present in this run's `StateMap`.
++pub static SEED_ENTRIES_NEW: AtomicU64 = AtomicU64::new(0);
++/// Entries skipped because their width exceeds this run's channel count.
++pub static SEED_SKIPPED_WIDTH: AtomicU64 = AtomicU64::new(0);
++/// Merges that would have produced an empty interval. Must always be 0 in
++/// any report that gets written: a nonzero value means the process already
++/// called `std::process::exit(4)` before `report` could run, since it can
++/// only happen if one of the two producing runs was unsound.
++pub static SEED_CONTRADICTIONS: AtomicU64 = AtomicU64::new(0);
++/// Wall time spent inside `checkpoint::import_bound_seed`, nanoseconds.
++pub static SEED_IMPORT_NS: AtomicU64 = AtomicU64::new(0);
++
++/// `(path, file sha256, identity-string sha256, imported-by-width)` for the
++/// current run's seed import, if any. Recorded once by
++/// `checkpoint::import_bound_seed` on success; absent (`None`) when
++/// `SORTNETOPT_BOUND_SEED` is unset or the import never got that far
++/// (unreachable in practice -- a failed import calls `std::process::exit(4)`
++/// before `report` ever runs).
++#[derive(Clone, Debug, Default)]
++struct SeedMeta {
++    path: String,
++    file_sha256: String,
++    identity_sha256: String,
++    by_width: Vec<(usize, u64)>,
++}
++static SEED_META: Mutex<Option<SeedMeta>> = Mutex::new(None);
++
++/// Record the seed file's path, its full-payload SHA-256, its identity
++/// string's SHA-256 (the identity text itself only goes to the log -- it can
++/// be large), and the per-width imported-entry counts. Called once, from
++/// `checkpoint::import_bound_seed`, after a successful import.
++pub fn record_seed_meta(
++    path: String,
++    file_sha256: String,
++    identity_sha256: String,
++    by_width: Vec<(usize, u64)>,
++) {
++    *SEED_META.lock().unwrap() = Some(SeedMeta {
++        path,
++        file_sha256,
++        identity_sha256,
++        by_width,
++    });
++}
++
++#[inline]
+ pub fn add_ns(counter: &AtomicU64, start: Instant) {
+     counter.fetch_add(start.elapsed().as_nanos() as u64, Relaxed);
+ }
+@@ -665,6 +954,41 @@
+         ("ckpt_restore_ns", CKPT_RESTORE_NS.load(Relaxed)),
+         ("ckpt_restored_states", CKPT_RESTORED_STATES.load(Relaxed)),
+         ("ckpt_restored_index", CKPT_RESTORED_INDEX.load(Relaxed)),
++        // Objective 2: the shared bound oracle, `SORTNETOPT_BOUND_SEED`.
++        (
++            "seed_enabled",
++            crate::search::checkpoint::seed_enabled() as u64,
++        ),
++        ("seed_entries_read", SEED_ENTRIES_READ.load(Relaxed)),
++        ("seed_entries_imported", SEED_ENTRIES_IMPORTED.load(Relaxed)),
++        (
++            "seed_entries_merged_stronger",
++            SEED_ENTRIES_MERGED_STRONGER.load(Relaxed),
++        ),
++        ("seed_entries_new", SEED_ENTRIES_NEW.load(Relaxed)),
++        ("seed_skipped_width", SEED_SKIPPED_WIDTH.load(Relaxed)),
++        ("seed_contradictions", SEED_CONTRADICTIONS.load(Relaxed)),
++        ("seed_import_ns", SEED_IMPORT_NS.load(Relaxed)),
++        // Objective 1: shell instrumentation, `SORTNETOPT_SHELL_STATS`
++        // (config echo, like `tier1_sig_filter`).
++        ("shell_stats_enabled", shell_stats_enabled() as u64),
++        ("succ_edges_examined", SUCC_EDGES_EXAMINED.load(Relaxed)),
++        ("succ_same_shell", SUCC_SAME_SHELL.load(Relaxed)),
++        ("succ_width_drop", SUCC_WIDTH_DROP.load(Relaxed)),
++        (
++            "succ_smaller_same_width",
++            SUCC_SMALLER_SAME_WIDTH.load(Relaxed),
++        ),
++        ("succ_shell_violation", SUCC_SHELL_VIOLATION.load(Relaxed)),
++        ("same_shell_chain_max", SAME_SHELL_CHAIN_MAX.load(Relaxed)),
++        (
++            "same_shell_chain_total",
++            SAME_SHELL_CHAIN_TOTAL.load(Relaxed),
++        ),
++        (
++            "same_shell_chain_starts",
++            SAME_SHELL_CHAIN_STARTS.load(Relaxed),
++        ),
+     ]
+ }
+ 
+@@ -759,6 +1083,16 @@
+         );
+     }
+ 
++    if let Some(seed) = SEED_META.lock().unwrap().clone() {
++        eprintln!(
++            "seed path {} file_sha256 {} identity_sha256 {}",
++            seed.path, seed.file_sha256, seed.identity_sha256
++        );
++        for (k, count) in seed.by_width.iter() {
++            eprintln!("seed     channels {:>2}  imported {:>10}", k, count);
++        }
++    }
++
+     let iterations = ITERATIONS.lock().unwrap();
+     eprintln!("iteration  lower  upper  elapsed_ms  states  new_states");
+     for it in iterations.iter() {
+@@ -842,6 +1176,39 @@
+             "  \"inserts_by_channels\": {},",
+             json_u64_map(&inserts_by_channels)
+         );
++        // Objective 1: shell census / histogram summary. Only emitted when
++        // `SORTNETOPT_SHELL_STATS` is on -- with it off, `instrument.json`'s
++        // only difference from the baseline is the new (zero-valued) keys
++        // inside "counters" above, per the flag's bit-identity contract.
++        if shell_stats_enabled() {
++            let (shells_nonzero, largest_shell, largest_shell_frac, top16_frac, top64_frac, shell_entries) =
++                shell_histogram_summary();
++            let _ = writeln!(out, "  \"shells_nonzero\": {},", shells_nonzero);
++            let _ = writeln!(out, "  \"largest_shell\": {},", largest_shell);
++            let _ = writeln!(out, "  \"largest_shell_frac\": {},", largest_shell_frac);
++            let _ = writeln!(out, "  \"top16_frac\": {},", top16_frac);
++            let _ = writeln!(out, "  \"top64_frac\": {},", top64_frac);
++            let _ = writeln!(
++                out,
++                "  \"shell_census\": {},",
++                json_shell_census(&shell_entries)
++            );
++        }
++        match SEED_META.lock().unwrap().clone() {
++            Some(seed) => {
++                let _ = writeln!(
++                    out,
++                    "  \"seed\": {{\"path\": {:?}, \"file_sha256\": \"{}\", \"identity_sha256\": \"{}\", \"imported_by_width\": {}}},",
++                    seed.path,
++                    seed.file_sha256,
++                    seed.identity_sha256,
++                    json_u64_map(&seed.by_width)
++                );
++            }
++            None => {
++                let _ = writeln!(out, "  \"seed\": null,");
++            }
++        }
+         let _ = writeln!(out, "  \"bound_iterations\": [");
+         for (index, it) in iterations.iter().enumerate() {
+             let comma = if index + 1 == iterations.len() {
+diff -ruN --exclude=target --exclude=*.orig --exclude=*.rej decomp-base/src/search/checkpoint.rs /Users/yugendren/experiments/sorting_network_s13/.build/v3-decomp/integrated/source/src/search/checkpoint.rs
+--- a/src/search/checkpoint.rs	2026-08-20 00:32:07
++++ b/src/search/checkpoint.rs	2026-08-20 01:02:28
+@@ -79,7 +79,7 @@
+     time::{Duration, Instant},
+ };
+ 
+-use super::states::{State, StateMap};
++use super::states::{SeedOutcome, State, StateMap};
+ use crate::{
+     instrument,
+     output_set::{OutputSet, MAX_CHANNELS},
+@@ -329,6 +329,45 @@
+     config().dir.is_some()
+ }
+ 
++// --- Objective 2: bound-seed import (read-only, beside checkpoint resume) ---
++//
++// See the doc comment on `import_bound_seed` below for the soundness
++// argument. This section only handles configuration; `SeedConfig::from_env`
++// is deliberately as small as `CheckpointConfig::from_env` -- absent
++// `SORTNETOPT_BOUND_SEED`, `seed_config().path` is `None` and nothing in
++// `import_bound_seed` ever runs, so an unseeded run is bit-identical to the
++// 9-patch baseline.
++
++#[derive(Clone, Debug)]
++pub struct SeedConfig {
++    /// `None` disables seed import entirely: the feature is completely inert.
++    pub path: Option<PathBuf>,
++}
++
++impl SeedConfig {
++    pub fn from_env() -> Self {
++        let path = match std::env::var("SORTNETOPT_BOUND_SEED") {
++            Ok(value) if !value.trim().is_empty() => Some(PathBuf::from(value.trim())),
++            _ => None,
++        };
++        Self { path }
++    }
++}
++
++static SEED_CONFIG: OnceLock<SeedConfig> = OnceLock::new();
++
++pub fn seed_config() -> &'static SeedConfig {
++    SEED_CONFIG.get_or_init(SeedConfig::from_env)
++}
++
++/// Config echo for `instrument.json`'s `seed_enabled` counter. Computed from
++/// the cached config rather than tracked as a runtime atomic, matching the
++/// existing `tier1_sig`/`tier1_hist`/`zm_match_filter` echo pattern in
++/// `instrument::counter_lines_core`.
++pub fn seed_enabled() -> bool {
++    seed_config().path.is_some()
++}
++
+ // --- identity ----------------------------------------------------------------
+ 
+ /// The canonical, sorted, newline-separated key=value text covering everything
+@@ -953,105 +992,166 @@
+     /// Validation pass. The order is deliberate, and each step has its own
+     /// actionable message: magic, format_version, header_hash, identity_hash,
+     /// trailer magic, payload_hash. Nothing is restored until all of them pass.
++    ///
++    /// Checks 1/2/3/5/6 and the identity-text read live in
++    /// `validate_checkpoint_file`, shared with `import_bound_seed`'s
++    /// deliberately weaker validation (same integrity checks, but *no*
++    /// identity-hash or channels equality -- see that function's doc
++    /// comment). This method adds the two checks specific to a same-run
++    /// *resume*: identity equality (4) and the header/self channels check.
+     fn validate(&self, path: &Path) -> Result<Header, String> {
+-        let mut file = File::open(path).map_err(|err| format!("cannot open: {}", err))?;
+-        let file_len = file
+-            .metadata()
+-            .map_err(|err| format!("cannot stat: {}", err))?
+-            .len();
++        let (header, _stored_identity) =
++            validate_checkpoint_file(path, Some((&self.identity_hash, &self.identity)))?;
+ 
+-        if file_len < (HEADER_LEN + 4 + TRAILER_LEN) as u64 {
++        if header.channels != self.channels as u64 {
++            // Unreachable while `channels` is in the identity string, but the
++            // header field is what the restore loop trusts, so check it too.
+             return Err(format!(
+-                "file is {} bytes, smaller than the {}-byte minimum (header + identity + trailer); \
+-                 it is truncated or not a checkpoint",
+-                file_len,
+-                HEADER_LEN + 4 + TRAILER_LEN
++                "header channels={} but this search has channels={}",
++                header.channels, self.channels
+             ));
+         }
+ 
+-        let mut raw = [0u8; HEADER_LEN];
+-        file.read_exact(&mut raw)
+-            .map_err(|err| format!("cannot read header: {}", err))?;
++        Ok(header)
++    }
++}
+ 
+-        // 1. magic
+-        if raw[0..8] != MAGIC {
+-            return Err(format!(
+-                "bad magic: found {:?}, expected {:?}. This is not a sortnetopt checkpoint.",
+-                &raw[0..8],
+-                &MAGIC
+-            ));
+-        }
++#[derive(Clone, Copy, Debug)]
++struct Header {
++    flags: u32,
++    identity_hash: [u8; 32],
++    channels: u64,
++    seq: u64,
++    states_total: u64,
++    index_total: u64,
++    identity_len: usize,
++    /// The full-payload SHA-256 (everything except the trailer's magic),
++    /// already verified equal to the stored trailer hash by the time this is
++    /// populated. Objective 2 reports this as the seed file's identity for
++    /// `instrument.json`, rather than re-reading the whole file a second time.
++    payload_hash: [u8; 32],
++}
+ 
+-        // 2. format_version
+-        let format_version = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
+-        if format_version != FORMAT_VERSION {
+-            return Err(format!(
+-                "format_version {} is not supported by this binary (which writes and reads {}). \
+-                 Re-run the search from scratch with this binary.",
+-                format_version, FORMAT_VERSION
+-            ));
+-        }
++/// Shared integrity pass for both a same-run *resume* (`Checkpointer::validate`)
++/// and a foreign *seed import* (`import_bound_seed`): magic, format_version,
++/// header hash, trailer magic, full payload SHA-256 -- and, only when
++/// `identity_check` is `Some`, identity-hash equality (step 4). Passing `None`
++/// is the whole difference between "resume" and "seed": a seed's producing
++/// run is expected to have different semantics (different `channels`,
++/// possibly a different `limit` or prefix), so equality would reject every
++/// interesting seed.
++///
++/// Returns the parsed header (with `identity_len` and `payload_hash` filled
++/// in) and the stored identity string, so callers that skip the equality
++/// check can still log what they imported from.
++fn validate_checkpoint_file(
++    path: &Path,
++    identity_check: Option<(&[u8; 32], &str)>,
++) -> Result<(Header, String), String> {
++    let mut file = File::open(path).map_err(|err| format!("cannot open: {}", err))?;
++    let file_len = file
++        .metadata()
++        .map_err(|err| format!("cannot stat: {}", err))?
++        .len();
+ 
+-        // 3. header_hash
+-        let stored_header_hash = u64::from_le_bytes([
+-            raw[120], raw[121], raw[122], raw[123], raw[124], raw[125], raw[126], raw[127],
+-        ]);
+-        let computed_header_hash = fnv1a64(&raw[..120]);
+-        if stored_header_hash != computed_header_hash {
+-            return Err(format!(
+-                "header hash mismatch: stored {:#018x}, computed {:#018x}. The header is corrupt; \
+-                 no field in it can be trusted.",
+-                stored_header_hash, computed_header_hash
+-            ));
+-        }
++    if file_len < (HEADER_LEN + 4 + TRAILER_LEN) as u64 {
++        return Err(format!(
++            "file is {} bytes, smaller than the {}-byte minimum (header + identity + trailer); \
++             it is truncated or not a checkpoint",
++            file_len,
++            HEADER_LEN + 4 + TRAILER_LEN
++        ));
++    }
+ 
+-        let header = Header {
+-            flags: u32::from_le_bytes([raw[12], raw[13], raw[14], raw[15]]),
+-            identity_hash: {
+-                let mut hash = [0u8; 32];
+-                hash.copy_from_slice(&raw[16..48]);
+-                hash
+-            },
+-            channels: u64::from_le_bytes([
+-                raw[48], raw[49], raw[50], raw[51], raw[52], raw[53], raw[54], raw[55],
+-            ]),
+-            seq: u64::from_le_bytes([
+-                raw[56], raw[57], raw[58], raw[59], raw[60], raw[61], raw[62], raw[63],
+-            ]),
+-            states_total: u64::from_le_bytes([
+-                raw[64], raw[65], raw[66], raw[67], raw[68], raw[69], raw[70], raw[71],
+-            ]),
+-            index_total: u64::from_le_bytes([
+-                raw[72], raw[73], raw[74], raw[75], raw[76], raw[77], raw[78], raw[79],
+-            ]),
+-            identity_len: 0,
+-        };
++    let mut raw = [0u8; HEADER_LEN];
++    file.read_exact(&mut raw)
++        .map_err(|err| format!("cannot read header: {}", err))?;
+ 
+-        // identity text (needed to explain a hash mismatch)
+-        let mut length = [0u8; 4];
+-        file.read_exact(&mut length)
+-            .map_err(|err| format!("cannot read identity length: {}", err))?;
+-        let identity_len = u32::from_le_bytes(length) as usize;
+-        if identity_len as u64 > file_len {
+-            return Err(format!(
+-                "identity length {} exceeds the file size {}",
+-                identity_len, file_len
+-            ));
+-        }
+-        let mut identity = vec![0u8; identity_len];
+-        file.read_exact(&mut identity)
+-            .map_err(|err| format!("cannot read identity string: {}", err))?;
+-        let stored_identity = String::from_utf8_lossy(&identity).into_owned();
++    // 1. magic
++    if raw[0..8] != MAGIC {
++        return Err(format!(
++            "bad magic: found {:?}, expected {:?}. This is not a sortnetopt checkpoint.",
++            &raw[0..8],
++            &MAGIC
++        ));
++    }
+ 
+-        // 4. identity_hash
+-        if header.identity_hash != self.identity_hash {
++    // 2. format_version
++    let format_version = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
++    if format_version != FORMAT_VERSION {
++        return Err(format!(
++            "format_version {} is not supported by this binary (which writes and reads {}). \
++             Re-run the search from scratch with this binary.",
++            format_version, FORMAT_VERSION
++        ));
++    }
++
++    // 3. header_hash
++    let stored_header_hash = u64::from_le_bytes([
++        raw[120], raw[121], raw[122], raw[123], raw[124], raw[125], raw[126], raw[127],
++    ]);
++    let computed_header_hash = fnv1a64(&raw[..120]);
++    if stored_header_hash != computed_header_hash {
++        return Err(format!(
++            "header hash mismatch: stored {:#018x}, computed {:#018x}. The header is corrupt; \
++             no field in it can be trusted.",
++            stored_header_hash, computed_header_hash
++        ));
++    }
++
++    let mut header = Header {
++        flags: u32::from_le_bytes([raw[12], raw[13], raw[14], raw[15]]),
++        identity_hash: {
++            let mut hash = [0u8; 32];
++            hash.copy_from_slice(&raw[16..48]);
++            hash
++        },
++        channels: u64::from_le_bytes([
++            raw[48], raw[49], raw[50], raw[51], raw[52], raw[53], raw[54], raw[55],
++        ]),
++        seq: u64::from_le_bytes([
++            raw[56], raw[57], raw[58], raw[59], raw[60], raw[61], raw[62], raw[63],
++        ]),
++        states_total: u64::from_le_bytes([
++            raw[64], raw[65], raw[66], raw[67], raw[68], raw[69], raw[70], raw[71],
++        ]),
++        index_total: u64::from_le_bytes([
++            raw[72], raw[73], raw[74], raw[75], raw[76], raw[77], raw[78], raw[79],
++        ]),
++        identity_len: 0,
++        payload_hash: [0u8; 32],
++    };
++
++    // identity text (needed to explain a hash mismatch, and it is the whole
++    // point of a seed import, so it is always read)
++    let mut length = [0u8; 4];
++    file.read_exact(&mut length)
++        .map_err(|err| format!("cannot read identity length: {}", err))?;
++    let identity_len = u32::from_le_bytes(length) as usize;
++    if identity_len as u64 > file_len {
++        return Err(format!(
++            "identity length {} exceeds the file size {}",
++            identity_len, file_len
++        ));
++    }
++    let mut identity = vec![0u8; identity_len];
++    file.read_exact(&mut identity)
++        .map_err(|err| format!("cannot read identity string: {}", err))?;
++    let stored_identity = String::from_utf8_lossy(&identity).into_owned();
++    header.identity_len = identity_len;
++
++    // 4. identity_hash -- only for a resume (`identity_check` is `Some`).
++    // Deliberately skipped for a seed import: a foreign identity is the
++    // entire point of that path.
++    if let Some((expected_hash, expected_text)) = identity_check {
++        if header.identity_hash != *expected_hash {
+             let mut message = String::new();
+             message.push_str(
+                 "identity mismatch: this checkpoint was written by a search with different \
+                  semantics, so resuming from it would produce an unsound or incomparable result.\n",
+             );
+             let stored_lines: Vec<&str> = stored_identity.lines().collect();
+-            let current_lines: Vec<&str> = self.identity.lines().collect();
++            let current_lines: Vec<&str> = expected_text.lines().collect();
+             let differing: Vec<String> = diff_lines(&stored_lines, &current_lines);
+             message.push_str("differing lines:\n");
+             for line in differing.iter() {
+@@ -1063,76 +1163,292 @@
+                 "stored identity (sha256 {}):\n{}\ncurrent identity (sha256 {}):\n{}",
+                 hex(&header.identity_hash),
+                 stored_identity,
+-                hex(&self.identity_hash),
+-                self.identity
++                hex(expected_hash),
++                expected_text
+             ));
+             return Err(message);
+         }
++    }
+ 
+-        // 5. trailer magic
+-        let mut trailer = [0u8; TRAILER_LEN];
+-        file.seek(SeekFrom::Start(file_len - TRAILER_LEN as u64))
+-            .map_err(|err| format!("cannot seek to trailer: {}", err))?;
+-        file.read_exact(&mut trailer)
+-            .map_err(|err| format!("cannot read trailer: {}", err))?;
+-        if trailer[32..40] != MAGIC_END {
+-            return Err(format!(
+-                "bad trailer magic: found {:?}, expected {:?}. The file was truncated, or the \
+-                 writing process was killed mid-write (in which case the *.tmp rename never ran, \
+-                 so this file should not exist).",
+-                &trailer[32..40],
+-                &MAGIC_END
+-            ));
+-        }
++    // 5. trailer magic
++    let mut trailer = [0u8; TRAILER_LEN];
++    file.seek(SeekFrom::Start(file_len - TRAILER_LEN as u64))
++        .map_err(|err| format!("cannot seek to trailer: {}", err))?;
++    file.read_exact(&mut trailer)
++        .map_err(|err| format!("cannot read trailer: {}", err))?;
++    if trailer[32..40] != MAGIC_END {
++        return Err(format!(
++            "bad trailer magic: found {:?}, expected {:?}. The file was truncated, or the \
++             writing process was killed mid-write (in which case the *.tmp rename never ran, \
++             so this file should not exist).",
++            &trailer[32..40],
++            &MAGIC_END
++        ));
++    }
+ 
+-        // 6. payload_hash
+-        file.seek(SeekFrom::Start(0))
+-            .map_err(|err| format!("cannot rewind: {}", err))?;
+-        let mut hasher = Sha256::new();
+-        let mut remaining = file_len - TRAILER_LEN as u64;
+-        let mut buffer = vec![0u8; 1 << 20];
+-        while remaining > 0 {
+-            let want = (buffer.len() as u64).min(remaining) as usize;
+-            file.read_exact(&mut buffer[..want])
+-                .map_err(|err| format!("cannot read payload: {}", err))?;
+-            hasher.update(&buffer[..want]);
+-            remaining -= want as u64;
++    // 6. payload_hash
++    file.seek(SeekFrom::Start(0))
++        .map_err(|err| format!("cannot rewind: {}", err))?;
++    let mut hasher = Sha256::new();
++    let mut remaining = file_len - TRAILER_LEN as u64;
++    let mut buffer = vec![0u8; 1 << 20];
++    while remaining > 0 {
++        let want = (buffer.len() as u64).min(remaining) as usize;
++        file.read_exact(&mut buffer[..want])
++            .map_err(|err| format!("cannot read payload: {}", err))?;
++        hasher.update(&buffer[..want]);
++        remaining -= want as u64;
++    }
++    let computed = hasher.finalize();
++    if computed != trailer[..32] {
++        return Err(format!(
++            "payload hash mismatch: stored {}, computed {}. The checkpoint body is corrupt \
++             (bit rot, a partial write, or an edit).",
++            hex(&trailer[..32]),
++            hex(&computed)
++        ));
++    }
++    header.payload_hash = computed;
++
++    Ok((header, stored_identity))
++}
++
++/// Objective 2: a read-only seed-import path, beside checkpoint resume.
++/// `SORTNETOPT_BOUND_SEED=<path>` loads a prior run's `StateMap` -- any run,
++/// any channel count -- as `{(width, packed key) -> bounds}` seeds, merged
++/// into this run's `StateMap` by `max`/`min`. Unset, `seed_config().path` is
++/// `None` and this function is never called (see `Search::search`): the
++/// feature is entirely inert.
++///
++/// # Why importing a bound from a foreign run is sound
++///
++/// `State.bounds` is, by construction, a closed interval on the minimum
++/// number of comparators required to sort *every vector in the output set*
++/// -- a property of the set alone. It does not depend on the root, the
++/// prefix, the class, or the channel count `n` of the run that computed it.
++/// The memo key is `(width w, packed bitmap over 2^w vectors)`;
++/// `packed_len_for_channels(w) = 2^(w-3)` bytes exactly, with no padding
++/// bits, so the key is a faithful, width-tagged encoding of the set and
++/// carries no residue of the producing run. Therefore an entry stored at
++/// width `w` by an `n'`-channel run is a statement about exactly the same
++/// mathematical object as an entry stored at width `w` by an `n`-channel
++/// run.
++///
++/// **Precisely what is imported: `bounds` only, at equal width.** Every seed
++/// entry whose width `w` satisfies `3 <= w <= min(channels, MAX_CHANNELS)` is
++/// imported (`channels` is this run's channel count; `w > channels` is
++/// simply irrelevant to a narrower run and is counted, not an error). Not
++/// imported: `huffman_bounds` -- an internal headroom memo tied to the
++/// *producing* run's Huffman recursion, not a property of the set, so
++/// importing it would not be sound; `StateMap::seed_state` leaves it at its
++/// default. Not imported: the on-line subsumption index section -- it is
++/// skipped entirely (this function stops reading after the STATES section).
++///
++/// Merge is exactly the `improve` invariants
++/// (`docs/sortnetopt-internals.md` Sec 3.6 invariants 1-2):
++/// `lower := max(lower_existing, lower_imported)`,
++/// `upper := min(upper_existing, upper_imported)` -- sound because both
++/// sides are valid bounds on the same quantity, monotone because the
++/// reader-visible lower bound never decreases.
++///
++/// `docs/lowmem-endgame-assessment.md` Sec 6.1 measured that the level-4
++/// memo tables of a full n=9 run and a full n=10 run agree as sets of
++/// `(width, packed key)` pairs at Jaccard 0.9936, with 99.9163% of the
++/// shared keys carrying an *identical* stored lower bound; the disagreements
++/// are weakenings (a run stops improving a node once the root's race is
++/// settled), not contradictions. That measurement justifies *expecting*
++/// reuse; it does not establish soundness, which holds for equal-width
++/// states regardless of `n` by the definition above, independent of how much
++/// the two tables happen to agree.
++///
++/// If `lower_imported > upper_existing` or `upper_imported < lower_existing`
++/// after merge (the merged interval would be empty), that is a
++/// **contradiction**: it cannot happen if both runs are correct, so it is a
++/// corruption detector, not a recovery path. `seed_contradictions` is
++/// bumped, the width, key hex and both intervals are logged, and the process
++/// exits with code 4. There is no override.
++///
++/// # Why this cannot strand `GenProof::prove_all`
++///
++/// `docs/lowmem-endgame-assessment.md` Sec 6.3 item 3 warns that an imported
++/// bound has no in-run justification and could strand the certificate
++/// generator (`docs/sortnetopt-internals.md` Sec 3.6 invariant 4). This
++/// design avoids that structurally, not by an argument about the bound
++/// values: **the certificate is never generated from a stored bound.** The
++/// pipeline is `search -> dump_states -> prune-all -> gen-proof`, and
++/// `dump_states` writes `group_{w}_{b}.bin` files containing packed keys
++/// only -- no `State`; `gen-proof` re-derives every justification from the
++/// dumped *collection of sets*. So the only way seeding could break the
++/// certificate is by causing the search to omit a state the proof needs --
++/// and this design does the opposite: `StateMap::seed_state` inserts every
++/// seed entry straight into the live `StateMap` (merged, not shadowed in a
++/// side table), so `dump_states`, which drains the whole `StateMap`, dumps
++/// every seeded state along with everything the search found on its own.
++/// The seed came from a run whose own dumped collection was self-sufficient
++/// (it produced an accepted certificate); the union of two self-sufficient
++/// collections is self-sufficient, because each state's justification chain
++/// lies inside its own origin collection and the union preserves
++/// membership. Hence the certificate obligation is discharged by
++/// construction -- and it is checked empirically by the G3/G2 validation
++/// gates, which is what actually decides it.
++pub fn import_bound_seed(states: &StateMap, channels: usize, path: &Path) -> Result<SeedStats, String> {
++    let t0 = Instant::now();
++
++    let (header, stored_identity) = validate_checkpoint_file(path, None)?;
++
++    let identity_hash = sha256(stored_identity.as_bytes());
++    log::info!(
++        "seed: importing from {} (format_version={}, seq={}, states_total={}, identity sha256 {})",
++        path.display(),
++        FORMAT_VERSION,
++        header.seq,
++        header.states_total,
++        hex(&identity_hash)
++    );
++    log::info!("seed: producing run identity:\n{}", stored_identity);
++
++    let file = File::open(path).map_err(|err| format!("cannot open: {}", err))?;
++    let mut reader = BufReader::with_capacity(1 << 20, file);
++    let mut skip = vec![0u8; HEADER_LEN + 4 + header.identity_len];
++    reader
++        .read_exact(&mut skip)
++        .map_err(|err| format!("truncated before sections: {}", err))?;
++
++    let mut entries_read = 0u64;
++    let mut entries_imported = 0u64;
++    let mut entries_new = 0u64;
++    let mut entries_merged_stronger = 0u64;
++    let mut skipped_width = 0u64;
++    let mut by_width: Vec<(usize, u64)> = vec![];
++
++    // STATES section only -- exactly the widths a checkpoint writer emits
++    // (`3..=MAX_CHANNELS`). Stops here: the INDEX section (if present) is
++    // never read, which is the "seek past it / stop after states" the spec
++    // calls for -- there is nothing after the states section this function
++    // needs, so it simply does not continue reading.
++    for w in 3..=MAX_CHANNELS {
++        let count = read_u64(&mut reader)?;
++        let packed_len = OutputSet::packed_len_for_channels(w);
++        let mut record = vec![0u8; packed_len + 4];
++        let mut width_imported = 0u64;
++
++        for _ in 0..count {
++            reader
++                .read_exact(&mut record)
++                .map_err(|err| format!("truncated in states k={}: {}", w, err))?;
++            entries_read += 1;
++
++            if w > channels {
++                skipped_width += 1;
++                continue;
++            }
++
++            let imported_bounds = [record[packed_len], record[packed_len + 1]];
++            // record[packed_len + 2 .. packed_len + 4] is huffman_bounds --
++            // deliberately not imported; see the doc comment above.
++            match states.seed_state(w, &record[..packed_len], imported_bounds) {
++                SeedOutcome::New => {
++                    entries_imported += 1;
++                    entries_new += 1;
++                    width_imported += 1;
++                }
++                SeedOutcome::Merged { merged_stronger } => {
++                    entries_imported += 1;
++                    width_imported += 1;
++                    if merged_stronger {
++                        entries_merged_stronger += 1;
++                    }
++                }
++                SeedOutcome::Contradiction { existing, imported } => {
++                    instrument::bump(&instrument::SEED_CONTRADICTIONS);
++                    let key_hex = hex(&record[..packed_len]);
++                    let message = format!(
++                        "seed: contradiction at width {} key {}: existing bounds {:?}, imported \
++                         bounds {:?} -- the merged interval would be empty. Both runs cannot be \
++                         correct simultaneously; this is a corruption detector, not a recovery \
++                         path.",
++                        w, key_hex, existing, imported
++                    );
++                    log::error!("{}", message);
++                    eprintln!("{}", message);
++                    std::process::exit(4);
++                }
++            }
+         }
+-        let computed = hasher.finalize();
+-        if computed != trailer[..32] {
+-            return Err(format!(
+-                "payload hash mismatch: stored {}, computed {}. The checkpoint body is corrupt \
+-                 (bit rot, a partial write, or an edit).",
+-                hex(&trailer[..32]),
+-                hex(&computed)
+-            ));
+-        }
+ 
+-        if header.channels != self.channels as u64 {
+-            // Unreachable while `channels` is in the identity string, but the
+-            // header field is what the restore loop trusts, so check it too.
+-            return Err(format!(
+-                "header channels={} but this search has channels={}",
+-                header.channels, self.channels
+-            ));
++        if width_imported > 0 {
++            by_width.push((w, width_imported));
+         }
++    }
+ 
+-        Ok(Header {
+-            identity_len,
+-            ..header
+-        })
++    if entries_read != header.states_total {
++        return Err(format!(
++            "states section holds {} entries, header claims {}",
++            entries_read, header.states_total
++        ));
+     }
++
++    let elapsed = t0.elapsed();
++
++    instrument::add(&instrument::SEED_ENTRIES_READ, entries_read);
++    instrument::add(&instrument::SEED_ENTRIES_IMPORTED, entries_imported);
++    instrument::add(&instrument::SEED_ENTRIES_NEW, entries_new);
++    instrument::add(
++        &instrument::SEED_ENTRIES_MERGED_STRONGER,
++        entries_merged_stronger,
++    );
++    instrument::add(&instrument::SEED_SKIPPED_WIDTH, skipped_width);
++    instrument::add(&instrument::SEED_IMPORT_NS, elapsed.as_nanos() as u64);
++    instrument::record_seed_meta(
++        path.display().to_string(),
++        hex(&header.payload_hash),
++        hex(&identity_hash),
++        by_width.clone(),
++    );
++
++    log::info!(
++        "seed: imported read={} imported={} new={} merged_stronger={} skipped_width={} in {} ms",
++        entries_read,
++        entries_imported,
++        entries_new,
++        entries_merged_stronger,
++        skipped_width,
++        elapsed.as_millis()
++    );
++
++    Ok(SeedStats {
++        entries_read,
++        entries_imported,
++        entries_new,
++        entries_merged_stronger,
++        skipped_width,
++        contradictions: 0,
++        elapsed,
++        identity: stored_identity,
++        identity_hash,
++        file_hash: header.payload_hash,
++        by_width,
++    })
+ }
+ 
+-#[derive(Clone, Copy, Debug)]
+-struct Header {
+-    flags: u32,
+-    identity_hash: [u8; 32],
+-    channels: u64,
+-    seq: u64,
+-    states_total: u64,
+-    index_total: u64,
+-    identity_len: usize,
++/// Objective 2: the outcome of one `import_bound_seed` call.
++#[derive(Clone, Debug)]
++pub struct SeedStats {
++    pub entries_read: u64,
++    pub entries_imported: u64,
++    pub entries_new: u64,
++    pub entries_merged_stronger: u64,
++    pub skipped_width: u64,
++    /// Always 0: any contradiction exits the process before this is ever
++    /// constructed. Kept as a field so a caller can log a single struct
++    /// without special-casing.
++    pub contradictions: u64,
++    pub elapsed: Duration,
++    pub identity: String,
++    pub identity_hash: [u8; 32],
++    pub file_hash: [u8; 32],
++    /// `(width, imported entry count)`, widths with a nonzero count only.
++    pub by_width: Vec<(usize, u64)>,
+ }
+ 
+ /// Line-level set difference in both directions, formatted for a refusal
+diff -ruN --exclude=target --exclude=*.orig --exclude=*.rej decomp-base/src/search/states.rs /Users/yugendren/experiments/sorting_network_s13/.build/v3-decomp/integrated/source/src/search/states.rs
+--- a/src/search/states.rs	2026-08-20 00:32:11
++++ b/src/search/states.rs	2026-08-20 01:02:28
+@@ -27,6 +27,53 @@
+     pub huffman_bounds: [u8; 2],
+ }
+ 
++/// Objective 2 (bound-seed import): the sound default upper bound for a set
++/// of width `channels` that has never been stored -- the LIMITS-V3
++/// `known_bounds` table when available, else the quadratic fallback.
++///
++/// This mirrors, byte for byte, the table `StateMap::get`'s exact-key-miss
++/// arm already carries -- it is deliberately *not* factored into a shared
++/// helper the hot `get` path calls through, so that `get`'s code and
++/// inlining are unaffected by this feature (G1 inertness: with
++/// `SORTNETOPT_BOUND_SEED` unset, `get` must stay bit-for-bit what it was).
++/// It exists so a brand-new entry `StateMap::seed_state` creates looks
++/// exactly like the one `get` would have synthesised on a miss at the same
++/// key, everywhere except the lower bound and `bounds[1]`, which the seed
++/// supplies.
++fn default_upper_bound(channels: usize) -> u8 {
++    if channels <= 2 {
++        return 1;
++    }
++    let quadratic_bound = (channels * (channels - 1)) / 2;
++    // Same table as `StateMap::get`'s miss arm; see the LIMITS-V3 note there
++    // for provenance of each entry.
++    let known_bounds = [0, 0, 1, 3, 5, 9, 12, 16, 19, 25, 29, 35, 39, 45];
++    known_bounds
++        .get(channels)
++        .cloned()
++        .unwrap_or(quadratic_bound as u8)
++}
++
++/// Objective 2 (bound-seed import): result of merging one seed entry into
++/// this run's `StateMap`, returned by `StateMap::seed_state`.
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum SeedOutcome {
++    /// The key was not previously present. Inserted with the imported
++    /// bounds and a fresh default `huffman_bounds` (never the seed's --
++    /// see `StateMap::seed_state`).
++    New,
++    /// The key was already present; merged in place.
++    /// `merged_stronger` is `true` when the merge strictly raised the lower
++    /// bound or strictly lowered the upper bound already stored.
++    Merged { merged_stronger: bool },
++    /// The merged interval would be empty
++    /// (`lower_imported > upper_existing` or `upper_imported <
++    /// lower_existing`). Both runs cannot be correct simultaneously, so this
++    /// is a corruption detector: the caller must log it and abort. Carries
++    /// both intervals for the diagnostic message.
++    Contradiction { existing: [u8; 2], imported: [u8; 2] },
++}
++
+ /// M2a: how much of the on-line permutation-subsumption prototype is active.
+ ///
+ /// `Off` reproduces the unmodified search exactly: no index is allocated and
+@@ -287,9 +334,89 @@
+         // inflate `set_calls` / `set_inserts`.
+         if newly_inserted {
+             instrument::record_entry_added(channels);
++            // Objective 1: sibling shell-census update, popcount computed
++            // only when the flag is on (the packed key is already in hand).
++            if instrument::shell_stats_enabled() {
++                let popcount: u64 = packed_bytes.iter().map(|b| b.count_ones() as u64).sum();
++                instrument::record_entry_added_shell(channels, popcount);
++            }
+         }
+     }
+ 
++    /// Objective 2 (bound-seed import): merge one foreign entry's `bounds`
++    /// into this run's `StateMap` at width `channels`.
++    ///
++    /// Deliberately *not* routed through `set` -- same discipline as
++    /// `restore_state`: no index insert, no eviction, no inflation of
++    /// `set_calls` / `set_inserts`. The key is rebuilt as a `PVec` so the
++    /// shard hash is bit-identical to the one `get`/`set` compute, exactly as
++    /// `restore_state` does.
++    ///
++    /// `huffman_bounds` is never taken from the seed (see the module-level
++    /// soundness note in `search::checkpoint::import_bound_seed`): an
++    /// existing entry keeps its own `huffman_bounds` untouched, and a freshly
++    /// created one gets the same default `get` would have synthesised for an
++    /// unseen key at this width (`default_upper_bound`).
++    ///
++    /// Merge is `lower := max(lower_existing, lower_imported)`, `upper :=
++    /// min(upper_existing, upper_imported)` -- sound because both sides are
++    /// valid bounds on the same quantity (the same `(width, packed key)`
++    /// denotes the same output set regardless of which run computed the
++    /// bound), and monotone because the reader-visible lower bound never
++    /// decreases. An empty merged interval is a contradiction the caller must
++    /// treat as fatal; this function only detects and reports it.
++    pub fn seed_state(&self, channels: usize, packed_bytes: &[u8], imported_bounds: [u8; 2]) -> SeedOutcome {
++        let packed: PVec<u8> = packed_bytes.iter().cloned().collect();
++        let shard = self.shard_of(&packed);
++
++        let outcome = {
++            let mut guard = self.state_shards[shard].write().unwrap();
++            match guard.get_with_packed(channels, &packed) {
++                Some(existing) => {
++                    let lower = existing.bounds[0].max(imported_bounds[0]);
++                    let upper = existing.bounds[1].min(imported_bounds[1]);
++                    if lower > upper {
++                        SeedOutcome::Contradiction {
++                            existing: existing.bounds,
++                            imported: imported_bounds,
++                        }
++                    } else {
++                        let merged_stronger =
++                            lower > existing.bounds[0] || upper < existing.bounds[1];
++                        if merged_stronger {
++                            let merged = State {
++                                bounds: [lower, upper],
++                                // Untouched: huffman_bounds is internal
++                                // headroom tied to the producing run's
++                                // Huffman recursion, not a property of the
++                                // set.
++                                huffman_bounds: existing.huffman_bounds,
++                            };
++                            guard.set_with_packed(channels, &packed, merged);
++                        }
++                        SeedOutcome::Merged { merged_stronger }
++                    }
++                }
++                None => {
++                    let state = State {
++                        bounds: imported_bounds,
++                        huffman_bounds: [1, default_upper_bound(channels)],
++                    };
++                    guard.set_with_packed(channels, &packed, state);
++                    SeedOutcome::New
++                }
++            }
++        };
++
++        // Recorded after the shard write guard has been dropped, and only
++        // for a genuinely new key -- mirrors `restore_state`'s discipline.
++        if matches!(outcome, SeedOutcome::New) {
++            instrument::record_entry_added(channels);
++        }
++
++        outcome
++    }
++
+     /// `(channels, point_dim, entries, capacity bytes, payload bytes)` for each
+     /// on-line index.
+     pub fn subsume_census(&self) -> Vec<(usize, u64, u64, u64, u64)> {
+@@ -352,6 +479,11 @@
+         // Recorded after the shard write guard has been dropped.
+         if removed {
+             instrument::record_entry_removed(channels);
++            // Objective 1: sibling shell-census update; see `restore_state`.
++            if instrument::shell_stats_enabled() {
++                let popcount: u64 = packed_bytes.iter().map(|b| b.count_ones() as u64).sum();
++                instrument::record_entry_removed_shell(channels, popcount);
++            }
+         }
+     }
+ }
+@@ -573,6 +705,13 @@
+ 
+         // Recorded after the shard write guard has been dropped.
+         instrument::record_set(output_set.channels(), newly_inserted);
++        // Objective 1: sibling shell-census update; see `restore_state`.
++        // `packed` (hashed above) is already the packed key, so no extra
++        // work beyond the popcount itself, and only when the flag is on.
++        if newly_inserted && instrument::shell_stats_enabled() {
++            let popcount: u64 = packed.iter().map(|b| b.count_ones() as u64).sum();
++            instrument::record_entry_added_shell(output_set.channels(), popcount);
++        }
+     }
+ 
+     pub async fn lock<'a>(&'a self, output_set: OutputSet<&'a [bool]>) -> Option<StateLock<'a>> {
+diff -ruN --exclude=target --exclude=*.orig --exclude=*.rej decomp-base/src/search.rs /Users/yugendren/experiments/sorting_network_s13/.build/v3-decomp/integrated/source/src/search.rs
+--- a/src/search.rs	2026-08-20 00:32:11
++++ b/src/search.rs	2026-08-20 01:02:28
+@@ -80,6 +80,30 @@
+             checkpointer.resume_if_requested();
+         }
+ 
++        // Objective 2: read-only seed import, beside checkpoint resume.
++        // `SORTNETOPT_BOUND_SEED` unset -> `seed_config().path` is `None` ->
++        // nothing below executes and this run is bit-identical to a build
++        // without the feature at all. Resume (just above) happens first;
++        // seed-import happens second, on top of it -- the merge (max lower
++        // bound, min upper bound) makes the order immaterial to the result,
++        // but this is the order actually taken, and it runs before the
++        // first bound iteration (the pool has not even started yet).
++        if let Some(seed_path) = checkpoint::seed_config().path.as_ref() {
++            if let Err(err) = checkpoint::import_bound_seed(&search.states, channels, seed_path) {
++                eprintln!(
++                    "seed: cannot import SORTNETOPT_BOUND_SEED={}: {}",
++                    seed_path.display(),
++                    err
++                );
++                log::error!(
++                    "seed: cannot import SORTNETOPT_BOUND_SEED={}: {}",
++                    seed_path.display(),
++                    err
++                );
++                std::process::exit(4);
++            }
++        }
++
+         let shutdown = AtomicBool::new(false);
+         let interval = checkpoint::config().interval;
+ 
+@@ -110,7 +134,9 @@
+                         if state.bounds[0] == state.bounds[1] || state.bounds[0] as usize >= limit {
+                             break state.bounds[0] as usize;
+                         }
+-                        state = search.improve(pool, 0, state, initial.as_ref()).await;
++                        // Objective 1: the root has no incoming edge, so its
++                        // same-shell run starts at 0.
++                        state = search.improve(pool, 0, state, initial.as_ref(), 0).await;
+                         log::info!("bounds: {:?}", state);
+                         let census = search.log_stats();
+                         instrument::record_bound_iteration(
+@@ -198,10 +224,23 @@
+ 
+     /// Unchanged `states: N` line (N is still the total live entry count, now
+     /// derived from the same single pass that produces the per-channel census).
++    /// Objective 1: with `SORTNETOPT_SHELL_STATS` on, also prints one extra
++    /// `shells: ...` line from the shell census; with it off this function's
++    /// output is exactly the one unchanged `states: N` line.
+     fn log_stats(&self) -> Census {
+         let census = self.states.census();
+         log::info!("states: {:?}", census.total());
+         instrument::note_peak(census.total());
++        if instrument::shell_stats_enabled() {
++            let (shells_nonzero, largest_shell, largest_shell_frac, _, _, _) =
++                instrument::shell_histogram_summary();
++            log::info!(
++                "shells: {} largest={} ({:.2}%)",
++                shells_nonzero,
++                largest_shell,
++                largest_shell_frac * 100.0
++            );
++        }
+         census
+     }
+ 
+@@ -211,13 +250,28 @@
+         level: usize,
+         previous_state: State,
+         output_set: OutputSet,
++        same_shell_run: u32,
+     ) -> Pin<Box<dyn Future<Output = State> + Send + 'a>> {
+         Box::pin(async move {
+-            self.improve(pool, level, previous_state, output_set.as_ref())
+-                .await
++            self.improve(
++                pool,
++                level,
++                previous_state,
++                output_set.as_ref(),
++                same_shell_run,
++            )
++            .await
+         })
+     }
+ 
++    /// `same_shell_run` (Objective 1, `SORTNETOPT_SHELL_STATS`): the length
++    /// of the run of consecutive same-`(width, popcount)` comparator edges
++    /// that led to this call, i.e. `parent_run + 1` if the edge that
++    /// produced `output_set` was same-shell and `0` otherwise (including
++    /// every extremal-channel-pruning edge, which always drops width). See
++    /// `instrument::SAME_SHELL_CHAIN_MAX`'s doc comment for why this is
++    /// exact rather than an approximation. Unused, and free, when the flag
++    /// is off.
+     #[allow(unreachable_code)]
+     async fn improve(
+         &self,
+@@ -225,6 +279,7 @@
+         level: usize,
+         previous_state: State,
+         output_set: OutputSet<&[bool]>,
++        same_shell_run: u32,
+     ) -> State {
+         instrument::bump(&instrument::IMPROVE_CALLS);
+ 
+@@ -297,8 +352,10 @@
+                         return state;
+                     }
+ 
++                    // Extremal-channel pruning always drops width, so this
++                    // edge is never same-shell: the chain resets to 0.
+                     pruned_state = self
+-                        .improve_boxed(pool, level, pruned_state, pruned_output_set.clone())
++                        .improve_boxed(pool, level, pruned_state, pruned_output_set.clone(), 0)
+                         .await;
+                 }
+             }
+@@ -314,6 +371,15 @@
+ 
+         let mut edges = Edges::default();
+ 
++        // Objective 1: the parent's own shell, computed at most once per
++        // `improve` call (not per successor) and only when the flag is on --
++        // with it off this is `None` and no popcount is ever computed.
++        let parent_shell = if instrument::shell_stats_enabled() {
++            Some((output_set.channels(), output_set.len()))
++        } else {
++            None
++        };
++
+         for i in 0..output_set.channels() {
+             for j in 0..i {
+                 let mut target = output_set.to_owned();
+@@ -322,7 +388,26 @@
+ 
+                     target.canonicalize(true);
+ 
+-                    edges.add_edge(self, target);
++                    // Objective 1: this is the "comparator-successor edge"
++                    // the Shell Lemma counters are defined over (§7.1). A
++                    // width-changing edge never reaches this loop --
++                    // `apply_comparator` never changes `channels()` -- so
++                    // `succ_width_drop` is expected to stay 0 here; it is
++                    // still checked because the Shell Lemma is a machine
++                    // check on the *outcome*, not an assumption on the edge
++                    // kind.
++                    let same_shell_run = match parent_shell {
++                        Some((parent_width, parent_popcount)) => instrument::record_shell_edge(
++                            parent_width,
++                            parent_popcount,
++                            target.channels(),
++                            target.len(),
++                            same_shell_run,
++                        ),
++                        None => 0,
++                    };
++
++                    edges.add_edge(self, target, same_shell_run);
+                 }
+             }
+         }
+@@ -399,7 +484,9 @@
+                 output_set.prune_extremal_channel_into(pol > 0, channel, target.as_mut());
+                 target.canonicalize(true);
+ 
+-                pol_ids.push(edges.add_edge(self, target));
++                // Extremal-channel pruning: always a width-drop edge, never
++                // same-shell, so the run is always 0.
++                pol_ids.push(edges.add_edge(self, target, 0));
+             }
+         }
+ 
+@@ -464,10 +551,16 @@
+     state: State,
+     len: usize,
+     running: Option<(Handle<State>, Schedule)>,
++    /// Objective 1 (`SORTNETOPT_SHELL_STATS`): the same-shell run length of
++    /// the edge that produced this target, threaded into the recursive
++    /// `improve_boxed` call `improve_next` spawns for it. `0` when the flag
++    /// is off (every caller passes a literal `0` in that case) or when the
++    /// edge is not same-shell.
++    same_shell_run: u32,
+ }
+ 
+ impl Edges {
+-    fn add_edge(&mut self, search: &Search, target: OutputSet) -> usize {
++    fn add_edge(&mut self, search: &Search, target: OutputSet, same_shell_run: u32) -> usize {
+         let target = Arc::new(target);
+ 
+         let targets = &mut self.targets;
+@@ -483,6 +576,7 @@
+                     state,
+                     len,
+                     running: None,
++                    same_shell_run,
+                 });
+                 if state.bounds[0] != state.bounds[1] {
+                     active_ids.push(id);
+@@ -592,6 +686,7 @@
+                         level,
+                         target.state,
+                         target.output_set.as_ref().clone(),
++                        target.same_shell_run,
+                     ));
+                     if index != 0 {
+                         if let Some(limit) = order {
