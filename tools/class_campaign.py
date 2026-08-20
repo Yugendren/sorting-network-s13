@@ -164,19 +164,40 @@ Usage
     class_campaign.py run     --campaign DIR [--shard i/N] [--budget-seconds S]
                                [--max-jobs M] [--timeout-per-job S]
                                [--checkpoint-interval-secs S] [--dry-run]
-                               [--engine PATH]
+                               [--certificates on|off] [--engine PATH]
     class_campaign.py status  --campaign DIR
     class_campaign.py compose --campaign DIR
-    class_campaign.py verify  --campaign DIR [--engine PATH]
+    class_campaign.py verify  --campaign DIR [--engine PATH] [--no-certificates]
     class_campaign.py export  --campaign DIR --out FILE.tar
     class_campaign.py --selftest [--engine PATH]
 
 `--engine` defaults to the `SORTNETOPT_BIN` environment variable.
+
+PER-JOB CERTIFICATES (v2p, docs/certificate-format-v2.md sec.9)
+----------------------------------------------------------------------------
+With `--certificates on` (the default), `run` gives `search` an output
+directory (`<job_dir>/search`) and, for every job that reaches `status ==
+done`, runs `prune-all` then `gen-proof -p ... --prefix-root` on it to emit a
+v2p prefix-rooted certificate (`<job_dir>/search/proof.bin`), then checks it
+with `tools/cert_v2.py prefix-check` against the job's own `(n, prefix,
+lower_bound)`. The outcome is recorded in the ledger record's `certificate`
+field (see `LEDGER_RESULT_FIELDS`); a certificate failure does NOT discard
+the search result (the job's `status` stays `done`), it prints a loud warning
+and lets `verify` be the thing that turns it into a hard failure. `verify`
+additionally rebuilds the depth-L frontier from the manifest and re-checks
+every job's certificate against the file on disk (sec.9.6's three
+composition obligations: exhaustiveness of the job set, certificate/job
+agreement, and full coverage) before printing a composition verdict -- see
+`cmd_verify` and `docs/certificate-format-v2.md` sec.9.6 for the exact
+obligations and why a single certificate does not discharge any of them on
+its own.
 """
 
 import argparse
 import ast
+import contextlib
 import hashlib
+import io
 import json
 import os
 import platform
@@ -231,7 +252,14 @@ LEDGER_RESULT_FIELDS = (
     "status", "result", "lower_bound", "bound_sequence", "composed_value",
     "wall_seconds", "engine_elapsed_ms", "max_rss_bytes", "load_at_start",
     "machine", "engine_binary_sha256", "seed_sha256", "counters",
+    "certificate",
 )
+# `certificate` is added here (not to SCHEMA_RESULT, which is left
+# unchanged) by the PREFIXCERT-V3 per-job-certificate work. Older ledger
+# records simply lack the field; `verify_chain` recomputes their digests
+# over exactly the fields they were written with (it hashes `dict(r)` minus
+# `digest`, not this tuple), so pre-existing records are unaffected and are
+# never retro-filled.
 
 EPISTEMIC_STATUS_PARAGRAPH = (
     "EPISTEMIC STATUS: this is a C1/C2/C3 class campaign. The three-way\n"
@@ -516,13 +544,19 @@ def _kill_process_group(proc):
 
 
 def run_search_job(engine, n, prefix, ckpt_dir, instrument_path, timeout_seconds,
-                    checkpoint_interval_secs, extra_env=None):
+                    checkpoint_interval_secs, extra_env=None, search_dir=None):
     """Launch one `search` invocation. `prefix` is in class_filter (u, v)
     convention; translated to engine `-p a b` pairs via `to_engine_pair`.
     Honours `--timeout-per-job` with SIGTERM then SIGKILL against the whole
-    process group (spec sec.3 'run')."""
+    process group (spec sec.3 'run'). `search_dir`, if given, is passed as
+    `search`'s second positional argument (its output/state directory,
+    PREFIXCERT-V3) and created if missing; default None reproduces the
+    exact command line every caller used before that feature existed."""
     os.makedirs(ckpt_dir, exist_ok=True)
     cmd = [engine, "search", str(n)]
+    if search_dir is not None:
+        os.makedirs(search_dir, exist_ok=True)
+        cmd.append(search_dir)
     flat = engine_flat_args(prefix)
     for i in range(0, len(flat), 2):
         cmd += ["-p", flat[i], flat[i + 1]]
@@ -893,6 +927,110 @@ def _trip_safety_tripwire(campaign_dir, job, record):
 
 
 # ===========================================================================
+# Per-job certificates (PREFIXCERT-V3, docs/certificate-format-v2.md sec.9)
+# ===========================================================================
+
+
+def cert_v2_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "cert_v2.py")
+
+
+def prefix_check_line(proc):
+    """Extract the single OK line cert_v2.py prefix-check prints on stdout
+    on success (last non-blank line, in case --quiet still leaves noise
+    ahead of it), or the REJECT reason from stderr on failure."""
+    if proc.returncode == 0:
+        lines = [l for l in proc.stdout.splitlines() if l.strip()]
+        return lines[-1] if lines else ""
+    return (proc.stderr.strip() or proc.stdout.strip())
+
+
+def build_certificate(engine, campaign_dir, jdir, n, prefix, lower_bound):
+    """PREFIXCERT-V3: after a job's `search` has populated `<jdir>/search`,
+    run `prune-all` then `gen-proof -p ... --prefix-root` on it to emit a
+    v2p prefix-rooted certificate, then check it with `cert_v2.py
+    prefix-check` against the job's own `(n, prefix, lower_bound)`.
+
+    Never raises: every failure mode (prune-all/gen-proof non-zero exit, a
+    missing proof.bin, a checker rejection, an unexpected exception) is
+    captured in the returned dict's 'ok'/'verdict' fields instead, so a bad
+    certificate cannot crash `run` -- the search result itself is real
+    evidence and must not be discarded because certificate generation had a
+    problem. `verify` is what turns a bad certificate into a hard failure.
+
+    stdout/stderr of every subprocess invoked here is appended to
+    `<jdir>/certgen.log`."""
+    search_dir = os.path.join(jdir, "search")
+    log_path = os.path.join(jdir, "certgen.log")
+    proof_path = os.path.join(search_dir, "proof.bin")
+    cv2 = cert_v2_path()
+    checker_sha = sha256_file(cv2) if os.path.isfile(cv2) else None
+
+    def log(cmd, proc):
+        with open(log_path, "a") as fh:
+            fh.write("$ %s\n" % " ".join(cmd))
+            fh.write(proc.stdout or "")
+            fh.write(proc.stderr or "")
+            fh.write("\n")
+
+    def fail(verdict):
+        return {
+            "path": os.path.relpath(proof_path, campaign_dir), "sha256": None,
+            "bytes": None, "container": "v2p", "claimed_bound": None,
+            "checker": "tools/cert_v2.py prefix-check",
+            "checker_sha256": checker_sha, "ok": False, "verdict": verdict,
+        }
+
+    try:
+        prune_cmd = [engine, "prune-all", search_dir]
+        proc = subprocess.run(prune_cmd, env=engine_env(), capture_output=True,
+                               text=True, check=False)
+        log(prune_cmd, proc)
+        if proc.returncode != 0:
+            return fail("prune-all failed (exit %d): %s"
+                         % (proc.returncode,
+                            (proc.stderr.strip() or proc.stdout.strip())[-500:]))
+
+        flat = engine_flat_args(prefix)
+        gen_cmd = [engine, "gen-proof", search_dir]
+        for i in range(0, len(flat), 2):
+            gen_cmd += ["-p", flat[i], flat[i + 1]]
+        gen_cmd.append("--prefix-root")
+        proc = subprocess.run(gen_cmd, env=engine_env(), capture_output=True,
+                               text=True, check=False)
+        log(gen_cmd, proc)
+        if proc.returncode != 0 or not os.path.isfile(proof_path):
+            return fail("gen-proof failed (exit %d) or wrote no proof.bin: %s"
+                         % (proc.returncode,
+                            (proc.stderr.strip() or proc.stdout.strip())[-500:]))
+
+        proof_sha = sha256_file(proof_path)
+        proof_bytes = os.path.getsize(proof_path)
+
+        check_cmd = [sys.executable, cv2, "prefix-check", proof_path,
+                     "--expect-channels", str(n),
+                     "--expect-prefix", engine_prefix_string(prefix),
+                     "--expect-bound", str(lower_bound), "--quiet"]
+        proc = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+        log(check_cmd, proc)
+        ok = proc.returncode == 0
+        verdict = prefix_check_line(proc)
+        claimed_bound = None
+        if ok:
+            m = re.search(r"bound=(-?\d+)", verdict)
+            claimed_bound = int(m.group(1)) if m else None
+
+        return {
+            "path": os.path.relpath(proof_path, campaign_dir), "sha256": proof_sha,
+            "bytes": proof_bytes, "container": "v2p", "claimed_bound": claimed_bound,
+            "checker": "tools/cert_v2.py prefix-check", "checker_sha256": checker_sha,
+            "ok": ok, "verdict": verdict,
+        }
+    except Exception as e:  # certificate generation must never crash `run`
+        return fail("certificate generation raised %r" % (e,))
+
+
+# ===========================================================================
 # Commands
 # ===========================================================================
 
@@ -1089,10 +1227,11 @@ def cmd_run(args):
         if seed_path:
             env_overrides["SORTNETOPT_BOUND_SEED"] = seed_path
 
+        search_dir = os.path.join(jdir, "search") if args.certificates == "on" else None
         result = run_search_job(
             engine_path, manifest["n"], job["prefix"], ckpt_dir, instrument_path,
             args.timeout_per_job, args.checkpoint_interval_secs,
-            extra_env=env_overrides)
+            extra_env=env_overrides, search_dir=search_dir)
 
         with open(os.path.join(jdir, "stdout.log"), "a") as fh:
             fh.write(result["stdout"])
@@ -1130,6 +1269,16 @@ def cmd_run(args):
             tail = (result["stderr"].strip() or result["stdout"].strip())
             result_str = tail[-500:] if tail else "<no output>"
 
+        # PREFIXCERT-V3: certificate generation happens BEFORE the ledger
+        # record is built, because 'certificate' is one of LEDGER_RESULT_FIELDS
+        # and is therefore hashed into the record's own digest -- there is no
+        # after-the-fact way to attach it once the record is on disk.
+        certificate = None
+        if args.certificates == "on" and status == "done":
+            certificate = build_certificate(
+                engine_path, campaign_dir, jdir, manifest["n"], job["prefix"],
+                lower_bound)
+
         record = make_ledger_record(
             seq, prev_digest,
             campaign_id=manifest["manifest_sha256"],
@@ -1140,7 +1289,7 @@ def cmd_run(args):
             max_rss_bytes=result["max_rss_bytes"], load_at_start=result["load_at_start"],
             machine=machine_info(), engine_binary_sha256=engine_sha,
             seed_sha256=seed_sha, counters=counters,
-            engine_elapsed_ms=engine_elapsed_ms,
+            engine_elapsed_ms=engine_elapsed_ms, certificate=certificate,
         )
         append_ledger(campaign_dir, record)
         seq += 1
@@ -1154,6 +1303,13 @@ def cmd_run(args):
               "wall=%.1fs engine_ms=%s load=%.1f"
               % (job["job_id"], status, lower_bound, composed_value,
                  result["wall_seconds"], engine_elapsed_ms, result["load_at_start"]))
+
+        # The job's search result stands regardless of certificate outcome
+        # (status stays "done" above) -- a bad certificate here is reported,
+        # not fatal; `verify` is what turns it into a hard failure.
+        if certificate is not None and not certificate["ok"]:
+            print("run: *** CERTIFICATE FAILED for job %s: %s ***"
+                  % (job["job_id"], certificate["verdict"]), file=sys.stderr)
 
         # The tripwire is armed only at the target width. At small n the
         # composed value is S(n) itself (25 at n=9, 29 at n=10), which is below
@@ -1224,7 +1380,8 @@ def cmd_compose(args):
     if completed_values:
         minimum = min(completed_values)
         best = next(r for r in done if r["composed_value"] == minimum)
-        print("min(L + lower_bound) over %d completed job(s) = %d (job %s, prefix %s)"
+        print("min(L + lower_bound) over %d completed job(s) = %d (job %s, prefix %s) "
+              "[SEARCH-BACKED -- see `verify` for the certificate-checked value]"
               % (len(completed_values), minimum, best["job_id"], best["prefix"]))
         if established:
             print("STATUS: ESTABLISHED -- all %d job(s) done; this is S(n) restricted "
@@ -1239,6 +1396,26 @@ def cmd_compose(args):
     print("jobs: done=%d partial/failed=%d pending=%d total=%d"
           % (len(done), len(partial), len(pending), len(jobs)))
 
+    # Certificate-backed composition (docs/certificate-format-v2.md sec.9.6).
+    # This is a cheap report over the ledger's own recorded claimed_bound --
+    # it does NOT re-run cert_v2.py or recompute the frontier; `verify` is
+    # the command that actually re-checks certificates and the composition.
+    cert_values = [(manifest["prefix_depth"] + r["certificate"]["claimed_bound"], r)
+                   for r in done
+                   if r.get("certificate") and r["certificate"].get("ok")
+                   and r["certificate"].get("claimed_bound") is not None]
+    if cert_values:
+        cert_min, cert_best = min(cert_values, key=lambda t: t[0])
+        cert_established = len(cert_values) == len(jobs)
+        print("certificate-backed composition: min(L + certified bound) over %d "
+              "certified job(s) = %d (job %s, prefix %s) [CERTIFICATE-BACKED%s -- "
+              "not independently re-verified; run `verify` for that]"
+              % (len(cert_values), cert_min, cert_best["job_id"], cert_best["prefix"],
+                 "" if cert_established else ", PARTIAL: not every job is certified"))
+    else:
+        print("certificate-backed composition: no ok job certificates present -- "
+              "the minimum above is SEARCH-BACKED ONLY, not certificate-backed")
+
     if manifest.get("class_kind") == "shape":
         print()
         print(EPISTEMIC_STATUS_PARAGRAPH)
@@ -1249,6 +1426,197 @@ def cmd_compose(args):
     return 0 if not chain_error else 1
 
 
+def _job_triple(rec):
+    """(job_id, canon_key, prefix-as-a-hashable-tuple), used to compare a
+    job.jsonl entry against a job_record() rebuilt from the manifest's own
+    parameters (frontier exhaustiveness, docs/certificate-format-v2.md
+    sec.9.6 obligation 1)."""
+    return (rec["job_id"], rec["canon_key"], tuple(tuple(p) for p in rec["prefix"]))
+
+
+def _verify_frontier_exhaustiveness(args, manifest, jobs, engine_file):
+    """Obligation 1 of sec.9.6: rebuild the depth-L frontier from the
+    manifest's own (n, class_kind, class_key, prefix_depth) and check the
+    recomputed job set is EXACTLY jobs.jsonl's job set. Returns True (OK),
+    False (mismatch -- a real problem), or None (skipped, no engine)."""
+    if engine_file is None:
+        print("verify: SKIPPED frontier exhaustiveness (no engine given) -- "
+              "the composition is NOT verified without it")
+        return None
+
+    filter_fn, _class_key_label, filter1_profiles = resolve_filter(
+        manifest["n"], manifest["class_kind"], manifest["class_key"])
+    frontier = build_frontier(manifest["n"], manifest["prefix_depth"], filter_fn)
+    workdir = tempfile.mkdtemp(prefix="class-campaign-verify-")
+    try:
+        rebuilt_jobs, _raw, _deduped = build_jobs(
+            manifest["n"], frontier, filter_fn, filter1_profiles, engine_file, workdir)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    rebuilt_records = [job_record(manifest["manifest_sha256"], j) for j in rebuilt_jobs]
+
+    rebuilt_triples = sorted(_job_triple(r) for r in rebuilt_records)
+    actual_triples = sorted(_job_triple(j) for j in jobs)
+    if rebuilt_triples == actual_triples:
+        print("verify: frontier exhaustiveness OK (%d recomputed jobs == "
+              "%d jobs.jsonl jobs)" % (len(rebuilt_triples), len(actual_triples)))
+        return True
+
+    missing = len(set(actual_triples) - set(rebuilt_triples))
+    extra = len(set(rebuilt_triples) - set(actual_triples))
+    print("verify: frontier exhaustiveness FAILED (recomputed %d jobs, "
+          "jobs.jsonl has %d; missing=%d extra=%d)"
+          % (len(rebuilt_triples), len(actual_triples), missing, extra))
+    return False
+
+
+def _verify_certificates_and_composition(args, manifest, jobs, records,
+                                          ledger_ok, frontier_ok):
+    """Obligations 2 and 3 of sec.9.6 (certificate/job agreement, coverage),
+    plus the composition itself (min over certified bounds). `frontier_ok`
+    is obligation 1's verdict: True/False/None (skipped, no engine) -- only
+    True lets the composition be called VERIFIED, matching sec.9.6's "the
+    composing script must check" list. Returns (hard_problems,
+    composed_or_None) -- hard_problems is a list of strings to fold into the
+    overall verify verdict; warnings are printed but not added to it."""
+    by_job = {}
+    for r in records:
+        by_job[r["job_id"]] = r  # last record per job_id wins (retries re-append)
+
+    any_certs = any((by_job.get(j["job_id"]) or {}).get("certificate") for j in jobs)
+    if not any_certs:
+        print("verify: no job certificates present -- this campaign predates "
+              "per-job certificates; composition is NOT certificate-backed")
+        return [], None
+
+    cv2 = cert_v2_path()
+    live_checker_sha = sha256_file(cv2) if os.path.isfile(cv2) else None
+    print("verify: cert_v2.py on-disk sha256 = %s" % live_checker_sha)
+
+    hard_problems = []
+    cert_bounds = {}  # job_id -> certified bound (obligation 2/3 survivors)
+
+    for j in jobs:
+        jid = j["job_id"]
+        r = by_job.get(jid)
+        if r is None or r.get("status") != "done":
+            hard_problems.append(
+                "job %s: no 'done' ledger record -- coverage obligation "
+                "(sec.9.6 #3) not met" % jid)
+            print("verify: job %s: no 'done' ledger record" % jid)
+            continue
+
+        cert = r.get("certificate")
+        if not cert or not cert.get("ok"):
+            hard_problems.append(
+                "job %s: no certificate or certificate not ok -- coverage "
+                "obligation (sec.9.6 #3) not met" % jid)
+            print("verify: job %s: no ok certificate on record (%s)"
+                  % (jid, (cert or {}).get("verdict")))
+            continue
+
+        proof_path = os.path.join(args.campaign, cert["path"])
+        if not os.path.isfile(proof_path):
+            hard_problems.append(
+                "job %s: certificate file missing on disk: %s" % (jid, proof_path))
+            print("verify: job %s: certificate file missing on disk: %s"
+                  % (jid, proof_path))
+            continue
+
+        live_sha = sha256_file(proof_path)
+        if live_sha != cert.get("sha256"):
+            hard_problems.append(
+                "job %s: certificate file sha256 drift: ledger says %s, "
+                "on-disk is %s" % (jid, cert.get("sha256"), live_sha))
+            print("verify: job %s: CERTIFICATE FILE sha256 DRIFT: recorded=%s "
+                  "on-disk=%s" % (jid, cert.get("sha256"), live_sha))
+            continue
+
+        check_cmd = [sys.executable, cv2, "prefix-check", proof_path,
+                     "--expect-channels", str(manifest["n"]),
+                     "--expect-prefix", engine_prefix_string([tuple(p) for p in j["prefix"]]),
+                     "--quiet"]
+        proc = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+        if proc.returncode != 0:
+            reason = prefix_check_line(proc)
+            hard_problems.append(
+                "job %s: cert_v2.py prefix-check re-run REJECTED: %s" % (jid, reason))
+            print("verify: job %s: cert_v2.py prefix-check REJECTED on "
+                  "re-verification: %s" % (jid, reason))
+            continue
+
+        line = prefix_check_line(proc)
+        m = re.search(r"bound=(-?\d+)", line)
+        if not m:
+            hard_problems.append(
+                "job %s: could not parse bound= out of cert_v2.py output: %r"
+                % (jid, line))
+            print("verify: job %s: could not parse a bound out of %r" % (jid, line))
+            continue
+        cert_bound = int(m.group(1))
+        lower_bound = r.get("lower_bound")
+
+        if lower_bound is not None and cert_bound > lower_bound:
+            hard_problems.append(
+                "job %s: certificate claims MORE than the search proved -- "
+                "contradiction, investigate (cert_bound=%d > lower_bound=%d)"
+                % (jid, cert_bound, lower_bound))
+            print("verify: job %s: *** certificate claims MORE than the search "
+                  "proved (cert_bound=%d > lower_bound=%d) -- contradiction, "
+                  "investigate ***" % (jid, cert_bound, lower_bound))
+            continue
+        elif lower_bound is not None and cert_bound < lower_bound:
+            print("verify: job %s: WARNING certified bound %d < search "
+                  "lower_bound %d (pruned root replaced by a weaker subsumer); "
+                  "sound, but composition uses the certified bound"
+                  % (jid, cert_bound, lower_bound))
+        else:
+            print("verify: job %s: certificate OK, bound=%d" % (jid, cert_bound))
+
+        recorded_checker_sha = cert.get("checker_sha256")
+        if live_checker_sha and recorded_checker_sha and live_checker_sha != recorded_checker_sha:
+            print("verify: job %s: WARNING cert_v2.py sha256 drift since this "
+                  "certificate was generated (recorded=%s on-disk=%s)"
+                  % (jid, recorded_checker_sha, live_checker_sha))
+
+        cert_composed = manifest["prefix_depth"] + cert_bound
+        if cert_composed != r.get("composed_value"):
+            print("verify: job %s: composed-value disagreement: ledger says %s "
+                  "(search-backed), certificate-backed value is %d"
+                  % (jid, r.get("composed_value"), cert_composed))
+
+        cert_bounds[jid] = cert_bound
+
+    composed = None
+    if cert_bounds:
+        composed = min(manifest["prefix_depth"] + b for b in cert_bounds.values())
+        best_jid = next(jid for jid, b in cert_bounds.items()
+                         if manifest["prefix_depth"] + b == composed)
+        best_job = next(j for j in jobs if j["job_id"] == best_jid)
+        print("verify: composition = min over %d job(s) of (L + certified bound) = %d"
+              % (len(cert_bounds), composed))
+        print("verify: composition attained by job %s prefix %s"
+              % (best_jid, best_job["prefix"]))
+
+    coverage_ok = len(cert_bounds) == len(jobs) and not hard_problems
+    if coverage_ok and ledger_ok and frontier_ok is True:
+        print("verify: COMPOSITION VERIFIED -- every job certified, frontier "
+              "exhaustive, ledger chain intact")
+    else:
+        reasons = []
+        if frontier_ok is None:
+            reasons.append("frontier exhaustiveness not checked (no engine given)")
+        elif frontier_ok is False:
+            reasons.append("frontier exhaustiveness FAILED")
+        if hard_problems:
+            reasons.append("%d job certificate problem(s)" % len(hard_problems))
+        if not ledger_ok:
+            reasons.append("ledger chain broken")
+        print("verify: COMPOSITION NOT VERIFIED -- %s" % ("; ".join(reasons) or "unknown"))
+
+    return hard_problems, composed
+
+
 def cmd_verify(args):
     problems = []
     manifest_path = os.path.join(args.campaign, "manifest.json")
@@ -1256,6 +1624,7 @@ def cmd_verify(args):
         die("no manifest.json in %s" % args.campaign)
     with open(manifest_path) as fh:
         manifest = json.load(fh)
+    jobs = load_jobs(args.campaign)
 
     recomputed = sha256_hex(canonical_json(manifest_core(manifest)))
     if recomputed != manifest.get("manifest_sha256"):
@@ -1273,6 +1642,7 @@ def cmd_verify(args):
     else:
         print("verify: class_filter.py sha256 OK (no drift)")
 
+    engine_file = None
     if args.engine or os.environ.get("SORTNETOPT_BIN"):
         engine_file = resolve_engine(args.engine)
         live_engine_sha = sha256_file(engine_file)
@@ -1286,11 +1656,26 @@ def cmd_verify(args):
         print("verify: no --engine/SORTNETOPT_BIN given, skipping engine binary drift check")
 
     records = read_ledger(args.campaign)
-    ok, err = verify_chain(records)
-    if not ok:
+    ledger_ok, err = verify_chain(records)
+    if not ledger_ok:
         problems.append("ledger: %s" % err)
     else:
         print("verify: ledger chain OK (%d records)" % len(records))
+
+    # --- obligation 1 (sec.9.6): frontier exhaustiveness -------------------
+    frontier_ok = _verify_frontier_exhaustiveness(args, manifest, jobs, engine_file)
+    if frontier_ok is False:
+        problems.append("frontier exhaustiveness FAILED: recomputed job set "
+                         "!= jobs.jsonl (see composition NOT unconditional)")
+
+    # --- obligations 2/3 (sec.9.6) + composition ----------------------------
+    if args.no_certificates:
+        print("verify: --no-certificates given, skipping certificate and "
+              "composition checks")
+    else:
+        cert_problems, _composed = _verify_certificates_and_composition(
+            args, manifest, jobs, records, ledger_ok, frontier_ok)
+        problems.extend(cert_problems)
 
     if problems:
         print("verify: FAILED")
@@ -1316,8 +1701,12 @@ _CHECKS = []
 
 
 def _check(name, ok, detail=""):
-    _CHECKS.append((name, bool(ok), detail))
-    return bool(ok)
+    """ok=True/False is PASS/FAIL as before; ok=None is SKIP (used when a
+    dependency -- e.g. cert_v2.py prefix-check -- isn't available yet) and
+    is reported but does not count toward the pass/fail summary."""
+    normalized = None if ok is None else bool(ok)
+    _CHECKS.append((name, normalized, detail))
+    return normalized
 
 
 def _hdr(title):
@@ -1383,7 +1772,7 @@ def _selftest_ledger_tamper(tmp_root):
             bound_sequence=[[0, i]], composed_value=i, wall_seconds=0.0,
             max_rss_bytes=0, load_at_start=0.0, machine=machine_info(),
             engine_binary_sha256="0" * 64, seed_sha256=None, counters=None,
-            engine_elapsed_ms=0)
+            engine_elapsed_ms=0, certificate=None)
         append_ledger(campaign_dir, record)
         seq += 1
         prev = record["digest"]
@@ -1493,9 +1882,12 @@ def _selftest_resumability(engine, tmp_root):
             fh.write(canonical_json(j))
             fh.write("\n")
 
+    # certificates=off: this check is testing resumability, not certificate
+    # generation (that has its own selftest, CHECK 6) -- keeping certificates
+    # off here matches this check's pre-existing behaviour and runtime.
     common = dict(campaign=campaign_dir, engine=engine, shard=None,
                   budget_seconds=None, timeout_per_job=120,
-                  checkpoint_interval_secs=0, dry_run=False)
+                  checkpoint_interval_secs=0, dry_run=False, certificates="off")
     cmd_run(argparse.Namespace(max_jobs=1, **common))
 
     st0 = load_state(campaign_dir, jobs[0]["job_id"])
@@ -1522,6 +1914,135 @@ def _selftest_resumability(engine, tmp_root):
            err_chain or ("count=%d" % len(records2)))
 
 
+def _cert_v2_supports_prefix_check(cv2):
+    """Best-effort probe: does this cert_v2.py build have a working
+    'prefix-check' subcommand? Used only to decide whether CHECK 6 can run
+    or must SKIP -- the checker is owned by another agent and may not have
+    landed yet."""
+    if not os.path.isfile(cv2):
+        return False
+    proc = subprocess.run([sys.executable, cv2, "prefix-check", "--help"],
+                           capture_output=True, text=True, check=False)
+    return proc.returncode == 0
+
+
+def _selftest_certificate_tamper(engine, tmp_root):
+    _hdr("CHECK 6 -- per-job certificate tamper-evidence "
+         "(docs/certificate-format-v2.md sec.9)")
+    cv2 = cert_v2_path()
+    if not _cert_v2_supports_prefix_check(cv2):
+        _check("6-setup  tools/cert_v2.py has a working 'prefix-check' subcommand",
+               None, "SKIP: cert_v2.py prefix-check is not available yet "
+                     "(owned by another agent) -- not passing vacuously, "
+                     "marking SKIP")
+        return
+
+    campaign_dir = os.path.join(tmp_root, "cert-tamper")
+    os.makedirs(os.path.join(campaign_dir, "seeds"), exist_ok=True)
+    os.makedirs(os.path.join(campaign_dir, "jobs"), exist_ok=True)
+    open(os.path.join(campaign_dir, "ledger.jsonl"), "a").close()
+
+    n, depth = 6, 1
+    workdir = os.path.join(tmp_root, "cert_tamper_work")
+    filter_all, _, _ = resolve_filter(n, "root_split", "ALL")
+    frontier = build_frontier(n, depth, filter_all)
+    raw_jobs, _, _ = build_jobs(n, frontier, filter_all, None, engine, workdir)
+    if not raw_jobs:
+        _check("6-setup  found >=1 canonical depth-1 prefix at n=%d" % n, False, "got 0")
+        return
+
+    manifest = build_manifest(n, "root_split", "ALL", depth, engine, {},
+                               {"mode": "none", "seed_limit": None, "seed_n": None}, 1)
+    with open(os.path.join(campaign_dir, "manifest.json"), "w") as fh:
+        json.dump(manifest, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+    job = job_record(manifest["manifest_sha256"], raw_jobs[0])
+    with open(os.path.join(campaign_dir, "jobs.jsonl"), "w") as fh:
+        fh.write(canonical_json(job))
+        fh.write("\n")
+
+    common = dict(campaign=campaign_dir, engine=engine, shard=None,
+                  budget_seconds=None, timeout_per_job=120,
+                  checkpoint_interval_secs=0, dry_run=False, certificates="on")
+    cmd_run(argparse.Namespace(max_jobs=None, **common))
+
+    records = read_ledger(campaign_dir)
+    cert_ok = bool(records) and records[0].get("status") == "done" \
+        and records[0].get("certificate") is not None \
+        and records[0]["certificate"].get("ok") is True
+    _check("6a  run produced 1 ledger record with status=done and an ok certificate",
+           cert_ok, canonical_json(records[0].get("certificate")) if records else "no records")
+    if not cert_ok:
+        return
+
+    proof_rel = records[0]["certificate"]["path"]
+    proof_path = os.path.join(campaign_dir, proof_rel)
+    with open(proof_path, "rb") as fh:
+        original = bytearray(fh.read())
+
+    # Flip a byte inside the payload region, just ahead of the trailer --
+    # this corrupts step-table/payload content covered by the file's own
+    # `payload_sha256` (docs/certificate-format-v2.md sec.3.5), independent
+    # of anything class_campaign.py itself records.
+    tampered = bytearray(original)
+    flip_off = len(tampered) - 41
+    tampered[flip_off] ^= 0xFF
+    with open(proof_path, "wb") as fh:
+        fh.write(bytes(tampered))
+
+    # --- 6b: the sha256-drift check alone must catch this -----------------
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cmd_verify(argparse.Namespace(campaign=campaign_dir, engine=engine,
+                                            no_certificates=False))
+    out = buf.getvalue()
+    drift_line = next((l for l in out.splitlines() if "sha256 DRIFT" in l), "")
+    _check("6b  verify FAILS once the certificate file is byte-flipped "
+           "(sha256 drift, ledger sha256 untouched)",
+           rc != 0 and "verify: FAILED" in out, "rc=%r" % rc)
+    _check("6c  verify's own output names the sha256 drift specifically",
+           bool(drift_line), drift_line or "(no drift line found)")
+
+    # --- 6d: now hide the drift from OUR check by forging the ledger's own
+    # recorded sha256 to match the tampered file, and recomputing that one
+    # record's digest so the ledger CHAIN itself still verifies clean. This
+    # isolates the second, independent detection layer: cert_v2.py's own
+    # internal file digest (sec.3.5's payload_sha256), which the tampered
+    # bytes still violate regardless of what class_campaign.py's ledger
+    # claims about the file.
+    ledger_path = os.path.join(campaign_dir, "ledger.jsonl")
+    with open(ledger_path) as fh:
+        rec = json.loads(fh.readline())
+    rec["certificate"]["sha256"] = sha256_file(proof_path)
+    recompute = dict(rec)
+    recompute.pop("digest", None)
+    rec["digest"] = sha256_hex(canonical_json(recompute))
+    with open(ledger_path, "w") as fh:
+        fh.write(canonical_json(rec))
+        fh.write("\n")
+
+    ok_chain, err_chain = verify_chain(read_ledger(campaign_dir))
+    _check("6-setup  forged ledger sha256 still yields a valid hash chain "
+           "(isolating the file-integrity check from the chain check)",
+           ok_chain, err_chain or "")
+
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        rc2 = cmd_verify(argparse.Namespace(campaign=campaign_dir, engine=engine,
+                                             no_certificates=False))
+    out2 = buf2.getvalue()
+    reject_line = next((l for l in out2.splitlines() if "REJECTED" in l), "")
+    _check("6d  verify STILL FAILS with the ledger sha256 forged to match the "
+           "tampered file (caught by cert_v2.py's own re-verification, not "
+           "our sha256 drift check)",
+           rc2 != 0 and "verify: FAILED" in out2, "rc=%r" % rc2)
+    _check("6e  the rejection reason is cert_v2.py's own integrity check "
+           "(payload sha256 mismatch), not a sha256-drift message",
+           "payload sha256 mismatch" in out2 and "sha256 DRIFT" not in out2,
+           reject_line or "(no REJECTED line found)")
+
+
 def run_selftest(args):
     engine = resolve_engine(args.engine)
     tmp_root = tempfile.mkdtemp(prefix="class-campaign-selftest-")
@@ -1532,18 +2053,25 @@ def run_selftest(args):
         _selftest_ledger_tamper(tmp_root)
         _selftest_shard_disjointness(engine, tmp_root)
         _selftest_resumability(engine, tmp_root)
+        _selftest_certificate_tamper(engine, tmp_root)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
     _hdr("SUMMARY")
-    failed = [c for c in _CHECKS if not c[1]]
+    failed = [c for c in _CHECKS if c[1] is False]
+    skipped = [c for c in _CHECKS if c[1] is None]
     for name, ok, detail in _CHECKS:
-        print("  [%s] %s%s" % ("PASS" if ok else "FAIL", name,
-                                ("   -- " + detail) if detail else ""))
+        status = "SKIP" if ok is None else ("PASS" if ok else "FAIL")
+        print("  [%s] %s%s" % (status, name, ("   -- " + detail) if detail else ""))
     if failed:
-        print("\n  %d of %d checks FAILED." % (len(failed), len(_CHECKS)))
+        print("\n  %d of %d checks FAILED (%d skipped)."
+              % (len(failed), len(_CHECKS), len(skipped)))
         return 1
-    print("\n  All %d checks passed." % len(_CHECKS))
+    if skipped:
+        print("\n  All %d non-skipped checks passed (%d SKIPPED, %d total)."
+              % (len(_CHECKS) - len(skipped), len(skipped), len(_CHECKS)))
+    else:
+        print("\n  All %d checks passed." % len(_CHECKS))
     return 0
 
 
@@ -1601,6 +2129,10 @@ def build_arg_parser():
                          "write only on clean exit (default: 60)")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--engine", default=None)
+    p.add_argument("--certificates", choices=["on", "off"], default="on",
+                    help="emit and check a per-job v2p prefix certificate "
+                         "for every job that reaches status=done "
+                         "(docs/certificate-format-v2.md sec.9; default: on)")
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("status")
@@ -1614,6 +2146,10 @@ def build_arg_parser():
     p = sub.add_parser("verify")
     p.add_argument("--campaign", required=True)
     p.add_argument("--engine", default=None)
+    p.add_argument("--no-certificates", action="store_true",
+                    help="skip per-job certificate re-checking and the "
+                         "composition verdict (for a legacy campaign that "
+                         "predates certificates)")
     p.set_defaults(func=cmd_verify)
 
     p = sub.add_parser("export")

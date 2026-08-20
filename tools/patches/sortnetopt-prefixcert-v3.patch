@@ -1,0 +1,594 @@
+sortnetopt-prefixcert-v3 — prefix-rooted certificates: gen-proof learns a root
+
+Applies on top of the ten-patch v3 stack, in this order:
+
+    sortnetopt-macos-proc.patch
+    sortnetopt-instrumentation-v3.patch
+    sortnetopt-online-subsumption-v3.patch
+    sortnetopt-perf-v3.patch
+    sortnetopt-tier1-v3.patch
+    sortnetopt-tier2a-v3.patch
+    sortnetopt-tier2b-v3.patch
+    sortnetopt-limits-v3.patch
+    sortnetopt-zm-v3.patch
+    sortnetopt-decomp-v3.patch
+    sortnetopt-prefixcert-v3.patch  <- this one
+
+Base pin: 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+Nothing in checker/ is touched. The frozen snocheck is never rebuilt, and the
+certificates it reads are byte-identical to what the ten-patch stack emitted.
+
+Two files change: src/proof.rs and src/bin/sortnetopt.rs. No search heuristic,
+no pruning rule, no bound, no new proof rule.
+
+
+================================================================================
+THE BLOCKER
+================================================================================
+
+`gen_proof` ended with
+
+    gen.encode_proof(&Arc::new(OutputSet::all_values(max_channels)));
+
+— the root of every certificate was hard-coded to the full cube. A decomposed
+job (docs/lowmem-endgame-assessment.md §11, tools/class_campaign.py) searches
+from the output set of a comparator prefix P, so the full cube is not in that
+job's pruned index at all, and `encode_proof`'s
+
+    let bound = self.output_sets.get(target).unwrap().0;   // proof.rs:237
+
+panicked. Per-job certificates are a contract requirement — a class result with
+no independently checkable certificate per job is not load-bearing — so this
+was the last hard blocker before real class jobs (evidence/v3/decomp/report.md,
+"Blockers before a first real class job", item 1).
+
+
+================================================================================
+WHAT THE PATCH DOES
+================================================================================
+
+    sortnetopt gen-proof <input> [-p a b [-p c d ...]] [--prefix-root]
+
+`-p` takes flat comparator pairs, exactly as `search -p` does, and must be the
+same prefix the `search` that produced `<input>` was run with. `--prefix-root`
+forces the prefix container even for an empty prefix (a depth-0 job is the full
+problem, but a campaign that composes prefix claims must not silently receive a
+full-problem certificate for one of its jobs).
+
+With no prefix the path is **unchanged**: same root, same container choice,
+same bytes. Verified, not asserted — see EVIDENCE.
+
+With a prefix the certificate is emitted in the v2p container, specified in
+docs/certificate-format-v2.md §9 (a new section; §§1-8 are untouched). The
+claim it makes is NOT `S(n) >= b`. It is
+
+    let X_P be the prefix applied to the full n-cube; then s(X_P) >= b,
+
+i.e. any n-channel sorting network beginning with exactly P has at least
+L + b comparators.
+
+
+================================================================================
+THE ROOT IS A WITNESS, NOT A NEW RULE
+================================================================================
+
+The engine memoises a prefix job's root under `canonicalize(true)`, and
+`prune-all` may further replace that canonical set by any set subsuming it. So
+the root of the proof DAG is in general NOT `X_P` but some `W` with
+
+    permute(perm, invert?(W))  ⊆  X_P
+
+— which is exactly the shape of the `getBound` witness the checker already
+applies to every interior step (Check.hs / Checker.thy:425-445). Rather than
+reconstruct the canonicalisation transform (whose convention would then have to
+be re-derived and re-trusted), `encode_prefix_root` resolves the root through
+`lookup_witness`: the *same* call that produces every other witness in the
+file. It returns the largest bound over all subsuming sets together with the
+transform, already in the certificate's perm convention.
+
+The prefix section therefore stores `(invert, perm, step_id)` and the checker
+re-uses its existing `getBound` on it verbatim. No new proof rule, no new
+witness kind, no change to any step payload byte.
+
+Soundness (docs/certificate-format-v2.md §9.4 P5): a network sorting X_P sorts
+any subset of it, and channel permutation and complementation carry sorting
+networks to sorting networks, so s(X_P) >= s(W) >= bound(W) >= b.
+
+The stored packed `X_P` is a *mirror*: a checker MUST recompute it by applying
+P to the full cube and reject on mismatch (§9.4 P3). That check is what binds
+the certificate to its prefix, and it is what makes a certificate-for-the-wrong-
+prefix a rejection rather than a silently valid proof of the wrong proposition.
+
+
+================================================================================
+WHY A THIRD CONTAINER RATHER THAN A FLAG ON v2
+================================================================================
+
+v2p is `format_version = 3` with `flags` bit 0 set and `table_offset` moved
+past the prefix section. The v2 spec (§3.2) already requires a reader to reject
+`format_version != 2`, to reject non-zero `flags`, and to reject
+`table_offset != 64`. A v2p file therefore trips three independent rejections
+in any reader written to the v2 spec, before it can misread anything.
+
+That is the point. A prefix certificate proves a different proposition from a
+full-problem certificate, and the failure mode to design against is a tool
+reporting a prefix bound as if it were S(n). `do_check` in tools/cert_v2.py
+refuses v2p input for the same reason; only `prefix-check`/`do_check_prefix`
+will read one, and they report the claim as a prefix claim.
+
+The frozen verified checker cannot read v2p and is not asked to. The
+full-problem v1 path — the only path with a verified checker behind it — is
+untouched, and the n=9/n=10 pipelines continue to run through `snocheck -v` as
+the anchor. That per-job certificates are checked today by unverified code is a
+recorded gap, not a hidden one (§9.8).
+
+
+================================================================================
+COMPOSITION IS NOT IN THE CERTIFICATE
+================================================================================
+
+A single certificate says nothing about S(n). The class answer is
+
+    S(n)  >=  min over P in 𝒫 of ( L + b_P )
+
+and it needs three things no certificate can discharge: 𝒫 exhaustive at depth
+L, each certificate's (n, P) equal to its job's, and every job covered.
+tools/class_campaign.py `verify` checks all three — it rebuilds the depth-L
+frontier from the manifest's own parameters, re-runs tools/cert_v2.py
+prefix-check on every job's certificate file against the job's prefix, detects
+sha256 drift of the certificate on disk, and only then prints COMPOSITION
+VERIFIED. See docs/certificate-format-v2.md §9.6.
+
+One asymmetry is deliberate: a certified bound *below* the search's
+lower_bound is a WARNING and the composition then uses the certified bound
+(sound, just weaker — a pruned root replaced by a weaker subsumer). A certified
+bound *above* it is a hard failure, because that is a contradiction.
+
+
+================================================================================
+EVIDENCE
+================================================================================
+
+Legacy path byte-identical, measured on a FIXED pruned directory (proof.bin is
+not reproducible across *searches* — nondeterministic search order — so the
+emitter must be tested on fixed input):
+
+    n=8  72030bf39eaf2d8b2b382af65b5a7fb15748da88965671435874215d9b1deb9f
+    n=9  337c649b03b54f96b83caaafefde4cf330d8150cc91d00831a812b8c00d397a6
+
+Each is the sha256 of proof.bin from BOTH the ten-patch binary
+(cb7b4b6d56a0a8ed6da5c30b252d248a7b5e7ab7c868842486f1602660beb199) and the
+eleven-patch binary
+(15352938e26af571968146aeadf2e4764658abc4e139e6be4c1f69586ddcb556) run on the
+same pruned directory; `cmp` reports no difference.
+
+Frozen verified checker, unchanged, on certificates from the patched binary:
+`Just (9,25)` and `Just (10,29)` — on the default build and on the wide12 and
+wide13 builds. 35/35 release tests on all three builds.
+
+Two independent implementations of §9 agree on real engine output:
+tools/cert_v2.py accepts every certificate this emitter produces and rejects
+every one of nine corruptions of it (section magic, stored root set, section
+digest, format_version, flags, truncated trailer, raised claimed_bound, altered
+prefix comparator, duplicated root perm entry, out-of-range witness step) —
+25/25 selftest lines on an n=8 L=1 certificate.
+
+End-to-end campaigns at n=9 and n=10, depths 1 and 2, every job certified and
+every certificate re-verified: composed answers 25, 25, 29, 29 — exactly S(9)
+and S(10), COMPOSITION VERIFIED in all four.
+
+wide13 n=13 --limit 42 reproduces: result 42, 50,285,534 states (-1.2% of the
+reference 50.9M; search order is nondeterministic), peak memory footprint
+3.34 GB against a 3.35 GB reference, inside the 5 GB guardrail.
+
+
+================================================================================
+NOT DONE, ON PURPOSE
+================================================================================
+
+* `fix.rs` (`fix-proof`) is not prefix-aware. It was already not v2-aware and
+  is not in the pipeline; noted rather than half-fixed.
+* No verified-checker support for v2p. Separate campaign, §9.8.
+* Handing a v2 or v2p file to the frozen checker makes it read the ASCII magic
+  as a u32 step count of 1,129,270,867 and attempt a ~13 GB table read. This
+  hazard predates this patch (it applies to v2 already); it is recorded here
+  because prefix jobs make v2p files common, and a wrapper script that guards
+  on the magic before invoking snocheck would be cheap insurance.
+
+Nowhere in this patch is any comparator count used as a search target, bound,
+feature or stopping condition.
+
+diff -ruN --exclude=target --exclude=*.orig --exclude=*.rej prefixcert-base/src/bin/sortnetopt.rs /Users/yugendren/experiments/sorting_network_s13/.build/v3-prefixcert/source/src/bin/sortnetopt.rs
+--- a/src/bin/sortnetopt.rs
++++ b/src/bin/sortnetopt.rs
+@@ -68,6 +68,20 @@
+ struct OptGenProof {
+     #[structopt(parse(from_os_str))]
+     input: PathBuf,
++    /// PREFIXCERT-V3: root the certificate at the output set of this
++    /// comparator prefix instead of at the full cube, and emit the v2p
++    /// prefix-rooted container (`docs/certificate-format-v2.md` §9). Flat
++    /// pairs, exactly as `search -p` takes them: `-p 1 0 -p 3 2`. The prefix
++    /// MUST be the same one the `search` that produced `input` was run with.
++    #[structopt(short, long)]
++    prefix: Vec<usize>,
++    /// PREFIXCERT-V3: emit a prefix-rooted (v2p) certificate even when the
++    /// prefix is empty. A depth-0 job is the full problem, but a campaign
++    /// that composes prefix claims must not silently receive a full-problem
++    /// certificate for one of its jobs, so the container is forced to match
++    /// the proposition being composed.
++    #[structopt(long)]
++    prefix_root: bool,
+ }
+ 
+ #[derive(Debug, StructOpt)]
+@@ -177,7 +191,7 @@
+ 
+ fn cmd_gen_proof(opt: OptGenProof) {
+     log::info!("options: {:?}", opt);
+-    gen_proof(opt.input);
++    gen_proof(opt.input, opt.prefix, opt.prefix_root);
+ }
+ 
+ fn cmd_fix_proof(opt: OptFixProof) {
+diff -ruN --exclude=target --exclude=*.orig --exclude=*.rej prefixcert-base/src/proof.rs /Users/yugendren/experiments/sorting_network_s13/.build/v3-prefixcert/source/src/proof.rs
+--- a/src/proof.rs
++++ b/src/proof.rs
+@@ -24,7 +24,31 @@
+     search::checkpoint::Sha256,
+ };
+ 
+-pub fn gen_proof(input: PathBuf) {
++/// PREFIXCERT-V3: the root of a prefix-rooted (v2p) certificate.
++///
++/// See `docs/certificate-format-v2.md` §9. A decomposed job searches from the
++/// output set of a comparator prefix `P`, so the full cube is not in its
++/// pruned index and the legacy root (`OutputSet::all_values(max_channels)`)
++/// panics in `encode_proof`. This struct is everything §9.3's prefix section
++/// needs, and it is `None` for every non-prefix run, which is what makes the
++/// legacy path byte-identical.
++struct PrefixRoot {
++    /// `n`, the width of the root problem.
++    channels: usize,
++    /// `P`, in `apply_comparator([a, b])` order: `a` gets the pairwise max.
++    prefix: Vec<[usize; 2]>,
++    /// `X_P` packed: the prefix applied to the full cube, NOT canonicalised.
++    root_packed: Vec<u8>,
++    /// `b`: the bound the certificate claims for `X_P`.
++    claimed_bound: u8,
++    /// The `(invert, perm, step)` witness taking the DAG's root step to a
++    /// subset of `X_P`. Exactly a §5 `getBound` witness -- see below.
++    root_invert: bool,
++    root_perm: Vec<usize>,
++    root_witness_step: usize,
++}
++
++pub fn gen_proof(input: PathBuf, prefix: Vec<usize>, force_prefix_root: bool) {
+     let mut pruned_indexes = BTreeMap::default();
+ 
+     let index = input.join("index.txt");
+@@ -84,11 +108,28 @@
+     }
+ 
+     let max_channels = *pruned_indexes.keys().rev().next().unwrap();
+-    let mut gen = GenProof::new(pruned_indexes);
+ 
++    // PREFIXCERT-V3. A prefix is requested by `-p a b [-p c d ...]`, or by
++    // `--prefix-root` with an empty prefix (the degenerate depth-0 job, which
++    // is the full problem but must still be *reported* as a prefix claim so a
++    // campaign never mixes the two propositions).
++    assert!(
++        prefix.len() % 2 == 0,
++        "gen-proof: --prefix takes flat comparator pairs, got {} channel indices",
++        prefix.len()
++    );
++    let prefix_pairs: Vec<[usize; 2]> = prefix.chunks(2).map(|p| [p[0], p[1]]).collect();
++    let prefix_mode = force_prefix_root || !prefix_pairs.is_empty();
++
++    let mut gen = GenProof::new(pruned_indexes, prefix_mode);
++
+     gen.prove_all();
+ 
+-    gen.encode_proof(&Arc::new(OutputSet::all_values(max_channels)));
++    if prefix_mode {
++        gen.encode_prefix_root(max_channels, prefix_pairs);
++    } else {
++        gen.encode_proof(&Arc::new(OutputSet::all_values(max_channels)));
++    }
+ 
+     log::info!("proof using {} steps", gen.step_data.len());
+ 
+@@ -122,6 +163,10 @@
+     /// because it changes the width of every witness step id inside the step
+     /// payloads and therefore cannot be decided from the final step count.
+     wide: bool,
++    /// PREFIXCERT-V3: `Some` iff this is a prefix-rooted (v2p) certificate.
++    /// `None` for every legacy run, and every branch that reads it is behind
++    /// that `None`, so the v1 and v2 emitters are untouched.
++    prefix_root: Option<PrefixRoot>,
+ }
+ 
+ /// LIMITS-V3: the legacy container's step count and witness step ids are
+@@ -174,7 +219,10 @@
+ }
+ 
+ impl GenProof {
+-    pub fn new(pruned_indexes: BTreeMap<usize, OutputSetIndex<LowerInvert>>) -> Self {
++    pub fn new(
++        pruned_indexes: BTreeMap<usize, OutputSetIndex<LowerInvert>>,
++        prefix_mode: bool,
++    ) -> Self {
+         let mut output_sets = HashMap::default();
+         for pruned_index in pruned_indexes.values() {
+             pruned_index.for_each(|output_set, _abstraction, _sig, bound| {
+@@ -182,10 +230,15 @@
+                 output_sets.insert(shared_output_set.clone(), (bound, shared_output_set));
+             })
+         }
+-        let wide = choose_wide(output_sets.len());
++        // PREFIXCERT-V3: v2p always uses 8-byte witness ids (it is a new
++        // container; there is no legacy compatibility to preserve), so the
++        // width decision is forced *before* encoding, exactly as `choose_wide`
++        // is, and `SORTNETOPT_CERT_FORMAT` cannot override it.
++        let wide = prefix_mode || choose_wide(output_sets.len());
+         if wide {
+             log::info!(
+-                "certificate container: v2 (wide, 64-bit step ids), {} candidate sets",
++                "certificate container: {} (wide, 64-bit step ids), {} candidate sets",
++                if prefix_mode { "v2p" } else { "v2" },
+                 output_sets.len()
+             );
+         }
+@@ -196,7 +249,86 @@
+             step_ids: Default::default(),
+             step_data: vec![],
+             wide,
++            prefix_root: None,
++        }
++    }
++
++    /// PREFIXCERT-V3. Roots the proof DAG at the output set of a comparator
++    /// prefix instead of at the full cube (`docs/certificate-format-v2.md`
++    /// §9).
++    ///
++    /// The engine memoises a prefix job's root under
++    /// `canonicalize(true)`, and pruning may further replace that canonical
++    /// set by any set that subsumes it. So the root of the DAG is generally
++    /// *not* `X_P` itself but some `W` with `permute(perm, invert?(W)) ⊆ X_P`
++    /// — which is exactly the shape of the `getBound` witness the checker
++    /// already applies to every interior step. Rather than reconstruct the
++    /// canonicalisation transform (whose convention would then have to be
++    /// re-derived and re-trusted), this resolves the root through
++    /// `lookup_witness`, the *same* call that produces every other witness in
++    /// the file: it returns the largest bound over all subsuming sets together
++    /// with the transform, already in the certificate's perm convention.
++    ///
++    /// Soundness of the resulting claim is §9.4 P5: a network sorting `X_P`
++    /// sorts any subset of it, and permuting/complementing channels carries
++    /// sorting networks to sorting networks, so `s(X_P) >= s(W) >= bound(W)`.
++    pub fn encode_prefix_root(&mut self, channels: usize, prefix: Vec<[usize; 2]>) {
++        assert!(
++            prefix.len() <= u16::MAX as usize,
++            "prefix of {} comparators does not fit the v2p prefix section",
++            prefix.len()
++        );
++
++        let mut root = OutputSet::all_values(channels);
++        for &[a, b] in prefix.iter() {
++            assert!(
++                a < channels && b < channels,
++                "gen-proof: prefix pair {}-{} is out of range for {} channels",
++                a,
++                b,
++                channels
++            );
++            assert_ne!(a, b, "gen-proof: degenerate prefix pair {}-{}", a, b);
++            root.apply_comparator([a, b]);
+         }
++        let root_packed = root.packed();
++
++        let (claimed_bound, witness) = self.lookup_witness(root.as_ref());
++        let (root_invert, root_perm, witness_set) = witness.unwrap_or_else(|| {
++            panic!(
++                "gen-proof: no set in the pruned index subsumes the prefix root \
++                 (claimed bound would be {}). Either the pruned directory is not \
++                 this prefix's search log, or the prefix is wrong.",
++                claimed_bound
++            )
++        });
++
++        let root_witness_step = self.encode_proof(&witness_set).unwrap_or_else(|| {
++            panic!(
++                "gen-proof: the prefix root's witness is a trivial step (bound {}); \
++                 there is nothing to certify",
++                claimed_bound
++            )
++        });
++
++        log::info!(
++            "prefix-rooted certificate: channels = {}, prefix length = {}, \
++             claimed bound = {}, root witness step = {}",
++            channels,
++            prefix.len(),
++            claimed_bound,
++            root_witness_step
++        );
++
++        self.prefix_root = Some(PrefixRoot {
++            channels,
++            prefix,
++            root_packed,
++            claimed_bound,
++            root_invert,
++            root_perm: root_perm.iter().copied().collect(),
++            root_witness_step,
++        });
+     }
+ 
+     pub fn prove_all(&mut self) {
+@@ -287,7 +419,9 @@
+     }
+ 
+     pub fn write_proof(&self, target: &mut impl Write) {
+-        if self.wide {
++        if let Some(prefix_root) = self.prefix_root.as_ref() {
++            self.write_proof_v2p(target, prefix_root)
++        } else if self.wide {
+             self.write_proof_v2(target)
+         } else {
+             self.write_proof_v1(target)
+@@ -391,6 +525,154 @@
+         target.write_all(b"SNOCEND2").unwrap();
+     }
+ 
++    /// PREFIXCERT-V3: the §9.3 prefix-root section, as bytes.
++    ///
++    /// 32 fixed bytes, then `2L` prefix bytes, then `n` perm bytes, then the
++    /// packed root set, then a SHA-256 over everything before it.
++    fn prefix_section_bytes(prefix_root: &PrefixRoot) -> Vec<u8> {
++        let channels = prefix_root.channels;
++        assert!(
++            channels <= u8::MAX as usize,
++            "the v2p prefix section caps the width at 255 channels"
++        );
++        assert_eq!(
++            prefix_root.root_perm.len(),
++            channels,
++            "root perm length must equal the root width"
++        );
++        assert_eq!(
++            prefix_root.root_packed.len(),
++            OutputSet::packed_len_for_channels(channels),
++            "packed root set has the wrong length for its width"
++        );
++
++        let mut section: Vec<u8> = Vec::new();
++        section.extend_from_slice(b"SNPX");
++        section.write_u32::<LittleEndian>(1).unwrap(); // section_version
++        section
++            .write_u16::<LittleEndian>(channels as u16)
++            .unwrap();
++        section
++            .write_u16::<LittleEndian>(prefix_root.prefix.len() as u16)
++            .unwrap();
++        section
++            .write_u16::<LittleEndian>(prefix_root.claimed_bound as u16)
++            .unwrap();
++        section.push(prefix_root.root_invert as u8);
++        section.push(channels as u8); // root_perm_len
++        section
++            .write_u64::<LittleEndian>(prefix_root.root_witness_step as u64)
++            .unwrap();
++        section
++            .write_u32::<LittleEndian>(prefix_root.root_packed.len() as u32)
++            .unwrap();
++        section.write_u32::<LittleEndian>(0).unwrap(); // reserved
++        debug_assert_eq!(section.len(), 32);
++
++        for &[a, b] in prefix_root.prefix.iter() {
++            section.push(a as u8);
++            section.push(b as u8);
++        }
++        for &channel in prefix_root.root_perm.iter() {
++            assert!(channel < channels, "root perm entry out of range");
++            section.push(channel as u8);
++        }
++        section.extend_from_slice(&prefix_root.root_packed);
++
++        let mut digest = Sha256::new();
++        digest.update(&section);
++        section.extend_from_slice(&digest.finalize());
++
++        debug_assert_eq!(
++            section.len(),
++            64 + 2 * prefix_root.prefix.len()
++                + channels
++                + OutputSet::packed_len_for_channels(channels)
++        );
++
++        section
++    }
++
++    /// PREFIXCERT-V3: the v2p container (`docs/certificate-format-v2.md` §9).
++    ///
++    /// Deliberately a separate function from `write_proof_v2` rather than a
++    /// shared parameterised writer: the v2 emitter is cross-validated
++    /// byte-for-byte against `tools/cert_v2.py`'s independent transcoder at
++    /// n=8/9/10, and that evidence should not have to be re-earned because a
++    /// refactor moved its bytes around. The duplicated block is ~40 lines.
++    fn write_proof_v2p(&self, target: &mut impl Write, prefix_root: &PrefixRoot) {
++        const HEADER_LEN: u64 = 64;
++        const TABLE_ENTRY_LEN: u64 = 16;
++        /// §9.2 bit 0: this file has a prefix-root section.
++        const FLAG_PREFIX_ROOT: u32 = 1;
++
++        let section = Self::prefix_section_bytes(prefix_root);
++
++        let step_count = self.step_data.len() as u64;
++        assert!(step_count >= 1, "refusing to write an empty certificate");
++        assert!(
++            (prefix_root.root_witness_step as u64) < step_count,
++            "root witness step {} is out of range for {} steps",
++            prefix_root.root_witness_step,
++            step_count
++        );
++
++        let table_offset = HEADER_LEN + section.len() as u64;
++        let payload_offset = table_offset + TABLE_ENTRY_LEN * step_count;
++        let payload_bytes: u64 = self.step_data.iter().map(|s| s.len() as u64).sum();
++
++        // As in v2 these mirror the LAST step, not the prefix claim; §9.2
++        // requires a reader to check them against the decoded last step and
++        // to report the prefix claim from the section instead.
++        let last = self.step_data.last().unwrap();
++        let root_channels = last[0] as u16;
++        let root_bound = last[1] as u16;
++
++        let mut header = Vec::with_capacity(HEADER_LEN as usize);
++        header.extend_from_slice(b"SNOCERT2");
++        header.write_u32::<LittleEndian>(3).unwrap(); // format_version
++        header.write_u32::<LittleEndian>(FLAG_PREFIX_ROOT).unwrap();
++        header.write_u64::<LittleEndian>(step_count).unwrap();
++        header.write_u64::<LittleEndian>(table_offset).unwrap();
++        header.write_u64::<LittleEndian>(payload_offset).unwrap();
++        header.write_u64::<LittleEndian>(payload_bytes).unwrap();
++        header.write_u16::<LittleEndian>(root_channels).unwrap();
++        header.write_u16::<LittleEndian>(root_bound).unwrap();
++        header.write_u32::<LittleEndian>(0).unwrap(); // reserved
++        debug_assert_eq!(header.len(), 56);
++        let header_hash = fnv1a64(&header);
++        header.write_u64::<LittleEndian>(header_hash).unwrap();
++        debug_assert_eq!(header.len(), HEADER_LEN as usize);
++
++        target.write_all(&header).unwrap();
++        target.write_all(&section).unwrap();
++
++        // Unchanged from v2: the trailer digest covers
++        // `bytes[table_offset .. payload_offset + payload_bytes]`. The prefix
++        // section carries its own digest, so every byte before the trailer is
++        // integrity-checked exactly once.
++        let mut digest = Sha256::new();
++
++        let mut offset = payload_offset;
++        for step in self.step_data.iter() {
++            let mut entry = [0u8; TABLE_ENTRY_LEN as usize];
++            entry[0..8].copy_from_slice(&offset.to_le_bytes());
++            entry[8..16].copy_from_slice(&(step.len() as u64).to_le_bytes());
++            digest.update(&entry);
++            target.write_all(&entry).unwrap();
++            offset += step.len() as u64;
++        }
++        debug_assert_eq!(offset, payload_offset + payload_bytes);
++
++        for step in self.step_data.iter() {
++            digest.update(step);
++            target.write_all(step).unwrap();
++        }
++
++        target.write_all(&digest.finalize()).unwrap();
++        target.write_all(b"SNOCEND2").unwrap();
++    }
++
+     fn lookup_witness(
+         &self,
+         target: OutputSet<&[bool]>,

@@ -337,3 +337,227 @@ reference checker is thus very slightly more permissive than the verified one.
 That is safe for its only intended use (cross-checking files the verified
 checker has already accepted) and must be closed before the reference checker
 is ever used as an *authority*.
+
+---
+
+## 9. v2p — prefix-rooted certificates (`format_version = 3`)
+
+Added by the v3 prefix-certificate campaign. **Nothing above this section
+changes.** v1 stays the format the frozen verified checker reads; v2 stays the
+wide container for full-problem certificates; v2p is a *third*, strictly
+opt-in container that a v2-only reader is already required to reject (§9.2).
+
+### 9.1 Why a prefix root
+
+`src/proof.rs` rooted every certificate at `OutputSet::all_values(max_channels)`
+— the full cube. A decomposed job (`docs/lowmem-endgame-assessment.md` §11,
+`tools/class_campaign.py`) searches from the output set of a *comparator
+prefix* `P`, so the full cube is not in its pruned index at all and
+`encode_proof`'s `self.output_sets.get(target).unwrap()` panicked
+(`proof.rs:237`). Per-job certificates are a contract requirement — a class
+result with no independently checkable certificate per job is not load-bearing
+— so the root has to become a parameter.
+
+The claim a v2p certificate makes is **not** `S(n) >= b`. It is:
+
+> Let `X_P` be the output set reached by applying the comparator sequence `P`
+> (length `L`) to the full `n`-cube. Then `s(X_P) >= b`: completing `P` into a
+> sorting network needs at least `b` further comparators, so any `n`-channel
+> sorting network beginning with exactly `P` has at least `L + b` comparators.
+
+The step DAG, the step payloads, the proof rules and the checking semantics of
+§2.1 and §5 are **completely unchanged**. Only the root moves, and the root
+move is expressed with a rule (§9.4 P5) that is literally §5's `getBound`.
+
+### 9.2 Header, and why an old reader rejects a v2p file
+
+A v2p file has the same 64-byte header as §3.2 with two field values changed:
+
+| offset | size | field | v2 | v2p |
+|---|---|---|---|---|
+| 8  | 4 | `format_version` | `2` | `3` |
+| 12 | 4 | `flags` | `0` | `1` (bit 0 = `FLAG_PREFIX_ROOT`) |
+| 24 | 8 | `table_offset` | `64` | `64 + prefix_bytes` |
+| 32 | 8 | `payload_offset` | `64 + 16*step_count` | `table_offset + 16*step_count` |
+
+Everything else — `magic`, `step_count`, `payload_bytes`, `reserved`,
+`header_hash = FNV1A64(bytes[0..56])` — is as §3.2. `root_channels` and
+`root_bound` continue to mirror the **last step** and *not* the prefix claim;
+a reader MUST still check them against the decoded last step, and MUST NOT
+report them as the certificate's claim for a v2p file (§9.5).
+
+The §3.2 rules already say a reader MUST reject `format_version != 2`, MUST
+reject non-zero `flags` and MUST reject `table_offset != 64`. A v2p file
+therefore trips three independent rejections in any reader written to the v2
+spec, before it can misread anything. This is deliberate: prefix certificates
+prove a *different proposition* and must never be silently accepted by a tool
+that will report the result as a full-problem bound.
+
+The trailer of §3.5 is unchanged, and its digest formula is unchanged:
+`SHA256(bytes[table_offset .. payload_offset + payload_bytes])`. Because
+`table_offset` is a header field, the same sentence covers both containers.
+The prefix section is covered by its own digest (§9.3), so every byte of a
+v2p file outside the trailer is integrity-checked exactly once.
+
+Total file size is exactly
+`64 + prefix_bytes + 16*step_count + payload_bytes + 40`.
+
+### 9.3 The prefix-root section
+
+`prefix_bytes` bytes at offset 64, immediately before the step table.
+
+| offset (from 64) | size | field |
+|---|---|---|
+| +0  | 4 | `section_magic` = ASCII `SNPX` = `53 4E 50 58` |
+| +4  | 4 | `section_version` u32 = `1` |
+| +8  | 2 | `channels` u16 = `n`, the width of the root problem |
+| +10 | 2 | `prefix_len` u16 = `L` |
+| +12 | 2 | `claimed_bound` u16 = `b` |
+| +14 | 1 | `root_invert` u8, 0 or 1 |
+| +15 | 1 | `root_perm_len` u8, MUST equal `n` |
+| +16 | 8 | `root_witness_step` u64 |
+| +24 | 4 | `root_packed_len` u32, MUST equal `packed_len(n)` |
+| +28 | 4 | `reserved` u32, MUST be 0 |
+| +32 | `2*L` | the prefix: `L` pairs of u8, `(a_k, b_k)` in application order |
+| +32+2L | `n` | `root_perm`, `n` u8 entries |
+| +32+2L+n | `packed_len(n)` | packed bitmap of `X_P` (§1's bit convention) |
+| +32+2L+n+packed_len(n) | 32 | `section_sha256 = SHA256(bytes[64 .. this offset])` |
+
+so `prefix_bytes = 64 + 2*L + n + packed_len(n)`.
+
+**Comparator convention.** `(a, b)` is the engine's
+`OutputSet::apply_comparator([a, b])` verbatim: channel `a` receives the
+pairwise **maximum** and channel `b` the pairwise **minimum**. This is the
+same convention as `-p/--prefix` and as the `a-b` tokens of the `canon-key`
+subcommand, and the opposite of the `(min, max)` convention used inside
+`tools/class_filter.py` (which converts at the boundary — see its module
+docstring §B). Getting this backwards produces a *different* `X_P`, and P3 of
+§9.4 catches it, because the verifier recomputes `X_P` from the prefix.
+
+**The stored root set is a mirror, not the claim.** `X_P` is determined by
+`(n, P)`; it is stored so that a tool can display and hash the root without a
+simulator, and so that a corrupted prefix cannot silently agree with a
+corrupted set. A reader MUST recompute it (P3) and MUST NOT trust the stored
+copy.
+
+`claimed_bound` is u16 while a step payload's `bound` is u8; the check of P5
+compares them as integers. The §7 note about a future >64-channel format
+applies to the payload byte only.
+
+### 9.4 Checking a v2p certificate
+
+A reader performs every check of §3 (with the §9.2 field values) and every
+check of §5 for all `step_count` steps, plus:
+
+* **P1 — structure.** `section_magic` and `section_version` as above;
+  `1 <= n <= 255`; `root_perm_len == n`; `root_packed_len == packed_len(n)`;
+  `reserved == 0`; `prefix_bytes` consistent with `table_offset`; every
+  comparator satisfies `a < n`, `b < n`, `a != b`; `root_perm` is a
+  permutation of `0..n`; `root_invert` in `{0,1}`.
+* **P2 — section integrity.** `section_sha256` matches.
+* **P3 — prefix binding.** Recompute `X_P` by simulation: start from the set
+  of all `2^n` Boolean vectors and, for each comparator `(a, b)` in order,
+  replace every vector `v` for which `bit a of v = 0` and `bit b of v = 1` by
+  `v XOR (2^a | 2^b)`, keeping all other vectors (this is `applyComp(a, b)` of
+  §5.4 without the redundancy test). The result MUST equal the stored packed
+  root set.
+* **P4 — proof steps.** Every step passes §5. (Unchanged.)
+* **P5 — root witness.** `root_witness_step < step_count`. Let `W` be that
+  step, with set `V_W`, width `c_W` and bound `b_W`. Apply §5's
+  `getBound(Some(root_invert, root_perm, root_witness_step), X_P)` rule
+  exactly: require `c_W == n`; require `root_perm` a permutation of `0..n`;
+  if `root_invert`, complement every vector of `V_W` within width `n`; permute
+  (`bit i of u = bit root_perm[i] of v`); require the result is a **subset** of
+  `X_P`. Then require `b_W >= claimed_bound`.
+* **P6 — mirror fields.** `root_channels` / `root_bound` equal the decoded
+  last step, as in §3.2. (They are about the last step, not about the claim.)
+
+P5 is why the format needs no new proof rule. The emitter roots the DAG at the
+*canonicalised* `X_P` — the set the search actually memoised — and the
+canonicalising transform is exactly a `(invert, perm)` witness, resolved by the
+same `lookup_witness` path that produces every other witness in the file. In
+the ordinary case `root_witness_step == step_count - 1` and the subset
+relation is an equality; the format does not require either, and must not,
+because pruning may legitimately replace the root by a set that subsumes it.
+
+**Soundness of P5.** If `permute(root_perm, invert?(V_W))` is a subset of
+`X_P`, then any comparator network sorting `X_P` sorts that subset, so
+`s(X_P) >= s(permute(root_perm, invert?(V_W)))`; channel permutation and
+channel complementation are bijections that carry sorting networks to sorting
+networks, so that equals `s(V_W)`; and P4 establishes `s(V_W) >= b_W >= b`.
+This is the same inequality chain the verified checker's `getBound` already
+relies on for every interior witness.
+
+### 9.5 What a tool must report
+
+For a v1 or v2 file the claim is `(channels, bound)` of the last step (§5).
+For a v2p file the claim is the triple `(n, P, b)` of §9.1 and a tool MUST
+report it as a *prefix* claim — e.g.
+`OK prefix n=9 L=1 prefix=1-0 bound=24 (network beginning with P needs >= 25)`
+— never as a bare `(channels, bound)` pair that could be mistaken for a
+full-problem result.
+
+### 9.6 Composition
+
+A single prefix certificate is a statement about one prefix. The class answer
+is obtained outside the certificate, by a separate and much smaller argument:
+
+> For a fixed `n` and depth `L`, let `𝒫` be a set of length-`L` prefixes that
+> is **exhaustive**: every length-`L` comparator sequence over `n` channels has
+> the same canonical output set as some `P in 𝒫`. Then
+>
+>   `S(n) = min over all length-L prefixes P of (L + s(X_P))`
+>         `>= min over P in 𝒫 of (L + b_P)`
+>
+> where `b_P` is the `claimed_bound` of an accepted certificate for `P`.
+
+The equality is the decomposition identity proved in the header of
+`tools/patches/sortnetopt-decomp-v3.patch` Part 3; the inequality is
+monotonicity of `min`. Three obligations are **not** discharged by any single
+certificate and must be checked by the composing script:
+
+1. **Exhaustiveness of `𝒫`.** `tools/class_campaign.py verify` rebuilds the
+   depth-`L` frontier from the manifest parameters and checks that every
+   frontier element maps to a job. For a *class-restricted* campaign `𝒫` is
+   exhaustive only over the class, and the conclusion inherits that class's
+   epistemic status (see the campaign tool's own status paragraph).
+2. **Certificate/job agreement.** Each job's certificate must be accepted, and
+   its `(n, P)` must equal that job's `(n, prefix)` — a certificate for a
+   different prefix is a valid certificate proving the wrong thing.
+3. **Coverage.** Every job in `𝒫` must have a certificate. A minimum over a
+   subset is not a lower bound.
+
+Each certificate is independently checkable; the composition is a min over
+`L + b_P`, checkable by inspection.
+
+### 9.7 Which container an emitter produces (extends §4)
+
+`gen-proof` without a prefix is **unchanged**: the §4 rule picks v1 or v2 and
+the emitted bytes are what they were. `gen-proof -p a b [-p c d ...]` roots the
+proof at the prefix and always emits v2p (8-byte witness ids, as v2). There is
+no `auto` path from a prefix job to v1 or v2: a prefix-rooted proof is a
+different proposition and must carry a different container.
+
+`SORTNETOPT_CERT_FORMAT` does not override this; a prefix root forces v2p.
+
+A v2p file MUST NOT be handed to the frozen verified checker, which cannot read
+it, and MUST NOT be transcoded to v1 or v2 — the prefix section has nowhere to
+go and the resulting file would claim a full-problem bound. `tools/cert_v2.py
+transcode`/`untranscode` refuse v2p input for exactly this reason.
+
+### 9.8 Implementation status (extends §8)
+
+| piece | where | status |
+|---|---|---|
+| prefix-rooted emitter | `src/proof.rs` (`write_proof_v2p`, `PrefixRoot`), `gen-proof -p` | implemented, `tools/patches/sortnetopt-prefixcert-v3.patch` |
+| reference reader/checker for v2p | `tools/cert_v2.py check` / `prefix-check` | implemented, **unverified** |
+| composition checker | `tools/class_campaign.py verify` | implemented |
+| **verified checker support for v2p** | `checker/verified/Checker.thy` | **not started, out of scope** |
+
+The §8 caveat carries over in full: the reference checker is unverified, is
+slightly more permissive than `Checker.thy` (the `bound != 0` Successors
+guard), and the *full-problem* v1 path — which the frozen checker does read —
+is the only path with a verified checker behind it. A prefix-rooted campaign's
+per-job certificates are checked by unverified code today; that is a known and
+recorded gap, and it is why the full-problem n=9/n=10 pipelines continue to be
+run through `snocheck -v` unchanged as the anchor.
