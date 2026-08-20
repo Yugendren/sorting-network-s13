@@ -10,6 +10,23 @@ checker (checker/snocheck/src/{Check,VectSet,Decode,ProofStep}.hs) for the
 legacy (v1) container and the v2 wide container, and implements
 docs/certificate-format-v2.md sec.9 for the v2p prefix-rooted container.
 checker/ is read-only input to this tool and is never modified by it.
+
+AUTHORITY NOTE. Where Check.hs and checker/verified/Checker.thy disagree,
+this tool follows Checker.thy -- the verified one -- because it is the only
+checker behind a v2p prefix certificate and must therefore not accept
+anything the verified checker would reject. Four such points are closed
+here, each marked "Divergence guard Dn" at its site and exercised by
+divergence_guard_selftests():
+
+  D1  check_successors requires bound != 0        (Checker.thy:566)
+  D2  check_huffman requires width != 0           (Checker.thy:921)
+  D3  check_huffman requires a nonempty witness list (Checker.thy:923)
+  D4  every vector of a step's set must fit the step's width
+      (Checker.thy:449, :569, :922, and B_list in get_bound at :441)
+
+This tool is still UNVERIFIED. Closing the divergences makes it a faithful
+mirror of the verified checker's *rules*; it does not make it a verified
+implementation of them. See docs/verified-checker-extension.md.
 """
 
 import sys
@@ -216,6 +233,24 @@ def parse_step(payload, id_size: int):
                 raise CertError("invalid witness tag byte")
 
         vects = decode_packed_set(packed_bytes)
+        # Divergence guard D4 (Checker.thy:449, :569, :922, :441 --
+        # `list_all (\<lambda>xs. length xs = width) A_list` / `... B_list`).
+        # The verified checker only ever concludes anything about a step whose
+        # vectors all have length exactly `width`. The Haskell decoder cannot
+        # violate that -- VectSet.asBoolVectList truncates every vector to
+        # `channels` bits -- so the frozen binary silently *folds* an
+        # out-of-range vector down instead of rejecting it. A reader used as an
+        # authority must not silently reinterpret proof content, so we reject.
+        # Only reachable for channels <= 2, where packed_len() rounds up to a
+        # whole byte and leaves 8 - 2**channels unused bits; for channels >= 3
+        # the packed bitmap is exactly 2**channels bits wide and this cannot
+        # fire.
+        if plen * 8 > (1 << channels):
+            limit = 1 << channels
+            if any(v >= limit for v in vects):
+                raise CertError(
+                    "step set contains a vector wider than the step's channel count"
+                )
         return {
             "channels": channels,
             "bound": bound,
@@ -262,8 +297,22 @@ def check_huffman(steps, step):
     channels = step["channels"]
     vects = step["vects"]
     pol = step["pol"]
+    # Divergence guard D2 (Checker.thy:921, `width \<noteq> 0`). A zero-width
+    # Huffman step has no extremal channels and no witnesses, and
+    # huffman_bound([]) == 0, so without this guard a (channels=0, bound=0)
+    # Huffman step is accepted here and rejected by the verified checker.
+    if channels == 0:
+        raise CertError("huffman rule requires a nonzero width")
     extremal = vs_extremal_channels(pol, channels, vects)
     witnesses = step["witnesses"]
+    # Divergence guard D3 (Checker.thy:923, `witnesses \<noteq> []`). Same shape:
+    # an empty witness list makes huffman_bound([]) == 0 justify bound 0 here.
+    # Check.hs does not have this guard either, but it does not accept such a
+    # step -- its huffmanBound' is a partial function and raises a pattern
+    # match failure on the empty queue, so the frozen reference checker crashes
+    # where the verified one returns False.
+    if not witnesses:
+        raise CertError("huffman rule requires at least one witness")
     if len(extremal) != len(witnesses):
         raise CertError("wrong number of huffman witnesses")
     bounds = []
@@ -277,6 +326,13 @@ def check_huffman(steps, step):
 def check_successors(steps, step):
     channels = step["channels"]
     vects = step["vects"]
+    # Divergence guard D1 (Checker.thy:566, `bound \<noteq> 0`) -- the divergence
+    # recorded in docs/certificate-format-v2.md sec.8. Check.hs omits it, so a
+    # Successors step with bound 0 satisfies `b + 1 >= 0` vacuously for every
+    # witness and is accepted there while the verified checker rejects it.
+    # Checked first, in Checker.thy's own conjunct order.
+    if step["bound"] == 0:
+        raise CertError("successors rule requires a nonzero bound")
     if not (len(vects) > 1 + channels):
         raise CertError("set might already be sorted")
     successors = []
@@ -851,6 +907,114 @@ def table_entry(data: bytes, i: int, table_offset: int = 64):
     return u64(data, entry_off), u64(data, entry_off + 8)
 
 
+def synth_step(channels, bound, kind, vects, witnesses, pol=None):
+    """Build a step dict directly, bypassing parse_step, so that the rule
+    functions can be exercised on cases no real emitter produces. Used only by
+    the divergence-guard selftests."""
+    return {
+        "channels": channels,
+        "bound": bound,
+        "kind": kind,
+        "pol": pol,
+        "wchan": (channels - 1) if kind == "huffman" else channels,
+        "witnesses": list(witnesses),
+        "vects": set(vects),
+        "id_spans": [],
+        "perm_spans": [],
+    }
+
+
+def _no_steps(i):
+    raise CertError("selftest: witness lookup should not happen")
+
+
+def divergence_guard_selftests(record):
+    """Exercise the four points where Check.hs (and therefore this tool, which
+    mirrors it) used to be more permissive than checker/verified/Checker.thy.
+
+    Each guard is tested with a NEGATIVE case that the pre-guard code accepted
+    and the verified checker rejects, and -- where one exists -- a PAIRED
+    POSITIVE control that differs only in the field the guard reads, so that a
+    passing negative cannot be explained by some unrelated rejection.
+    """
+
+    def expect_reject(name, fn, want):
+        try:
+            fn()
+            record(name, False, "UNEXPECTEDLY ACCEPTED")
+        except CertError as e:
+            ok = want in str(e)
+            record(name, ok, f"rejected -- {e}" if ok else f"WRONG REASON: {e}")
+
+    def expect_accept(name, fn):
+        try:
+            fn()
+            record(name, True, "accepted")
+        except CertError as e:
+            record(name, False, f"UNEXPECTEDLY REJECTED: {e}")
+
+    # D1 -- Checker.thy:566, `bound \<noteq> 0` in check_successors.
+    # channels=3, the full cube: size 8 > 1+3, and all three comparators
+    # (1,0) (2,0) (2,1) are non-redundant, so three absent witnesses is the
+    # correct witness count and nothing but the bound guard can reject.
+    cube3 = set(range(8))
+    expect_reject(
+        "D1 successors bound == 0 rejected",
+        lambda: check_successors(_no_steps, synth_step(3, 0, "successors", cube3, [None] * 3)),
+        "successors rule requires a nonzero bound",
+    )
+    expect_accept(
+        "D1 control: same step with bound == 1 accepted",
+        lambda: check_successors(_no_steps, synth_step(3, 1, "successors", cube3, [None] * 3)),
+    )
+
+    # D2 -- Checker.thy:921, `width \<noteq> 0` in check_huffman.
+    expect_reject(
+        "D2 huffman width == 0 rejected",
+        lambda: check_huffman(_no_steps, synth_step(0, 0, "huffman", {0}, [], pol=False)),
+        "huffman rule requires a nonzero width",
+    )
+
+    # D3 -- Checker.thy:923, `witnesses \<noteq> []` in check_huffman.
+    # {0, 7} at polarity False has no extremal channel (no unit vector), so the
+    # witness count is correct at zero and huffman_bound([]) == 0 justified
+    # bound 0 before the guard.
+    expect_reject(
+        "D3 huffman empty witness list rejected",
+        lambda: check_huffman(_no_steps, synth_step(3, 0, "huffman", {0, 7}, [], pol=False)),
+        "huffman rule requires at least one witness",
+    )
+    expect_accept(
+        "D3 control: one extremal channel, one witness accepted",
+        lambda: check_huffman(_no_steps, synth_step(3, 0, "huffman", {0, 1, 7}, [None], pol=False)),
+    )
+
+    # D4 -- Checker.thy:449/569/922, `list_all (\<lambda>xs. length xs = width)`.
+    # channels=2 with packed byte 0b00101111 decodes vector 5, which is not a
+    # 2-channel vector. Only reachable for channels <= 2.
+    expect_reject(
+        "D4 out-of-width vector rejected",
+        lambda: parse_step(bytes([2, 1, 0x2F, 2]), 8),
+        "wider than the step's channel count",
+    )
+    expect_accept(
+        "D4 control: same payload with in-width bits parses",
+        lambda: parse_step(bytes([2, 1, 0x0F, 2]), 8),
+    )
+
+
+def find_successors_step(data: bytes):
+    """Scan a v2/v2p file for the first Successors step with a nonzero bound.
+    Returns (step_id, absolute offset of its bound byte) or None."""
+    c = parse_v2_container(data)
+    for i in range(c.step_count):
+        off, length = table_entry(data, i, c.table_offset)
+        parsed = parse_step(data[off:off + length], c.id_size)
+        if parsed["kind"] == "successors" and parsed["bound"] != 0:
+            return i, off + 1
+    return None
+
+
 def find_present_witness(data: bytes, min_wchan=0):
     """Scan a v2/v2p file for the first present witness with perm length
     >= min_wchan. Returns a dict of absolute file offsets, or None."""
@@ -1046,6 +1210,8 @@ def cmd_selftest(args):
     def record(name, ok, detail):
         results.append((name, ok, detail))
 
+    divergence_guard_selftests(record)
+
     baseline = None
     try:
         c1, b1 = do_check(data_v1, progress=False)
@@ -1158,6 +1324,30 @@ def cmd_selftest(args):
                 break
         if not found_i:
             record("semantic: bound raised on non-last step", False, "no candidate step triggered rejection")
+
+        # semantic negative test (j): zero the bound of a real Successors step.
+        # This is the D1 divergence exercised on a real certificate rather than
+        # a synthetic step: before the guard, the check walked past this step
+        # because every `b + 1 >= 0` holds vacuously.
+        sloc = find_successors_step(data_v2)
+        if sloc is None:
+            record("semantic: successors step bound zeroed", None,
+                   "SKIP (no Successors step with a nonzero bound in this certificate)")
+        else:
+            s_id, s_off = sloc
+            edited = bytearray(data_v2)
+            edited[s_off] = 0
+            fixed = recompute_v2_digests(bytes(edited))
+            try:
+                c, b = do_check(fixed, progress=False)
+                record("semantic: successors step bound zeroed", False,
+                       f"UNEXPECTEDLY ACCEPTED: OK ({c},{b})")
+            except CertError as e:
+                msg = str(e)
+                caught_right = msg.startswith(f"step {s_id}: ") and \
+                    "successors rule requires a nonzero bound" in msg
+                record("semantic: successors step bound zeroed", caught_right,
+                       f"step {s_id}: rejected -- {e}")
 
     if args.v2p_file:
         data_v2p = read_file(args.v2p_file)

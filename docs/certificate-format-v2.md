@@ -2,8 +2,14 @@
 
 Status: **specification + unverified reference implementation**. The frozen
 Isabelle/HOL-extracted checker (`snocheck -v`) does **not** read v2 and is not
-changed by this document. Extending the verified checker to v2 is a separate,
-later campaign.
+changed by this document — never hand it a v2/v2p file, use
+`tools/snocheck_guard.sh` (§8, §9.8).
+
+A *separate* verified checker for the v2p prefix root now exists
+(`tools/verified/Prefix_Checker.thy`, added without modifying the frozen
+`checker/verified/*.thy`); see `docs/verified-checker-extension.md`. Its
+decoder is unverified glue, so this document's checking semantics remain the
+normative statement of what a reader must do.
 
 Scope: this document specifies (a) the legacy container, normatively, so that
 "unchanged" has a precise meaning; (b) the v2 wide container; (c) which one an
@@ -215,14 +221,22 @@ file the emitter can produce starts with the v2 magic.
 
 ## 5. Checking semantics (unchanged from v1)
 
-A v2 reader performs exactly the checks the reference checker
-(`checker/snocheck/src/Check.hs`) performs, which are the unverified mirror of
-`checker/verified/Checker.thy`. For every step `s` in `0 .. step_count-1`:
+A v2 reader performs the checks of `checker/verified/Checker.thy`. These are
+*almost* the checks the unverified reference checker
+(`checker/snocheck/src/Check.hs`) performs; at the four points where the two
+disagree, listed in §8, this section and `tools/cert_v2.py` follow
+`Checker.thy`, because a reader may be the only checker behind a v2p
+certificate and must not accept what the verified checker rejects. For every
+step `s` in `0 .. step_count-1`:
 
-1. Decode step `s`. Let `A` be its set (width `c`), `b` its bound.
+1. Decode step `s`. Let `A` be its set (width `c`), `b` its bound. Every vector
+   of `A` MUST be a `c`-channel vector, i.e. `< 2^c`. (Only enforceable for
+   `c <= 2`, where `packed_len` rounds up to a whole byte and leaves spare bits;
+   for `c >= 3` the packed bitmap is exactly `2^c` bits wide.)
 2. Every witness id `w` referenced by step `s` MUST satisfy `w < s`.
    (`checkStep`'s `steps'`.)
-3. **Huffman, polarity `p`.** Let `E = [i in 0..c : (e_i XOR flip_p) in A]` in
+3. **Huffman, polarity `p`.** Require `c != 0` and require the witness list to
+   be non-empty. Let `E = [i in 0..c : (e_i XOR flip_p) in A]` in
    ascending order, where `flip_p = 0` for `p = false` and `2^c - 1` for
    `p = true`. The number of witnesses MUST equal `|E|`. For each `(i, witness)`
    pair positionally, let `P_i = pruneExtremal(p, i, A)` (filter `A` to vectors
@@ -236,8 +250,8 @@ A v2 reader performs exactly the checks the reference checker
    non-redundant iff `A` contains some vector `v` with `v & (2^i | 2^j) == 2^i`
    **and** some vector with `v & (2^i | 2^j) == 2^j`; the successor maps every
    `v` with `v & (2^i|2^j) == 2^j` to `v XOR (2^i|2^j)` and fixes the rest.
-   Require `|S| == |witnesses|`, require `|A| > 1 + c` ("set might already be
-   sorted"), and for each pair positionally require
+   Require `b != 0`, require `|S| == |witnesses|`, require `|A| > 1 + c` ("set
+   might already be sorted"), and for each pair positionally require
    `getBound(witness, S_k) + 1 >= b`.
 5. `getBound(None, V)` = `0` if `|V| <= 1 + channels(V)` else `1`.
    `getBound(Some(inv, perm, w), V)`: let `W` be step `w`'s set; if `inv`,
@@ -314,7 +328,8 @@ tests the checker.
 | reference reader / checker | `tools/cert_v2.py check` | implemented, **unverified** |
 | transcoder both ways | `tools/cert_v2.py transcode` / `untranscode` | implemented |
 | validation battery | `tools/cert_v2.py selftest` | implemented |
-| **verified checker support for v2** | `checker/verified/Checker.thy` | **not started, out of scope, separate campaign** |
+| frozen-checker input guard | `tools/snocheck_guard.sh` | implemented |
+| **verified checker support for v2** | `checker/verified/Checker.thy` | **no theory change needed** — the verified core's step ids are Isabelle `int`, extracted to arbitrary-precision `Integer`. The `2^32-1` cap lives entirely in the unverified `Decode.hs`. See `docs/verified-checker-extension.md` §3.1. |
 
 Evidence recorded by the v3 engine-limits campaign (see that campaign's report):
 
@@ -330,13 +345,29 @@ Evidence recorded by the v3 engine-limits campaign (see that campaign's report):
 * `selftest` passes all 13 lines on the n=9 and n=10 certificates, including
   the six container-corruption and three semantic-corruption negatives of §6.
 
-**Known divergence from the verified checker**, recorded rather than hidden:
-`Check.hs` — and therefore `cert_v2.py`, which mirrors it — does not enforce
-`bound ≠ 0` in the Successors rule, which `Checker.thy:553-574` does. The
-reference checker is thus very slightly more permissive than the verified one.
-That is safe for its only intended use (cross-checking files the verified
-checker has already accepted) and must be closed before the reference checker
-is ever used as an *authority*.
+**Known divergences from the verified checker — now CLOSED.** The divergence
+originally recorded here (`Check.hs`, and therefore `cert_v2.py` which mirrored
+it, does not enforce `bound ≠ 0` in the Successors rule, which
+`Checker.thy:553-574` does) turned out to be one of four. All four are closed in
+`tools/cert_v2.py`, which now follows `Checker.thy` rather than `Check.hs`
+wherever they differ:
+
+| id | rule | `Checker.thy` | what `Check.hs` does |
+|---|---|---|---|
+| D1 | Successors requires `bound ≠ 0` | `:566` | omitted; `b + 1 >= 0` holds vacuously |
+| D2 | Huffman requires `width ≠ 0` | `:921` | omitted |
+| D3 | Huffman requires a non-empty witness list | `:923` | omitted; `huffmanBound'` instead raises a pattern-match failure on the empty queue, so `Check.hs` *crashes* where the verified checker returns `False` |
+| D4 | every vector of a step's set has length = the step's width | `:449`, `:569`, `:922`, and `B_list` in `get_bound` at `:441` | never checked; `VectSet.asBoolVectList` silently truncates instead |
+
+D1 was a permissiveness gap and never a soundness hole — `pls_bound A 0` is
+trivially true, so a bound-0 Successors step could not make a false claim. D4 is
+the only point where the frozen `snocheck` and a faithful mirror can disagree on
+step *content* rather than on accept/reject; `cert_v2.py` is deliberately the
+stricter of the two, and the case is unreachable for `c >= 3`.
+
+Each guard is exercised by `cert_v2.py selftest`, which pairs every negative
+with a positive control differing only in the guarded field. See
+`docs/verified-checker-extension.md` §6.
 
 ---
 
@@ -552,12 +583,26 @@ transcode`/`untranscode` refuse v2p input for exactly this reason.
 | prefix-rooted emitter | `src/proof.rs` (`write_proof_v2p`, `PrefixRoot`), `gen-proof -p` | implemented, `tools/patches/sortnetopt-prefixcert-v3.patch` |
 | reference reader/checker for v2p | `tools/cert_v2.py check` / `prefix-check` | implemented, **unverified** |
 | composition checker | `tools/class_campaign.py verify` | implemented |
-| **verified checker support for v2p** | `checker/verified/Checker.thy` | **not started, out of scope** |
+| **verified checker support for v2p** | `tools/verified/Prefix_Checker.thy` | **implemented and proved** — a new theory; `checker/verified/*.thy` is unmodified |
 
-The §8 caveat carries over in full: the reference checker is unverified, is
-slightly more permissive than `Checker.thy` (the `bound != 0` Successors
-guard), and the *full-problem* v1 path — which the frozen checker does read —
-is the only path with a verified checker behind it. A prefix-rooted campaign's
-per-job certificates are checked by unverified code today; that is a known and
-recorded gap, and it is why the full-problem n=9/n=10 pipelines continue to be
-run through `snocheck -v` unchanged as the anchor.
+`Prefix_Checker.thy` adds `check_prefix_proof_get_bound` and the theorem
+`prefix_network_size_bound`: any comparator network beginning with `P` that
+sorts every `n`-channel input has at least `L + b` comparators — §9.1's claim,
+machine-checked. It required no change to `Checker.thy` and no lemma to be
+re-proven, because `Checker.thy`'s step semantics are already parameterised over
+the root set: the full cube enters only in the final widening lemma. P5 is
+discharged by `Checker.thy`'s own `get_bound`, and P3 is discharged **by
+construction** — the verified core recomputes `X_P` from the prefix and never
+reads the stored root set, so a corrupted stored root cannot change what is
+proved. Details, including the extraction pipeline and the exact list of new
+definitions and lemmas, are in `docs/verified-checker-extension.md`.
+
+The remaining caveat is narrower than before but real: the *decoder* is still
+unverified glue, and it carries the comparator-convention swap of §9.3 (stored
+`(a, b)` — `a` receives the maximum — must be passed to Isabelle's `apply_cmp`
+as `(b, a)`, which sends its first component to the minimum). A prefix-rooted
+campaign should therefore describe its results as resting on a **verified
+prefix checker with an unverified decoder**, not as "verified" without
+qualification. The full-problem n=9/n=10 pipelines continue to be run through
+the frozen `snocheck -v` unchanged as the anchor. The §9.6 composition
+obligations remain outside every checker.

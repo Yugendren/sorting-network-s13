@@ -191,6 +191,19 @@ agreement, and full coverage) before printing a composition verdict -- see
 `cmd_verify` and `docs/certificate-format-v2.md` sec.9.6 for the exact
 obligations and why a single certificate does not discharge any of them on
 its own.
+
+NEVER INVOKE THE FROZEN `snocheck` FROM THIS MODULE. Every certificate this
+module produces is v2p, and the frozen checker reads only the legacy v1
+container. v1 has no magic -- its first four bytes are a step count -- so
+`snocheck` would read the ASCII "SNOC" as a step count of 1,129,270,867 and
+attempt to walk a ~13 GB step table (evidence/v3/prefixcert/report.md). This
+module deliberately calls `tools/cert_v2.py prefix-check` instead, and there
+is currently no `snocheck` invocation anywhere in it. If a future change ever
+needs the frozen checker, it MUST go through `tools/snocheck_guard.sh`, which
+refuses v2/v2p input on the magic before exec'ing snocheck.
+
+For the verified prefix checker (`Prefix_Checker.thy` / `snocheck2 -p`) and
+what it does and does not cover, see `docs/verified-checker-extension.md`.
 """
 
 import argparse

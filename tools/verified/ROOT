@@ -1,0 +1,7 @@
+session Sorting_Networks_Prefix = Sorting_Networks +
+  options [document = false]
+  theories
+    Prefix_Checker
+    Prefix_Checker_Codegen
+  export_files
+    "Sorting_Networks_Prefix.Prefix_Checker_Codegen:**"
