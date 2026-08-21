@@ -1,3 +1,16 @@
+> **CORRECTION (2026-08-21, measured)**: §6b's PROMOTE of Codish
+> end-game suffix theory is DOWNGRADED TO KILL as a state-count reducer
+> for the output-set DP — measured 1.000x at levels 4 and 5 (gate opens
+> for 0.006%/0.00005% of expansions; 0 rejections; Theorem C in
+> docs/endgame-theory.md proves even a PERFECT suffix theory is worth
+> 1.0008x at level 5). Three factual errors in §6b's sourcing corrected
+> in endgame-theory.md §1 (n=13 suffix count 2,892 not 1,440; the
+> 381/609 attribution; the 6.5->1.5 CPU-year figure was a sample
+> estimate dropped from the journal version). In its place,
+> endgame-theory.md Observation 5.2 is PROMOTED: the upper bound is
+> inert in --limit runs; a cheap upper-bound-improving pass would
+> unlock every budget-gated technique.
+
 # The Low-Memory Endgame — Can Ladder Levels 7–8 Be Computed Without Holding Them?
 
 **Date:** 2026-08-18.

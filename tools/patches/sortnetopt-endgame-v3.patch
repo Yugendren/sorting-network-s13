@@ -1,0 +1,1137 @@
+# sortnetopt-endgame-v3 — env-gated "endgame" successor filters (E1, E2, E4)
+#
+# Applies on top of the eleven-patch v3 stack, in this order:
+#
+#     sortnetopt-macos-proc.patch
+#     sortnetopt-instrumentation-v3.patch
+#     sortnetopt-online-subsumption-v3.patch
+#     sortnetopt-perf-v3.patch
+#     sortnetopt-tier1-v3.patch
+#     sortnetopt-tier2a-v3.patch
+#     sortnetopt-tier2b-v3.patch
+#     sortnetopt-limits-v3.patch
+#     sortnetopt-zm-v3.patch
+#     sortnetopt-decomp-v3.patch
+#     sortnetopt-prefixcert-v3.patch
+#     sortnetopt-endgame-v3.patch     <- this one
+#
+# Base pin: 0b5d09c47446096f9e3a0812b35afc72b7f2a718.
+# Apply with:  patch -V none -p1 -i <this file>
+#
+# checker/ is NOT touched. Neither are evidence/, config/, ledger/, or the
+# pinned third_party clone. Three files change:
+#
+#     src/search.rs             successor-expansion loop in `Search::improve`;
+#                                `Edges`/`EdgeTarget` gain an `endgame_kept`
+#                                flag and `add_edge` an `endgame_kept: bool`
+#                                parameter (every existing call site updated,
+#                                including the unrelated `improve_huffman`
+#                                extremal-pruning edges, which always pass
+#                                `true`)
+#     src/instrument.rs          new counters, two 64-bucket histograms, and
+#                                their JSON emission
+#     src/search/endgame.rs (new) the three filter functions, the env-var
+#                                config, and unit tests
+#
+# ---------------------------------------------------------------------------
+# REFERENCE MODEL
+#
+# tools/verify_endgame.py is the authority for the semantics ported here
+# (functions `f_bound1_unique`, `f_halving`; the third filter's definition was
+# corrected after that file was written -- see E3/E4 below). Nothing in that
+# file or this patch touches the engine's search *result*: every filter is
+# proven to retain at least one bound-optimal successor whenever it is
+# consulted, and the empty-admissible-set case (which would otherwise be
+# possible if a filter were unsound, or if its structural precondition failed
+# to hold) always falls back to the unfiltered successor set rather than ever
+# risk excluding every optimal successor.
+#
+# ---------------------------------------------------------------------------
+# THE GATE
+#
+# Filters are only consulted for a state whose *parent* has a stored upper
+# bound `b = state.bounds[1] <= SORTNETOPT_ENDGAME_BUDGET` (default 4). `b` is
+# always a sound upper bound on the true `bound(X)`, never required to be
+# tight: if the true value is `m <= b`, any optimal successor Y has
+# `bound(Y) = m - 1 <= b - 1`, so a test parameterised by `b - 1` can never
+# exclude every optimal successor. This is the soundness argument for all
+# three filters; see `src/search/endgame.rs`'s module doc comment for the
+# per-filter detail.
+#
+# ---------------------------------------------------------------------------
+# THE THREE FILTERS
+#
+# E1 (bound1_unique_pair). When b == 1 and X is unsorted, bound(X) is exactly
+# 1 (not just <= 1 -- state.bounds[0] >= 1 for every unsorted state in this
+# engine's memo table, from its very first synthesized default, so
+# b == 1 == state.bounds[0] forces bound(X) == 1 exactly), and the sorting
+# comparator is uniquely determined by X's Hamming-weight class structure:
+# every weight class has size <= 2; every size-2 class differs in exactly the
+# same two channels {i, j}; that pair is the comparator. When this holds, the
+# whole `i, j` double loop `Search::improve` normally runs is replaced by
+# trying that one pair -- `SUCCESSORS_GENERATED`-equivalent work drops from
+# O(channels^2) to O(1), and every other pair's `canonicalize` + memo
+# lookup/insert is skipped outright.
+#
+#   EMPIRICAL NOTE, not merely theoretical: across every acceptance run of this
+#   patch (n = 7, 8, 9), `endgame_e1_states` measured exactly 0. This is not a
+#   bug; see "SUSPICIOUS / NOTEWORTHY" below for the structural argument for
+#   why the b == 1 gate looks unreachable in this specific engine's control
+#   flow, and why the implementation is kept (and tested in isolation) anyway.
+#
+# E2 (halving_ok). A comparator is at most 2-to-1 within a Hamming weight
+# class, so bound(X) >= ceil(log2 max_l |X_l|). A successor Y (post-
+# apply_comparator, pre-canonicalize) is admissible only if
+# max_l |Y_l| <= 2^(b-1).
+#
+# E3/E4 (live_support / live_budget_ok). CORRECTED MID-IMPLEMENTATION: the
+# original spec's "dirty channel = incident to an unsettled pair" definition
+# turned out to be an unproven conjecture. The definition actually implemented
+# is LIVE SUPPORT, which has the following proof:
+#
+#   L(Z) = { p : exist u, v in Z, popcount(u) == popcount(v), u_p != v_p }
+#        = OR over Hamming weights l of ( OR_l(Z) & !AND_l(Z) )
+#          where OR_l / AND_l are the bitwise OR / AND of every vector of
+#          weight l present in Z (viewed as a `channels`-bit value).
+#
+#   Proof that every channel in L(Z) is touched by every network sorting Z:
+#   comparator networks preserve Hamming weight, and `OutputSet::is_sorted`
+#   accepts Z iff Z has at most one vector per weight. If network N never
+#   touches channel p, N(v)_p = v_p for every v. Take u, v in Z of equal
+#   weight with u_p != v_p (exactly what p in L(Z) means); N(u) and N(v) then
+#   have equal weight too, so if N(Z) is sorted, N(u) = N(v) -- but they still
+#   disagree at channel p, a contradiction. Hence every channel of L(Z) is
+#   touched by some comparator of N, and each comparator touches exactly 2
+#   channels, so bound(Z) >= ceil(|L(Z)| / 2).
+#
+#   As a filter: successor Y is admissible only if |L(Y)| <= 2 * (b - 1).
+#
+#   This is computed in one O(2^channels) pass over the bitmap (per-weight
+#   OR/AND, then one more pass combining them), independent of |X| -- cheaper
+#   than the "unsettled pair" formulation would have been (which needs an
+#   O(channels^2 * 2^channels) scan via per-pair quadrant counts).
+#
+# Composite policy (mirrors verify_endgame.py's f_e1_e2_e4): at b == 1, only
+# E1 applies and replaces enumeration outright; at b >= 2, E2 and E4 both
+# apply to each successor the ordinary double loop finds.
+#
+# ---------------------------------------------------------------------------
+# EMPTY-ADMISSIBLE-SET HANDLING (spec item 4): FALLBACK, not lower-bound bump
+#
+# `Search::improve`'s fixpoint loop does
+# `edges.states().map(|s| s.bounds[i]).min().unwrap()`, which panics on an
+# empty `Edges`. Before this patch that was unreachable (an unsorted set
+# always has a non-redundant comparator); a filter that excludes every
+# candidate could make it reachable. Per the task's explicit preference
+# ("prefer the fallback if there is any doubt"), this patch ALWAYS falls back
+# to the full unfiltered double loop rather than attempt any in-place lower-
+# bound bookkeeping:
+#
+#   * E1: if `bound1_unique_pair` returns `None` (the weight-class
+#     precondition failed -- expected never to happen given a correct b == 1
+#     gate, but not asserted), the fast path is abandoned and the ordinary
+#     double loop below runs unfiltered.
+#   * E2/E4: the filtered attempt tracks whether *any* successor was kept
+#     (locally, not via the shared `Edges`); if none was, the full unfiltered
+#     double loop is re-run from scratch.
+#
+# Both paths bump `endgame_empty_fallback`. It measured 0 in every acceptance
+# run.
+#
+# ---------------------------------------------------------------------------
+# AUDIT MODE (SORTNETOPT_ENDGAME_AUDIT)
+#
+# Builds the unfiltered successor set always (so the search's actual answer
+# never depends on the filters in audit mode), while also recording -- per
+# `(i, j)` pair, aggregated per canonical target via `EdgeTarget::endgame_kept`
+# -- which successors the filters would have kept. At every iteration of the
+# fixpoint loop in `Search::improve`, checks that
+# `min(bounds[0] over kept) == min(bounds[0] over all)`; a mismatch bumps the
+# shared `FILTER_AUDIT_VIOLATIONS` counter (the same one TIER1 / Lemma M
+# already use) and logs an error with the packed set. Measured 0 in every
+# acceptance run, including a full n = 9 --limit 25 run.
+#
+# ---------------------------------------------------------------------------
+# INSTRUMENTATION (src/instrument.rs)
+#
+# Scalar counters (all AtomicU64, Relaxed, incremented outside any lock):
+# endgame_expansions_total, endgame_gate_reached, endgame_e1_states,
+# endgame_e1_pairs_skipped, endgame_e2_rejected, endgame_e4_rejected,
+# endgame_empty_fallback; plus config echoes endgame_enabled,
+# endgame_budget_cap, endgame_audit_enabled.
+#
+# Two 64-bucket histograms, `endgame_upper_hist` / `endgame_lower_hist`
+# (indexed by the parent's `bounds[1]` / `bounds[0]`, clamped to the top
+# bucket), recorded UNCONDITIONALLY at every successor-expansion event
+# whenever SORTNETOPT_ENDGAME is set (regardless of whether the budget gate
+# itself fires) and always emitted in the JSON dump (all-zero when the flag is
+# unset). This is the headline measurement of the whole feature: what
+# fraction of the search's successor expansions are anywhere near the sorted
+# end. See the report accompanying this patch for the measured n = 9
+# --limit 25 array.
+#
+# ---------------------------------------------------------------------------
+# ENVIRONMENT VARIABLES INTRODUCED
+#
+#   SORTNETOPT_ENDGAME             master switch (default off). Unset, no
+#                                   function in src/search/endgame.rs is ever
+#                                   called and the successor loop is byte-for-
+#                                   byte the pre-patch code.
+#   SORTNETOPT_ENDGAME_BUDGET       the `b <= budget_cap` gate (default 4).
+#   SORTNETOPT_ENDGAME_AUDIT        audit mode (default off); see above.
+#
+# ---------------------------------------------------------------------------
+# SUSPICIOUS / NOTEWORTHY: E1's gate looks structurally unreachable here
+#
+# `Search::improve` returns immediately, before any successor generation, once
+# `state.bounds[0] == state.bounds[1]`. Every unsorted state's `bounds[0]` is
+# seeded to (and never drops below) 1 from its very first synthesized default
+# in `StateMap::get`. Therefore `state.bounds[1] == 1` for a state that reaches
+# the successor-generation code would require `state.bounds[0] < 1`, which
+# cannot happen -- so `state.bounds[0] == state.bounds[1] == 1` and the early
+# return already fired, in this call or an earlier one (both the fixpoint
+# loop's own `combined_upper_bound` assignment and the extremal-channel-
+# pruning path re-check `bounds[0] == bounds[1]` immediately after writing
+# `bounds[1]`, so bounds[1] can never visibly reach 1 without an immediate
+# return). Measured: `endgame_e1_states == 0` in every one of this patch's
+# acceptance runs (n = 7, 8, 9, several seeds each). E1 is implemented and
+# unit-tested in isolation regardless -- it is a correct, sound filter, simply
+# one this particular engine's control flow appears never to hand a live
+# opportunity to fire on. This is worth an independent look before relying on
+# it in a lower-memory / different-structured search variant where the b == 1
+# gate might actually be reachable.
+#
+diff -ruN a/src/instrument.rs b/src/instrument.rs
+--- a/src/instrument.rs
++++ b/src/instrument.rs
+@@ -254,7 +254,130 @@
+ /// be 0; a nonzero value is a soundness bug in Lemma M and the process panics
+ /// before this counter can be reported.
+ pub static FILTER_MATCH_AUDIT_VIOLATIONS: AtomicU64 = AtomicU64::new(0);
++
++// --- Endgame successor filters (`SORTNETOPT_ENDGAME`, `src/search/endgame.rs`) --
++//
++// All zero, and never touched, unless `SORTNETOPT_ENDGAME` is set (see
++// `search::endgame::enabled`). `endgame_expansions_total` /
++// `endgame_gate_reached` / `endgame_upper_hist` / `endgame_lower_hist` are the
++// only four recorded unconditionally whenever the flag *is* set, i.e. even if
++// the gate (`state.bounds[1] <= endgame::budget_cap()`) never actually fires
++// for a given call; the rest are only touched once the gate fires.
++
++/// `Search::improve` calls that reached the successor-expansion code (i.e.
++/// past the sorted / closed-interval / extremal-pruning / huffman early
++/// returns), once `SORTNETOPT_ENDGAME` is set.
++pub static ENDGAME_EXPANSIONS_TOTAL: AtomicU64 = AtomicU64::new(0);
++/// ... of which the parent's stored upper bound `state.bounds[1]` was
++/// `<= endgame::budget_cap()`, i.e. the filters were actually consulted.
++pub static ENDGAME_GATE_REACHED: AtomicU64 = AtomicU64::new(0);
++/// Gate-reached expansions where `state.bounds[1] == 1` and Theorem E1's
++/// weight-class precondition held, so the unique sorting comparator was
++/// computed (outside audit mode, this also means the whole `i, j` double
++/// loop was skipped for that call).
++pub static ENDGAME_E1_STATES: AtomicU64 = AtomicU64::new(0);
++/// `(i, j)` pairs `Search::improve`'s ordinary double loop would have tried
++/// (`channels * (channels - 1) / 2`, minus the one pair E1 keeps) that were
++/// never enumerated because E1's fast path replaced the loop outright.
++pub static ENDGAME_E1_PAIRS_SKIPPED: AtomicU64 = AtomicU64::new(0);
++/// Successors rejected by the E2 (halving) filter at `state.bounds[1] >= 2`.
++pub static ENDGAME_E2_REJECTED: AtomicU64 = AtomicU64::new(0);
++/// Successors rejected by the E4 (live-support budget) filter at
++/// `state.bounds[1] >= 2`.
++pub static ENDGAME_E4_REJECTED: AtomicU64 = AtomicU64::new(0);
++/// Times a filtered enumeration attempt (E1 finding no valid pair, or E2/E4
++/// rejecting every successor) would have left `Edges` empty and the code
++/// fell back to the full unfiltered double loop instead. Always sound; see
++/// `search::endgame`'s module doc comment. Expected to be rare-to-never in a
++/// correct build -- a nonzero value is not itself a bug (both filters are
++/// merely *necessary* conditions, not exact), but a value close to
++/// `endgame_gate_reached` would indicate the filters are not discriminating
++/// in this run's regime.
++pub static ENDGAME_EMPTY_FALLBACK: AtomicU64 = AtomicU64::new(0);
++
++/// Bucket count for [`ENDGAME_UPPER_HIST`] / [`ENDGAME_LOWER_HIST`]. Every
++/// bound value this engine ever stores fits well inside this (the widest
++/// `known_bounds` entry is 45, at `MAX_CHANNELS` = 13); the top bucket is a
++/// defensive catch-all via `.min(ENDGAME_HIST_BUCKETS - 1)`; see
++/// `record_endgame_hist`.
++pub const ENDGAME_HIST_BUCKETS: usize = 64;
+ 
++/// Histogram, indexed by `state.bounds[1]` (clamped to the top bucket), of
++/// every successor-expansion event's *parent* upper bound, recorded
++/// unconditionally whenever `SORTNETOPT_ENDGAME` is set (regardless of
++/// whether the gate fires). This is the headline measurement of the whole
++/// feature: what fraction of the search's successor expansions are anywhere
++/// near the sorted end.
++pub static ENDGAME_UPPER_HIST: [AtomicU64; ENDGAME_HIST_BUCKETS] = [
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++];
++/// Sibling of [`ENDGAME_UPPER_HIST`], indexed by `state.bounds[0]`.
++pub static ENDGAME_LOWER_HIST: [AtomicU64; ENDGAME_HIST_BUCKETS] = [
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
++];
++
++#[inline]
++fn record_endgame_hist_into(hist: &[AtomicU64; ENDGAME_HIST_BUCKETS], value: u8) {
++    let index = (value as usize).min(ENDGAME_HIST_BUCKETS - 1);
++    hist[index].fetch_add(1, Relaxed);
++}
++
++#[inline]
++pub fn record_endgame_upper_hist(value: u8) {
++    record_endgame_hist_into(&ENDGAME_UPPER_HIST, value);
++}
++
++#[inline]
++pub fn record_endgame_lower_hist(value: u8) {
++    record_endgame_hist_into(&ENDGAME_LOWER_HIST, value);
++}
++
++fn endgame_hist_snapshot(hist: &[AtomicU64; ENDGAME_HIST_BUCKETS]) -> Vec<u64> {
++    hist.iter().map(|counter| counter.load(Relaxed)).collect()
++}
++
++fn json_u64_array(values: &[u64]) -> String {
++    let mut out = String::from("[");
++    for (index, value) in values.iter().enumerate() {
++        if index > 0 {
++            out.push_str(", ");
++        }
++        let _ = write!(out, "{}", value);
++    }
++    out.push(']');
++    out
++}
++
+ // --- TIER2b: checkpoint / restart --------------------------------------------
+ 
+ /// Snapshots successfully written (periodic plus the final one).
+@@ -988,6 +1111,34 @@
+         (
+             "same_shell_chain_starts",
+             SAME_SHELL_CHAIN_STARTS.load(Relaxed),
++        ),
++        // Endgame (`SORTNETOPT_ENDGAME`): config echoes, like
++        // `shell_stats_enabled` above, so a run's own instrument output
++        // records the configuration it was taken under.
++        ("endgame_enabled", crate::search::endgame::enabled() as u64),
++        (
++            "endgame_budget_cap",
++            crate::search::endgame::budget_cap() as u64,
++        ),
++        (
++            "endgame_audit_enabled",
++            crate::search::endgame::audit_enabled() as u64,
++        ),
++        (
++            "endgame_expansions_total",
++            ENDGAME_EXPANSIONS_TOTAL.load(Relaxed),
++        ),
++        ("endgame_gate_reached", ENDGAME_GATE_REACHED.load(Relaxed)),
++        ("endgame_e1_states", ENDGAME_E1_STATES.load(Relaxed)),
++        (
++            "endgame_e1_pairs_skipped",
++            ENDGAME_E1_PAIRS_SKIPPED.load(Relaxed),
++        ),
++        ("endgame_e2_rejected", ENDGAME_E2_REJECTED.load(Relaxed)),
++        ("endgame_e4_rejected", ENDGAME_E4_REJECTED.load(Relaxed)),
++        (
++            "endgame_empty_fallback",
++            ENDGAME_EMPTY_FALLBACK.load(Relaxed),
+         ),
+     ]
+ }
+@@ -1194,6 +1345,20 @@
+                 json_shell_census(&shell_entries)
+             );
+         }
++        // Endgame (`SORTNETOPT_ENDGAME`): the headline output of the whole
++        // feature. Always emitted (all-zero when the flag is unset), so a
++        // diff against a pre-endgame `instrument.json` shows only new,
++        // zero-valued keys -- the G1 inertness contract.
++        let _ = writeln!(
++            out,
++            "  \"endgame_upper_hist\": {},",
++            json_u64_array(&endgame_hist_snapshot(&ENDGAME_UPPER_HIST))
++        );
++        let _ = writeln!(
++            out,
++            "  \"endgame_lower_hist\": {},",
++            json_u64_array(&endgame_hist_snapshot(&ENDGAME_LOWER_HIST))
++        );
+         match SEED_META.lock().unwrap().clone() {
+             Some(seed) => {
+                 let _ = writeln!(
+diff -ruN a/src/search.rs b/src/search.rs
+--- a/src/search.rs
++++ b/src/search.rs
+@@ -19,6 +19,7 @@
+ // dependency-free SHA-256 this module already carries and unit-tests against
+ // the FIPS 180-4 vectors. No item's visibility inside the module changed.
+ pub mod checkpoint;
++pub mod endgame;
+ mod states;
+ mod subsume;
+ 
+@@ -380,12 +381,138 @@
+             None
+         };
+ 
+-        for i in 0..output_set.channels() {
+-            for j in 0..i {
+-                let mut target = output_set.to_owned();
+-                if target.apply_comparator([i, j]) {
+-                    instrument::bump(&instrument::SUCCESSORS_GENERATED);
++        // Endgame (`SORTNETOPT_ENDGAME`, `src/search/endgame.rs`): E1, E2, E4
++        // successor filters. `endgame_enabled` gates the master switch;
++        // `endgame_gate` additionally requires the parent's own stored upper
++        // bound to be small (`state.bounds[1] <= endgame::budget_cap()`,
++        // default 4) -- see `endgame`'s module doc for why this is sound.
++        // With `SORTNETOPT_ENDGAME` unset, `endgame_enabled` is `false`, every
++        // branch below collapses to the pre-patch double loop, and no
++        // `endgame::` function is ever called.
++        let endgame_enabled = endgame::enabled();
++        if endgame_enabled {
++            instrument::bump(&instrument::ENDGAME_EXPANSIONS_TOTAL);
++            instrument::record_endgame_upper_hist(state.bounds[1]);
++            instrument::record_endgame_lower_hist(state.bounds[0]);
++        }
++
++        let endgame_gate = endgame_enabled && state.bounds[1] <= endgame::budget_cap();
++        if endgame_gate {
++            instrument::bump(&instrument::ENDGAME_GATE_REACHED);
++        }
++        let endgame_audit = endgame_gate && endgame::audit_enabled();
++        let endgame_bound = state.bounds[1];
++
++        // E1 fast path: only taken outside audit mode, so audit mode always
++        // falls through to the general double loop below (which handles E1
++        // as a diagnostic-only overlay in that case -- see
++        // `endgame_e1_audit_pair`). Skips the whole `i, j` double loop.
++        let mut endgame_e1_handled = false;
++        if endgame_gate && !endgame_audit && endgame_bound == 1 && !output_set.is_sorted() {
++            match endgame::bound1_unique_pair(output_set) {
++                Some([i, j]) => {
++                    instrument::bump(&instrument::ENDGAME_E1_STATES);
++                    let total_pairs =
++                        (output_set.channels() * output_set.channels().saturating_sub(1)) / 2;
++                    instrument::add(
++                        &instrument::ENDGAME_E1_PAIRS_SKIPPED,
++                        total_pairs.saturating_sub(1) as u64,
++                    );
++
++                    let mut target = output_set.to_owned();
++                    if target.apply_comparator([i, j]) {
++                        instrument::bump(&instrument::SUCCESSORS_GENERATED);
++
++                        target.canonicalize(true);
++
++                        let same_shell_run = match parent_shell {
++                            Some((parent_width, parent_popcount)) => {
++                                instrument::record_shell_edge(
++                                    parent_width,
++                                    parent_popcount,
++                                    target.channels(),
++                                    target.len(),
++                                    same_shell_run,
++                                )
++                            }
++                            None => 0,
++                        };
++
++                        edges.add_edge(self, target, same_shell_run, true);
++                    }
++                    endgame_e1_handled = true;
++                }
++                None => {
++                    // Theorem E1's structural precondition failed to hold --
++                    // see `endgame::bound1_unique_pair`'s doc comment for why
++                    // a correct caller should never observe this. Fall back
++                    // to the unfiltered double loop below rather than risk
++                    // an empty `Edges`.
++                    instrument::bump(&instrument::ENDGAME_EMPTY_FALLBACK);
++                }
++            }
++        }
+ 
++        if !endgame_e1_handled {
++            // Audit-only overlay for E1: the fast path above was skipped
++            // specifically because audit mode is on (or because it isn't a
++            // `b == 1` state at all, in which case this stays `None`).
++            // Computed once, outside the loop.
++            let endgame_e1_audit_pair: Option<Option<[usize; 2]>> =
++                if endgame_audit && endgame_bound == 1 && !output_set.is_sorted() {
++                    let pair = endgame::bound1_unique_pair(output_set);
++                    if pair.is_some() {
++                        instrument::bump(&instrument::ENDGAME_E1_STATES);
++                    }
++                    Some(pair)
++                } else {
++                    None
++                };
++
++            let endgame_e24_active = endgame_gate && endgame_bound >= 2;
++
++            let channels = output_set.channels();
++
++            let mut endgame_successors_generated = 0u64;
++            let mut endgame_e2_rejected = 0u64;
++            let mut endgame_e4_rejected = 0u64;
++            let mut endgame_any_kept = false;
++
++            for i in 0..channels {
++                for j in 0..i {
++                    let mut target = output_set.to_owned();
++                    if !target.apply_comparator([i, j]) {
++                        continue;
++                    }
++                    endgame_successors_generated += 1;
++
++                    let mut endgame_keep = true;
++
++                    if let Some(e1_pair) = endgame_e1_audit_pair {
++                        // Pure diagnostic: never skips `add_edge`, since
++                        // audit mode must use the unfiltered set as its
++                        // actual answer.
++                        endgame_keep = e1_pair == Some([i, j]);
++                    } else if endgame_e24_active {
++                        if !endgame::halving_ok(target.as_ref(), endgame_bound) {
++                            endgame_e2_rejected += 1;
++                            endgame_keep = false;
++                        }
++                        if !endgame::live_budget_ok(target.as_ref(), endgame_bound) {
++                            endgame_e4_rejected += 1;
++                            endgame_keep = false;
++                        }
++                    }
++
++                    endgame_any_kept |= endgame_keep;
++
++                    if !endgame_keep && !endgame_audit {
++                        // The whole point of E2/E4: skip `canonicalize` and
++                        // the memo lookup/insert inside `add_edge` for a
++                        // successor the filter proves cannot be optimal.
++                        continue;
++                    }
++
+                     target.canonicalize(true);
+ 
+                     // Objective 1: this is the "comparator-successor edge"
+@@ -407,12 +534,88 @@
+                         None => 0,
+                     };
+ 
+-                    edges.add_edge(self, target, same_shell_run);
++                    edges.add_edge(self, target, same_shell_run, endgame_keep);
++                }
++            }
++
++            instrument::add(
++                &instrument::SUCCESSORS_GENERATED,
++                endgame_successors_generated,
++            );
++            if endgame_e1_audit_pair.is_none() && endgame_e24_active {
++                instrument::add(&instrument::ENDGAME_E2_REJECTED, endgame_e2_rejected);
++                instrument::add(&instrument::ENDGAME_E4_REJECTED, endgame_e4_rejected);
++            }
++
++            if endgame_e24_active && !endgame_audit && !endgame_any_kept {
++                // Every successor was rejected by E2/E4 above: `edges` is
++                // still empty (nothing was added -- see the `continue`
++                // above). Fall back to the full unfiltered enumeration,
++                // exactly the pre-patch double loop, which always produces
++                // at least one successor for an unsorted set.
++                instrument::bump(&instrument::ENDGAME_EMPTY_FALLBACK);
++
++                let mut fallback_successors_generated = 0u64;
++
++                for i in 0..channels {
++                    for j in 0..i {
++                        let mut target = output_set.to_owned();
++                        if target.apply_comparator([i, j]) {
++                            fallback_successors_generated += 1;
++
++                            target.canonicalize(true);
++
++                            let same_shell_run = match parent_shell {
++                                Some((parent_width, parent_popcount)) => {
++                                    instrument::record_shell_edge(
++                                        parent_width,
++                                        parent_popcount,
++                                        target.channels(),
++                                        target.len(),
++                                        same_shell_run,
++                                    )
++                                }
++                                None => 0,
++                            };
++
++                            edges.add_edge(self, target, same_shell_run, true);
++                        }
++                    }
+                 }
++
++                instrument::add(
++                    &instrument::SUCCESSORS_GENERATED,
++                    fallback_successors_generated,
++                );
+             }
+         }
+ 
+         loop {
++            if endgame_audit {
++                // Pure observer: recomputed every pass because `edges`'
++                // per-target `state` is refined by `edges.improve_next(...)`
++                // at the bottom of this loop. Soundness claim under audit
++                // (`FILTER_AUDIT_VIOLATIONS` must stay 0): the minimum
++                // `bounds[0]` over the successors the filters would have
++                // kept must equal the minimum over every successor, at every
++                // point in the fixpoint. A mismatch means some filter
++                // excluded the (only) successor currently carrying the
++                // smallest known lower bound -- a soundness bug.
++                let endgame_kept_min = edges.states_kept().map(|s| s.bounds[0]).min();
++                let endgame_all_min = edges.states().map(|s| s.bounds[0]).min();
++                if endgame_kept_min != endgame_all_min {
++                    instrument::bump(&instrument::FILTER_AUDIT_VIOLATIONS);
++                    log::error!(
++                        "endgame audit violation: channels={} packed={:?} parent_bound={} kept_min={:?} all_min={:?}",
++                        output_set.channels(),
++                        output_set.packed(),
++                        endgame_bound,
++                        endgame_kept_min,
++                        endgame_all_min
++                    );
++                }
++            }
++
+             let combined_upper_bound =
+                 edges.states().map(|state| state.bounds[1]).min().unwrap() + 1;
+ 
+@@ -486,7 +689,7 @@
+ 
+                 // Extremal-channel pruning: always a width-drop edge, never
+                 // same-shell, so the run is always 0.
+-                pol_ids.push(edges.add_edge(self, target, 0));
++                pol_ids.push(edges.add_edge(self, target, 0, true));
+             }
+         }
+ 
+@@ -557,40 +760,75 @@
+     /// is off (every caller passes a literal `0` in that case) or when the
+     /// edge is not same-shell.
+     same_shell_run: u32,
++    /// Endgame (`SORTNETOPT_ENDGAME`): whether some `(i, j)` pair that maps
++    /// to this target passed the active filter (E1 in audit mode, or E2/E4).
++    /// `true` whenever no filter was consulted for the edge that produced
++    /// this target (baseline behaviour, and every `improve_huffman` edge),
++    /// so this field only ever *narrows* the kept set relative to "every
++    /// edge", never falsely widens it. Two distinct `(i, j)` pairs can
++    /// canonicalize to the same target; if *either* passed the filter, the
++    /// target counts as kept (`|=`, not overwrite -- see `add_edge`).
++    endgame_kept: bool,
+ }
+ 
+ impl Edges {
+-    fn add_edge(&mut self, search: &Search, target: OutputSet, same_shell_run: u32) -> usize {
++    fn add_edge(
++        &mut self,
++        search: &Search,
++        target: OutputSet,
++        same_shell_run: u32,
++        endgame_kept: bool,
++    ) -> usize {
+         let target = Arc::new(target);
+ 
+-        let targets = &mut self.targets;
+-        let active_ids = &mut self.active_ids;
+-        match self.target_to_id.entry(target.clone()) {
+-            Entry::Occupied(entry) => *entry.get(),
+-            Entry::Vacant(entry) => {
+-                let id = targets.len();
+-                let state = search.states.get(target.as_ref().as_ref());
+-                let len = target.len();
+-                targets.push(EdgeTarget {
+-                    output_set: target,
+-                    state,
+-                    len,
+-                    running: None,
+-                    same_shell_run,
+-                });
+-                if state.bounds[0] != state.bounds[1] {
+-                    active_ids.push(id);
++        let id = {
++            let targets = &mut self.targets;
++            let active_ids = &mut self.active_ids;
++            match self.target_to_id.entry(target.clone()) {
++                Entry::Occupied(entry) => *entry.get(),
++                Entry::Vacant(entry) => {
++                    let id = targets.len();
++                    let state = search.states.get(target.as_ref().as_ref());
++                    let len = target.len();
++                    targets.push(EdgeTarget {
++                        output_set: target,
++                        state,
++                        len,
++                        running: None,
++                        same_shell_run,
++                        endgame_kept: false,
++                    });
++                    if state.bounds[0] != state.bounds[1] {
++                        active_ids.push(id);
++                    }
++                    entry.insert(id);
++                    id
+                 }
+-                entry.insert(id);
+-                id
+             }
++        };
++
++        if endgame_kept {
++            self.targets[id].endgame_kept = true;
+         }
++
++        id
+     }
+ 
+     fn states<'a>(&'a self) -> impl Iterator<Item = State> + 'a {
+         self.targets.iter().map(|target| target.state)
+     }
+ 
++    /// Endgame (`SORTNETOPT_ENDGAME_AUDIT`): the subset of [`Edges::states`]
++    /// the active filter would have kept. Only meaningful (and only
++    /// consulted) in audit mode; see the fixpoint-loop check in
++    /// `Search::improve`.
++    fn states_kept<'a>(&'a self) -> impl Iterator<Item = State> + 'a {
++        self.targets
++            .iter()
++            .filter(|target| target.endgame_kept)
++            .map(|target| target.state)
++    }
++
+     fn state(&self, id: usize) -> State {
+         self.targets[id].state
+     }
+diff -ruN a/src/search/endgame.rs b/src/search/endgame.rs
+--- a/src/search/endgame.rs
++++ b/src/search/endgame.rs
+@@ -0,0 +1,390 @@
++//! Endgame successor filters (`SORTNETOPT_ENDGAME`).
++//!
++//! Reference model / authority for the semantics ported here:
++//! `tools/verify_endgame.py`, functions `f_bound1_unique` and `f_halving`
++//! (E1, E2). The third filter (E3/E4, "live support") was corrected mid-patch
++//! from an earlier "dirty channel / unsettled pair" conjecture that could not
++//! be proven; see [`live_support`]'s doc comment for the proof actually used.
++//!
++//! # Soundness of the gate
++//!
++//! Every filter here is only consulted when the *parent* state's stored
++//! upper bound `b = state.bounds[1]` is `<= SORTNETOPT_ENDGAME_BUDGET`
++//! (default 4). `b` is always a sound upper bound on `bound(X)` (never
++//! required to be tight). If the true value is `m <= b`, any optimal
++//! successor `Y` has `bound(Y) = m - 1 <= b - 1`, so a test parameterised by
++//! `b - 1` can never exclude every optimal successor. This is why every
++//! filter function below takes the *parent's* `b`, not `bound(X)` itself,
++//! which the engine does not know exactly.
++//!
++//! # Filters
++//!
++//! * **E1** ([`bound1_unique_pair`]): when `b == 1` and `X` is not sorted,
++//!   `bound(X)` is exactly 1 (see the gate reasoning above plus the note in
++//!   `search.rs` on why `state.bounds[0] >= 1` for every unsorted state), and
++//!   the sorting comparator is uniquely determined by `X`'s Hamming-weight
++//!   class structure. When the theorem's structural precondition holds, the
++//!   whole `i, j` double loop `Search::improve` normally runs can be replaced
++//!   by trying that one pair.
++//! * **E2** ([`halving_ok`]): a comparator is at most 2-to-1 within each
++//!   Hamming weight class, so `bound(X) >= ceil(log2 max_l |X_l|)`. A
++//!   successor `Y` is admissible only if `max_l |Y_l| <= 2^(b-1)`.
++//! * **E3/E4** ([`live_support`], [`live_budget_ok`]): the *live support*
++//!   `L(Z)` is the set of channels on which two vectors of **equal Hamming
++//!   weight** in `Z` disagree. Every channel in `L(Z)` must be touched by
++//!   some comparator of any network sorting `Z` (proof below), and each
++//!   comparator touches exactly 2 channels, so `bound(Z) >= ceil(|L(Z)| / 2)`.
++//!   A successor `Y` is admissible only if `|L(Y)| <= 2 * (b - 1)`.
++//!
++//!   Proof that every channel of `L(Z)` is touched: comparator networks
++//!   preserve Hamming weight, and `OutputSet::is_sorted` accepts `Z` iff `Z`
++//!   has at most one vector per weight. Suppose network `N` never touches
++//!   channel `p`; then `N(v)_p = v_p` for every `v`. Take `u, v` in `Z` of
++//!   equal weight with `u_p != v_p` (this is exactly what `p in L(Z)`
++//!   means); `N(u)` and `N(v)` then have equal weight too, so if `N(Z)` is
++//!   sorted, `N(u) = N(v)` -- but they still disagree at channel `p` (`N`
++//!   left it alone), a contradiction. So every channel of `L(Z)` is touched
++//!   by every sorting network for `Z`, hence by some comparator of it.
++//!
++//! Composite policy (mirrors `verify_endgame.py`'s `f_e1_e2_e4`): at `b == 1`
++//! only E1 applies (and replaces enumeration entirely); at `b >= 2`, E2 and
++//! E4 both apply to each successor found by the ordinary double loop.
++//!
++//! # Environment
++//!
++//! * `SORTNETOPT_ENDGAME` (default off): master switch. Unset, this module's
++//!   functions are never called from `search.rs` and the successor loop is
++//!   byte-for-byte the pre-patch code.
++//! * `SORTNETOPT_ENDGAME_BUDGET` (default 4): the `b <= budget_cap` gate.
++//! * `SORTNETOPT_ENDGAME_AUDIT` (default off): builds the *unfiltered*
++//!   successor set (so the search's answer is never affected by the filters)
++//!   while also recording which successors the filters would have kept, and
++//!   checks per iteration of `Search::improve`'s fixpoint loop that the
++//!   lower-bound minimum over the kept subset equals the minimum over the
++//!   full set. A mismatch bumps the shared `FILTER_AUDIT_VIOLATIONS` counter
++//!   (the same one TIER1 / Lemma M use) and logs an error; it must always
++//!   stay 0.
++//!
++//! # Empty-admissible-set handling
++//!
++//! `Search::improve`'s fixpoint loop computes
++//! `edges.states().map(|s| s.bounds[i]).min().unwrap()`, which panics on an
++//! empty `Edges`. Before this patch that was unreachable (an unsorted set
++//! always has a non-redundant comparator), but a filter that turns out to
++//! exclude every candidate could make it reachable. Every filtered
++//! enumeration path below therefore falls back to the full unfiltered
++//! double loop whenever the filtered attempt would leave `Edges` empty, and
++//! bumps `endgame_empty_fallback`. The fallback is always sound (it is
++//! exactly the pre-patch behaviour for that one call), so it is preferred
++//! over any cleverer in-place lower-bound bookkeeping.
++
++use std::{env, iter::repeat, sync::OnceLock};
++
++use crate::output_set::{OutputSet, WVec};
++
++fn env_flag(name: &str) -> bool {
++    match env::var(name) {
++        Ok(val) => {
++            let val = val.trim().to_ascii_lowercase();
++            val == "1" || val == "true" || val == "yes"
++        }
++        Err(_) => false,
++    }
++}
++
++static ENABLED: OnceLock<bool> = OnceLock::new();
++
++/// Whether `SORTNETOPT_ENDGAME` is set, read from the environment exactly
++/// once. Default off, so an unset environment never calls into this module
++/// from `search.rs`.
++pub fn enabled() -> bool {
++    *ENABLED.get_or_init(|| env_flag("SORTNETOPT_ENDGAME"))
++}
++
++static BUDGET_CAP: OnceLock<u8> = OnceLock::new();
++
++/// `SORTNETOPT_ENDGAME_BUDGET`, read from the environment exactly once.
++/// Default 4. The filters are only consulted for a parent whose stored
++/// upper bound is `<= budget_cap()`.
++pub fn budget_cap() -> u8 {
++    *BUDGET_CAP.get_or_init(|| {
++        env::var("SORTNETOPT_ENDGAME_BUDGET")
++            .ok()
++            .and_then(|v| v.trim().parse::<u8>().ok())
++            .unwrap_or(4)
++    })
++}
++
++static AUDIT: OnceLock<bool> = OnceLock::new();
++
++/// Whether `SORTNETOPT_ENDGAME_AUDIT` is set, read from the environment
++/// exactly once. Default off. See the module doc comment for what audit
++/// mode does.
++pub fn audit_enabled() -> bool {
++    *AUDIT.get_or_init(|| env_flag("SORTNETOPT_ENDGAME_AUDIT"))
++}
++
++/// THEOREM E1. `set` must satisfy `state.bounds[1] == 1` and be unsorted at
++/// the call site (both preconditions are the caller's responsibility to
++/// check; this function does not re-check them, mirroring
++/// `verify_endgame.py::f_bound1_unique`'s use of its `b` argument only as a
++/// precondition gate).
++///
++/// Groups `set`'s vectors by Hamming weight. Returns `Some([i, j])` (engine
++/// convention: `i > j`, matching how `Search::improve`'s `i in 0..channels,
++/// j in 0..i` double loop enumerates pairs -- MIN always goes to the
++/// lower-indexed channel) for the unique comparator that sorts `set`, or
++/// `None` if the structural precondition the theorem requires does not
++/// actually hold (every weight class of size `<= 2`, all size-2 classes
++/// differing in exactly one, common, channel pair): a weight class bigger
++/// than 2, a size-2 class whose two vectors differ in something other than
++/// exactly 2 channels, or two size-2 classes disagreeing on which pair they
++/// differ in, are all `None`. `None` proves `bound(X) >= 2`, contradicting
++/// the `state.bounds[1] == 1` precondition, so in a correct caller this is
++/// only ever a defensive case (see the module doc comment's fallback note).
++pub fn bound1_unique_pair(set: OutputSet<&[bool]>) -> Option<[usize; 2]> {
++    let channels = set.channels();
++    let bitmap = set.bitmap();
++
++    let mut first: WVec<Option<usize>> = repeat(None).take(channels + 1).collect();
++    let mut second: WVec<Option<usize>> = repeat(None).take(channels + 1).collect();
++
++    for (index, &present) in bitmap.iter().enumerate() {
++        if !present {
++            continue;
++        }
++        let weight = index.count_ones() as usize;
++        if first[weight].is_none() {
++            first[weight] = Some(index);
++        } else if second[weight].is_none() {
++            second[weight] = Some(index);
++        } else {
++            // Weight class of size > 2.
++            return None;
++        }
++    }
++
++    let mut pair: Option<[usize; 2]> = None;
++
++    for weight in 0..=channels {
++        if let (Some(u), Some(v)) = (first[weight], second[weight]) {
++            let diff = u ^ v;
++            if diff.count_ones() != 2 {
++                return None;
++            }
++            let mut bits = [0usize; 2];
++            let mut found = 0;
++            for c in 0..channels {
++                if diff & (1 << c) != 0 {
++                    bits[found] = c;
++                    found += 1;
++                }
++            }
++            // `c` ascends, so `bits[0] < bits[1]`; the engine convention is
++            // `[i, j]` with `i > j` (MIN to the lower-indexed channel).
++            let candidate = [bits[1], bits[0]];
++            match pair {
++                None => pair = Some(candidate),
++                Some(existing) if existing == candidate => {}
++                Some(_) => return None,
++            }
++        }
++    }
++
++    pair
++}
++
++/// THEOREM E2. `target` is a successor set (post-`apply_comparator`,
++/// pre-`canonicalize`); `b` is the *parent's* stored upper bound (not
++/// `target`'s). A comparator is at most 2-to-1 within a Hamming weight
++/// class, so `bound(target) >= ceil(log2 max_l |target_l|)`; since any
++/// optimal successor has `bound(target) <= b - 1`, `target` can only be
++/// optimal if `max_l |target_l| <= 2^(b-1)`.
++///
++/// Returns `true` (no rejection) once `b - 1 >= 31`, since `1 << 31` already
++/// exceeds every weight-class size this engine can ever produce
++/// (`MAX_CHANNELS <= 13`, so a class has at most `2^13` vectors) -- the gate
++/// in `search.rs` (`b <= budget_cap()`, default 4) already keeps `b` far
++/// below this, so the check is dead weight kept only as a defensive cap
++/// against a future `SORTNETOPT_ENDGAME_BUDGET` misconfiguration.
++pub fn halving_ok(target: OutputSet<&[bool]>, b: u8) -> bool {
++    if b == 0 {
++        return true;
++    }
++    let shift = (b - 1) as u32;
++    if shift >= 31 {
++        return true;
++    }
++    let cap = 1usize << shift;
++    target
++        .weight_histogram()
++        .iter()
++        .all(|&count| count <= cap)
++}
++
++/// The *live support* `L(Z)`: the bitmask of channels on which two vectors
++/// of equal Hamming weight in `Z` disagree. See the module doc comment for
++/// the proof that `bound(Z) >= ceil(|L(Z)| / 2)`.
++///
++/// Computed in one pass over the bitmap: for each Hamming weight `l`, let
++/// `or_l` / `and_l` be the bitwise OR / AND of every present vector of
++/// weight `l` (as a `channels`-bit value); `L(Z) = OR_l (or_l & !and_l)`.
++/// A weight class with 0 or 1 members contributes nothing (`or_l` is either
++/// `0`, or equal to `and_l`, in both cases `or_l & !and_l == 0`), matching
++/// the definition ("two vectors ... that disagree").
++pub fn live_support(target: OutputSet<&[bool]>) -> usize {
++    let channels = target.channels();
++    let all_mask = if channels == 0 {
++        0
++    } else {
++        (1usize << channels) - 1
++    };
++
++    let mut or_l: WVec<usize> = repeat(0usize).take(channels + 1).collect();
++    let mut and_l: WVec<usize> = repeat(all_mask).take(channels + 1).collect();
++
++    for (index, &present) in target.bitmap().iter().enumerate() {
++        if !present {
++            continue;
++        }
++        let weight = index.count_ones() as usize;
++        or_l[weight] |= index;
++        and_l[weight] &= index;
++    }
++
++    let mut live_mask = 0usize;
++    for weight in 0..=channels {
++        live_mask |= or_l[weight] & !and_l[weight];
++    }
++
++    (live_mask & all_mask).count_ones() as usize
++}
++
++/// THEOREM E4 (as a filter, using [`live_support`]). `target` is a successor
++/// set (post-`apply_comparator`, pre-`canonicalize`); `b` is the *parent's*
++/// stored upper bound. `target` can only be optimal if
++/// `|L(target)| <= 2 * (b - 1)` -- each comparator of an optimal
++/// `(b - 1)`-comparator network for `target` clears at most 2 channels from
++/// its live support.
++pub fn live_budget_ok(target: OutputSet<&[bool]>, b: u8) -> bool {
++    if b == 0 {
++        return true;
++    }
++    let limit = 2 * (b as usize - 1);
++    live_support(target) <= limit
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn set_from_values(channels: usize, values: &[usize]) -> OutputSet<Vec<bool>> {
++        let mut bitmap = vec![false; 1 << channels];
++        for &v in values {
++            bitmap[v] = true;
++        }
++        OutputSet::from_bitmap(channels, bitmap)
++    }
++
++    /// Hand-derived example (see the module's design notes): channels = 3,
++    /// X = {000, 001, 010, 011, 111} (values 0,1,2,3,7). Weight-1 class is
++    /// {001, 010} = {1, 2}; every other weight class is a singleton.
++    /// `apply_comparator([1, 0])` merges value 1 (channel1=0, channel0=1)
++    /// into value 2 (channel1=1, channel0=0), leaving {0,2,3,7} which is
++    /// sorted (one vector per weight) -- so bound(X) == 1 and [1, 0] is the
++    /// unique sorting comparator.
++    #[test]
++    fn bound1_unique_pair_finds_the_comparator() {
++        let set = set_from_values(3, &[0, 1, 2, 3, 7]);
++        assert_eq!(bound1_unique_pair(set.as_ref()), Some([1, 0]));
++
++        // Sanity: applying it really does sort the set.
++        let mut applied = set.clone();
++        assert!(applied.as_mut().apply_comparator([1, 0]));
++        assert!(applied.as_ref().is_sorted());
++    }
++
++    #[test]
++    fn bound1_unique_pair_rejects_oversized_class() {
++        // Weight-1 class now has 3 members (values 1, 2, 4): not bound 1.
++        let set = set_from_values(3, &[0, 1, 2, 4, 7]);
++        assert_eq!(bound1_unique_pair(set.as_ref()), None);
++    }
++
++    #[test]
++    fn bound1_unique_pair_rejects_inconsistent_pairs() {
++        // Two *different-weight* size-2 classes that disagree on which
++        // channel pair differs, channels = 4:
++        //   weight-1 class {0001, 0010} = {1, 2}: diff 0011 -> pair [1, 0]
++        //   weight-3 class {1110, 1011} = {14, 11}: diff 0101 -> pair [2, 0]
++        // [1,0] != [2,0], so the structural precondition fails.
++        let set = set_from_values(4, &[1, 2, 14, 11]);
++        assert_eq!(bound1_unique_pair(set.as_ref()), None);
++    }
++
++    #[test]
++    fn bound1_unique_pair_rejects_popcount_ne_2() {
++        // Weight-2 class {0011, 1100}: diff = 1111, popcount 4.
++        let set = set_from_values(4, &[0b0011, 0b1100]);
++        assert_eq!(bound1_unique_pair(set.as_ref()), None);
++    }
++
++    #[test]
++    fn halving_ok_matches_max_weight_class() {
++        // channels = 3, weight-1 class has 3 members (values 1,2,4): needs
++        // >= ceil(log2 3) = 2 comparators, so b=2 (cap = 1<<1 = 2) rejects it
++        // and b=3 (cap = 1<<2 = 4) accepts it.
++        let set = set_from_values(3, &[0, 1, 2, 4, 7]);
++        assert!(!halving_ok(set.as_ref(), 2));
++        assert!(halving_ok(set.as_ref(), 3));
++    }
++
++    #[test]
++    fn halving_ok_skips_when_shift_saturates() {
++        let set = set_from_values(3, &[0, 1, 2, 4, 7]);
++        assert!(halving_ok(set.as_ref(), 255));
++    }
++
++    #[test]
++    fn live_support_counts_disagreeing_channels_within_a_weight_class() {
++        // channels = 3, weight-1 class {001, 010} (values 1, 2): OR=011,
++        // AND=000, so both channel 0 and channel 1 are live; channel 2 is
++        // not touched by any weight-1 disagreement and no other class has
++        // >= 2 members, so L = {0, 1}, |L| = 2.
++        let set = set_from_values(3, &[0, 1, 2, 3, 7]);
++        assert_eq!(live_support(set.as_ref()), 2);
++    }
++
++    #[test]
++    fn live_support_zero_when_sorted() {
++        // A genuinely sorted chain: one vector per weight, so every weight
++        // class has < 2 members and L is empty.
++        let set = set_from_values(3, &[0, 1, 3, 7]);
++        assert!(set.as_ref().is_sorted());
++        assert_eq!(live_support(set.as_ref()), 0);
++    }
++
++    #[test]
++    fn live_budget_ok_matches_live_support() {
++        let set = set_from_values(3, &[0, 1, 2, 3, 7]);
++        // live_support == 2, so b-1 must be >= 1, i.e. b >= 2.
++        assert!(!live_budget_ok(set.as_ref(), 1));
++        assert!(live_budget_ok(set.as_ref(), 2));
++    }
++
++    #[test]
++    fn env_defaults_are_off() {
++        // These read real process environment variables; in a default test
++        // run (no SORTNETOPT_ENDGAME* set) they must be off/default, which
++        // is the G1 inertness contract the whole feature depends on.
++        if env::var("SORTNETOPT_ENDGAME").is_err() {
++            assert!(!enabled());
++        }
++        if env::var("SORTNETOPT_ENDGAME_AUDIT").is_err() {
++            assert!(!audit_enabled());
++        }
++        if env::var("SORTNETOPT_ENDGAME_BUDGET").is_err() {
++            assert_eq!(budget_cap(), 4);
++        }
++    }
++}
