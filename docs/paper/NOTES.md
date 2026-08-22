@@ -1,5 +1,15 @@
 # Editorial notes for `docs/paper/audit-paper-draft.md`
 
+> **Status 2026-08-22.** These notes were written for **v0.1**
+> (`audit-paper-draft.md`), now superseded by **v2.0**
+> (`audit-paper-v2.md`). Most of §B still applies to the verifier scripts and
+> remains accurate. Two items have changed status and are marked in place:
+> **§B3 was wrong and is corrected** (the adjudicated labels are
+> S1 = 6|7 = C2, S2 = 5|8 = C1), and **§D item 6 is closed and reversed**.
+> §E's three weakest points survive; §E-1 is now quantified — the proved class
+> covers 22.4 % of the measured census, and 49.6 % of it has no proof by any
+> route. New editorial state lives in `STYLE.md` and `ARTIFACT.md`.
+
 Internal. Everything here is either (a) a discrepancy between the prose reports
 and the verifier code, flagged rather than silently resolved, per the drafting
 brief; (b) an editorial decision the architect may want to overturn; or (c) an
@@ -65,20 +75,30 @@ KD:12/422 give ~0.6 s for `verify_kraft_dispute.py`; measured **1.87 s** wall
 here (a separate agent measured 0.58 s on a warmer run — the difference is
 process startup, not work). **Draft reports the measured full-run numbers.**
 
-### B3. Shape S2's class label — a genuine contradiction
+### B3. Shape class labels — **SUPERSEDED 2026-08-22; the text below was wrong**
 
-VV §5.5 table (VV:499) lists `S2` as class **C1**. The code
-(`verify_huffman2.py:1444`) assigns classes by root split
-`{(5,8): "C1", (6,7): "C2", (4,9): "C3"}`, and S2's root split is **6|7**, so the
-code prints `S2 (C2)`. Verified root splits: S1 5|8, S2 6|7, S3 5|8, S4 6|7,
-S5 4|9, S6 4|9. Everything else in VV's row for S2 (f = 392, deficit 120, nc
-multiset, threshold 7) agrees.
-
-**Code is authoritative: S2 is C2.** The draft does not print per-shape class
-labels, so nothing needed fixing there, but `docs/s13-shape-case-split.md` and
-VV §5.5 should be corrected by whoever owns them. **This changes the C1/C2
-class populations** and therefore any downstream count of "how many shapes are in
-class C1".
+> **CORRECTION.** The paragraph originally recorded here concluded
+> "*Code is authoritative: S2 is C2*", reasoning from
+> `verify_huffman2.py:1444`. That is **wrong**, and it was already wrong when it
+> was written: commit `3823132` (2026-08-18) had adjudicated the tie in the
+> opposite direction. Do **not** follow the original instruction.
+>
+> **The adjudicated record.** The two verifier scripts break the 392-count
+> S1/S2 tie in opposite orders. `tools/verify_shape_case_split.py` is the
+> **designated authority**, and it gives
+>
+> > **S1 = root split 6|7 = class C2; S2 = root split 5|8 = class C1.**
+>
+> `docs/van-voorhis-theory-report.md:498` was corrected accordingly, and
+> `docs/s13-shape-case-split.md:229-234` agrees. The remaining task is the one
+> named in the correction comment: `verify_huffman2.py`'s `admissible_13()`
+> ordering is still unharmonised, and harmonising it changes a published
+> sha256 — decide that before any hash goes to print (internal review I-2).
+>
+> **Effect on the paper.** None. `audit-paper-v2.md` prints no per-shape class
+> label and depends on no shape ordering; §10.7 records the unharmonised
+> ordering as a known artifact defect. A future revision must not reintroduce
+> class labels without consulting `verify_shape_case_split.py`.
 
 ### B4. Two different "deficit" columns in the same run
 
@@ -340,8 +360,12 @@ contribution in verifier 1. (In verifier 2 they are substantial: 115 of 387.)
 5. **The reference list needs real bibliographic data.** Several entries are
    currently identified by the chapter's own short forms (Green (1970A),
    Batcher (1968A), Floyd and Knuth (1970A)) because that is all that is in hand.
-6. **Numbers in `docs/s13-shape-case-split.md` §5/§7 may inherit the S2 class
-   error (B3).** Not in scope for this draft; flagged for whoever owns it.
+6. ~~**Numbers in `docs/s13-shape-case-split.md` §5/§7 may inherit the S2 class
+   error (B3).**~~ **CLOSED / REVERSED 2026-08-22.** There was no S2 error to
+   inherit: `s13-shape-case-split.md` agrees with the adjudicated authority
+   (S1 = 6|7 = C2, S2 = 5|8 = C1). The error was in B3 above, now corrected.
+   What remains open is the `admissible_13()` ordering in
+   `verify_huffman2.py` and the hash decision it forces (I-2).
 7. **`GOAL_STATE.md`'s "Side quest" row** points at
    `docs/s13-lower-bound-note.md` (the "44 bound write-up"). That row is
    superseded by this draft; someone should decide whether to retire it or point

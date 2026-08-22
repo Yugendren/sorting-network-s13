@@ -1,5 +1,37 @@
 # State of the Art: The S(13) Optimal Sorting Network Problem
 
+> ## ⚠ CORRECTION 2026-08-22 — the `44`-seeding recommendation is **WITHDRAWN**, and this survey's bound status is superseded
+>
+> **1. Withdrawn recommendation.** §"Key takeaways" item 6, attack surface
+> **(ii)** — *"starting the successive-approximation DP from the 44 lower bound
+> instead of 43 (the interval to fathom is half as wide)"* — is retired
+> permanently. Do not implement it. The companion recommendation in
+> `docs/sortnetopt-internals.md` is withdrawn under the same banner.
+>
+> **Why.** The audit of van Voorhis (1972) — `docs/kraft-dispute-verdict.md`,
+> `docs/paper/audit-paper-v2.md` — shows that the chapter's equations (5) and
+> (6) are false and that equation (7), the sole route from them to the result,
+> is derived from them and from nothing else. **No correct argument for
+> `P(2,13) ≥ 9`, and hence none for `S(13) ≥ 44`, exists.** A lower-bound seed
+> must be an independently *proved* bound; a too-high seed makes the engine
+> return the seed unproved, i.e. it silently fabricates the answer.
+>
+> **2. Bound status superseded.** Two statements in this file are now known to
+> be the wrong way round and are **not** to be relied on:
+>
+> | line | says | correct as of 2026-08-22 |
+> |---|---|---|
+> | header, "Open problem" | `Current status: 44 <= S(13) <= 45` | **`43 <= S(13) <= 45`.** 43 is the proved floor (the one-value bound, unaffected by the audit); 44 has no correct argument behind it |
+> | ref. 30 | Wikipedia's 43 "is stale" | **Inverted.** Wikipedia's 43 is the correct *published* bound; the 44 is an uncited web-table entry. `S(13) >= 44` has never appeared in a peer-reviewed publication |
+>
+> Item 1 of "Key takeaways" is likewise superseded where it calls writing the 44
+> up rigorously "publishable low-hanging fruit": the argument does not survive
+> being written up, and that negative result is what was published instead.
+>
+> **Scope.** Everything else in this survey — the engineering landscape, the
+> cost model, the field-is-empty finding, the algorithmic trajectory, the venue
+> and tooling scan — is unaffected and remains current.
+
 **Survey date:** 2026-08-17
 **Open problem:** Does a 13-input sorting network require 44 or 45 comparators? Current status: **44 <= S(13) <= 45.**
 
@@ -14,7 +46,7 @@ All claims below are sourced from primary documents (arXiv full texts, GitHub re
 3. **Harder's own estimate for a direct n=13 run of his DP: ">20,000 TB of RAM and proportionally longer" (HN, 2021)** — but his certificate for n=11 has only 12.7M steps versus 2.46B sequence sets explored, a **~195x gap between the work done and the work needed**. He explicitly names *on-line subsumption during search* as the untried idea that could close this gap, plus a *CNF/SAT encoding that exploits the Huffman bound*. Neither has been attempted by anyone, 2021-2026.
 4. **The field is empty.** sortnetopt has 0 forks and no issues; no arXiv paper 2022-2026 attacks S(13) size-optimality; no distributed/BOINC effort exists; no GPU implementation of generate-and-prune or the Huffman-bound DP exists. Any headroom we exploit is uncontested.
 5. **The algorithmic trajectory is violently favorable.** S(9) cost 12 days on 144 cores (2014) -> 29 h on 32 cores (Frasinaru-Raschip matching-based subsumption, 2017/2019) -> 44 min on 16 cores (Harder's sortnetopt-gnp: k-d tree over output sets + bipartite matching) -> **0.5 s / 58 MiB** (Harder's Huffman-bound DP, 2020). Two independent 10^4-10^7x speedups landed within six years, then everyone stopped. S(11) — expected to be out of reach — fell for ~5 CPU-hours of search + 178 GiB RAM on one 24-core box.
-6. **The bottleneck is memory capacity and random access, not FLOPs** (Harder's own diagnosis). Growth in bounded sequence sets is ~12,000x per +2 channels (206,279 at n=9 -> 2.46x10^9 at n=11 -> naive ~3x10^13 at n=13, i.e. petabyte-scale tables). Attack surfaces: (i) on-line subsumption to keep only the ~certificate-sized frontier; (ii) starting the successive-approximation DP from the *44* lower bound instead of 43 (the interval to fathom is half as wide); (iii) out-of-core / sharded canonical-form tables (NVMe, CXL); (iv) exploiting that we only need s(13) >= 45, not the exact value.
+6. **The bottleneck is memory capacity and random access, not FLOPs** (Harder's own diagnosis). Growth in bounded sequence sets is ~12,000x per +2 channels (206,279 at n=9 -> 2.46x10^9 at n=11 -> naive ~3x10^13 at n=13, i.e. petabyte-scale tables). Attack surfaces: (i) on-line subsumption to keep only the ~certificate-sized frontier; (ii) ~~starting the successive-approximation DP from the *44* lower bound instead of 43 (the interval to fathom is half as wide)~~ — **WITHDRAWN 2026-08-22, see the correction banner at the head of this file; there is no proved 44 to seed from, and a too-high seed is returned unproved**; (iii) out-of-core / sharded canonical-form tables (NVMe, CXL); (iv) exploiting that we only need s(13) >= 45, not the exact value.
 7. **GPU precedent exists but transfer is not automatic.** The 9th Dedekind number (2023) — a symmetry-reduced enumeration over monotone Boolean functions, structurally cousin to output-set lattices — took only 5,311 A100 GPU-hours (vs 47,000 FPGA-hours independently). But D(9) was compute-bound with modest memory; the sorting-network DP is memory-bound. GPUs plausibly help the *subsumption/matching* inner loops (bitset ops over 2^13-bit sets are tiny) if the table can be sharded.
 8. **ML can help only in one place: exactness-preserving search guidance.** No learning-based method has even matched the 1995 upper bound of 45 at n=13 (DQN construction is ~6 comparators off optimal already at n=10). But learned branching/ordering inside complete solvers (NeuroCore +10-11% solved UNSAT-heavy benchmarks; Graph-Q-SAT 2-3x fewer iterations; Neuro# orders-of-magnitude on family-trained #SAT) only reorders complete search — train on solved n=9/11 instances, deploy on n=13, soundness untouched. AlphaDev/AlphaTensor/FunSearch/AlphaEvolve are constructors (upper bounds only); AlphaEvolve is the natural off-the-shelf tool for attack (a) since candidate networks are trivially checkable (2^13 = 8,192 vectors).
 9. **Verification is a solved template.** Both proof lines end in machine-checked certificates: Coq-extracted checker for S(9) (27 GB of witnesses, checked in under a week) and Isabelle/HOL-extracted checker for S(11) (2.9 GB certificate, checked in 34 min). Any S(13) result must ship a certificate; Harder's 4-rule derivation system (Triv/PH/Succ/Huffman) is reusable as-is.

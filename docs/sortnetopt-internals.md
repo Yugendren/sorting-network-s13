@@ -1,5 +1,37 @@
 # sortnetopt internals — code archaeology for Track B / M0
 
+> ## ⚠ CORRECTION 2026-08-22 — §"Seeding the bounds table" is **WITHDRAWN**
+>
+> **What is withdrawn.** The recommendation in this document to raise
+> `sortnetopt`'s *lower* bound seed from the universal `1` to **44** for the
+> n = 13 root ("Since S(13) ∈ {44, 45}, seeding `[44, 45]` means a single
+> iteration decides the question"). That recommendation is retired
+> permanently. Do not implement it.
+>
+> **Why.** The recommendation was already gated by this document's own risk
+> analysis: *"The seed must be an independently proved bound. The 44 bound is
+> currently folklore … so using it as a seed requires the write-up in
+> `docs/s13-lower-bound-note.md` to exist and be checked first."* That gate can
+> never open. The audit of van Voorhis (1972) — `docs/kraft-dispute-verdict.md`,
+> `docs/paper/audit-paper-v2.md` — establishes that equations (5) and (6) of the
+> chapter are false, that equation (7) is derived from them and from nothing
+> else, and that consequently **no correct argument for `P(2,13) ≥ 9`, and hence
+> none for `S(13) ≥ 44`, is available**. The precondition is unsatisfiable, so
+> the recommendation is dead, not deferred.
+>
+> **The hazard this closes.** A too-high lower seed produces a *wrong answer
+> silently*: `improve` can close the interval by upper-bound descent and return
+> the seed unproved. Seeding 44 would have produced a fabricated `S(13) ≥ 44`.
+>
+> **What replaces it.** Nothing. The proved floor is `S(13) ≥ 43` (the one-value
+> bound, unaffected by the audit). No lower-bound seeding is authorised under
+> this programme; the lower seed stays at the engine's universal default.
+>
+> **Scope of this banner.** Only the lower-seed recommendation is withdrawn. The
+> rest of this document — the code archaeology, the measured internals, the
+> upper-bound / `MAX_CHANNELS` extension and the other ranked attack surfaces —
+> is unaffected and remains current.
+
 Target: Jannis Harder's `sortnetopt`, pinned read-only clone at
 `.cache/third_party/sortnetopt`, commit
 `0b5d09c47446096f9e3a0812b35afc72b7f2a718` (verified via `git rev-parse`).
@@ -846,11 +878,13 @@ This seeds `bounds = [1, known_bounds[channels]]`. Two changes:
 
 * Extend the table to n = 13 with the best known upper bounds (S(12) = 39,
   S(13) ≤ 45), which is required anyway to raise `MAX_CHANNELS`.
-* Raise the *lower* seed from the universal `1` to the best known lower bound
+* ~~Raise the *lower* seed from the universal `1` to the best known lower bound
   for that width — for the n = 13 root that is 44 (van Voorhis from S(11) = 35),
   halving the interval the successive-approximation loop
   (`search.rs:58-68`) must close. Since S(13) ∈ {44, 45}, seeding
-  `[44, 45]` means a single iteration decides the question.
+  `[44, 45]` means a single iteration decides the question.~~
+  **WITHDRAWN 2026-08-22 — precondition permanently unsatisfiable; see the
+  correction banner at the head of this file. Do not implement.**
 * `--limit` (`bin/sortnetopt.rs:47`, used at `search.rs:61`) already lets the
   search stop once the lower bound reaches a target — for the S(13) ≥ 45
   question, `--limit 45` is the natural framing and it is already supported.
