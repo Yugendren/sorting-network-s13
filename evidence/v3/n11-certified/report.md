@@ -73,3 +73,16 @@ cert_census.py) supersedes the survivor figures above:
 
 Nothing above about the VERDICT changes: result = 35, certificate
 accepted by the unchanged verified checker, Just (11,35), exit 0.
+
+## ADDENDUM 2 (2026-08-23) — two corrections to Addendum 1
+
+1. **The run log SURVIVES**: /data/mericanii_s13_method_v3/n11-full/run.log
+   (999 KB; copy at .build/v3-level7/n11-certified-run.log.gz). Addendum 1
+   and the body twice claim otherwise. It carries the per-iteration table.
+2. **The insertions-vs-census ambiguity is CLOSED by that log**:
+   103,343,397 insertions − 8,122,254 = **95,221,143 stored census**.
+   |Reach(13,6)| = 95,221,145 stands on a measured base term.
+3. From the same log, the cost fact that decides level 7: the
+   **level-5 → level-6 iteration WALL multiplier is 418.4x** against a
+   stored-state multiplier of 22.3x. Index lookup is 79.4% of user time.
+   See docs/level7-redecision.md.
