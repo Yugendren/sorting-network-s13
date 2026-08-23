@@ -1,0 +1,19 @@
+(* Build entry for the mechanized collapse theorem.
+
+   The theory itself lives at tools/verified/Ambient_Collapse.thy, next to the
+   checker theories, but it must be declared from a SEPARATE ROOT: Isabelle
+   forbids two sessions sharing one directory, and tools/verified/ROOT is
+   copied verbatim into the snocheck2 build tree by tools/verified/build.sh.
+   Declaring the session here leaves that pipeline byte-identical.
+
+   Ambient_Collapse imports Main only.  It does not read, import or rebuild
+   any frozen theory (Checker, Huffman, Sorting_Network, Sorting_Network_Bound,
+   Checker_Codegen, Prefix_Checker).
+
+   Build:  ISABELLE=/path/to/isabelle tools/verified/build_ambient.sh
+   or:     isabelle build -d tools/verified/ambient Ambient_Collapse         *)
+
+session Ambient_Collapse in ".." = HOL +
+  options [document = false]
+  theories
+    Ambient_Collapse

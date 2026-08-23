@@ -5,3 +5,9 @@ session Sorting_Networks_Prefix = Sorting_Networks +
     Prefix_Checker_Codegen
   export_files
     "Sorting_Networks_Prefix.Prefix_Checker_Codegen:**"
+
+(* The mechanized collapse theorem, Ambient_Collapse.thy, is a SEPARATE
+   session declared in tools/verified/ambient/ROOT (Isabelle forbids two
+   sessions sharing one directory, and this file is copied verbatim into the
+   snocheck2 build tree by build.sh, so it must stay self-contained).
+   Build it with:  ISABELLE=... tools/verified/build_ambient.sh              *)
