@@ -53,3 +53,23 @@ stronger pruning.)
 Level-6 stored census at n=11 with evict/DIMS=96/W=8,9: 95.22M states
 inserted / 13.1 GB peak. By the (now-proven) Chain Collapse theorem
 this census transfers exactly (+2 states) to the n=13 level-6 question.
+
+---
+
+## CORRECTION ADDENDUM (2026-08-23, machine-checked)
+
+An independent recount of the certificate itself (read-only mmap over
+proof_n11_ours.bin; tools/verify_novel_facts.py, .build/v3-novelty/
+cert_census.py) supersedes the survivor figures above:
+
+- Certificate steps: **10,275,769** (not "10.47M").
+- Per-width survivors above are OVERSTATED: w8 by 172,383, w9 by
+  319,716, w10 by 74,524. Use the recount.
+- The "95,221,143 states" figure is ambiguous between insertions and
+  stored census (these differ by ~7.2% at level 5) because the run log
+  is no longer available. The derived n=13 level-6 census
+  |Reach(13,6)| = 95,221,145 inherits that ambiguity in its base term;
+  the "+2" is proven.
+
+Nothing above about the VERDICT changes: result = 35, certificate
+accepted by the unchanged verified checker, Just (11,35), exit 0.
