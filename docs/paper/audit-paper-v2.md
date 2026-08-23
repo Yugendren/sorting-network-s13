@@ -560,10 +560,14 @@ novelty there. New are the audit showing the implementation respects it, the one
 place it does not, and Theorem 12, which does not follow from the definition.
 Structurally Theorem 12 is a **cutoff theorem** — above a threshold size the
 large instance is determined by the small one — a mature notion in parameterized
-verification [EN95, EK07, KKW10]. None of that work concerns sorting networks and
+verification [EN95, Nam07, KKW10]. None of that work concerns sorting networks and
 none anticipates Theorem 12, but the shape will be familiar to that audience, and
-this appears to be the first cutoff theorem for a combinatorial-optimality
-search.
+the closest prior art is [KKW10], whose Definition 4 gives a cutoff for a set
+of reachable thread states; ours differs in being a-priori from the hypotheses
+rather than dynamically detected, in concerning the concrete stored census
+rather than a fixed finite abstraction, and in supplying a polynomial growth
+law. The defensible claim is the first a-priori cutoff theorem for the census
+of an exhaustive combinatorial-optimality search.
 
 ---
 
@@ -848,8 +852,9 @@ optimality of sorting networks. *J. Automated Reasoning* 59, 2017, 425–454.
 of inputs.* `bertdobbelaere.github.io/sorting_networks.html`; changelog entry of
 2025-04-21; consulted 2026-08-22.
 
-[EK07] E. A. Emerson, V. Kahlon. Symmetry and completeness in the analysis of
-parameterized systems. *VMCAI 2007*, LNCS 4349, 178–192.
+[Nam07] K. S. Namjoshi. Symmetry and completeness in the analysis of
+parameterized systems. *VMCAI 2007*, LNCS 4349, 299–313.
+doi:10.1007/978-3-540-69738-1_22.
 
 [EN95] E. A. Emerson, K. S. Namjoshi. Reasoning about rings. *POPL 1995*, 85–94.
 
