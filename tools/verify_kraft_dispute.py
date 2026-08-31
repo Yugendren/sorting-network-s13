@@ -737,9 +737,11 @@ def main():
     print(f"  networks whose MAX(T) is pass-through-FREE ... {stats['clean']:4d}  {pct(stats['clean'])}")
     print(f"    ... of which any of eq(5)/eq(6)/disjointness fails: "
           f"{stats['clean_bad']:4d}")
-    check("D-2 pass-through comparators are the SOLE obstruction: on every "
+    check("D-2 pass-through-free sorters are unaffected: on every "
           "pass-through-free sorter, eq (5), eq (6) and MAX/MAX2 disjointness "
-          "all hold", stats["clean_bad"] == 0,
+          "all hold. (NOTE: this does NOT show pass-throughs are the sole "
+          "obstruction -- that stronger claim was RETRACTED; the obstruction "
+          "is escapes, see docs/kraft-repair-wave1.md)", stats["clean_bad"] == 0,
           f"{stats['clean']} pass-through-free networks, 0 failures")
     check("D-1 the 'MAX and MAX2 are comparator-disjoint' defence is REFUTED",
           stats["disj_all_bad"] > 0 and stats["disj_branch_bad"] > 0,
@@ -825,8 +827,10 @@ def main():
         need = math.ceil(math.log2(Ftab[n]))
         print(f"    n={n}: ceil(log2 F({n})) = {need}   "
               f"(F({n}) = {Ftab[n]})")
-    print("  S(13) >= S(11) + P(2,13) = 35 + 9 = the published bound; the 9 is")
-    print("  ceil(log2 F(13)) and comes from (12), i.e. from (7), i.e. from (6).")
+    print("  S(13) >= S(11) + P(2,13) = 35 + 9 = 44, the value TABULATED by")
+    print("  Dobbelaere (2025) but never peer-reviewed; the 9 is ceil(log2 F(13))")
+    print("  and comes from (12), i.e. from (7), i.e. from (6) -- the equation")
+    print("  this script refutes. The best PUBLISHED lower bound remains 43.")
 
     hr("VERDICT SUMMARY")
     if FAILS:
