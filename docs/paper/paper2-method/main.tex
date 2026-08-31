@@ -1,0 +1,1053 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  xleftmargin=1.5em,
+  frame=none,
+  breaklines=true
+}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{hypo}{H}
+\renewcommand{\thehypo}{\arabic{hypo}}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\Reach}{\mathrm{Reach}}
+\newcommand{\wid}{w}
+\newcommand{\nmin}{n_{\min}}
+\newcommand{\nstab}{n_{\mathrm{stab}}}
+\newcommand{\cube}{\mathrm{cube}}
+\newcommand{\Succ}{\mathrm{Succ}}
+\newcommand{\Prune}{\mathrm{Prune}}
+\newcommand{\canon}{\mathrm{canon}}
+
+\title{A Machine-Checked Cutoff Theorem for the Census of an\\
+       Exhaustive Combinatorial-Optimality Search}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Exhaustive searches for combinatorial optima are re-run from scratch at every
+instance size, and their cost is dominated by the set of states they store.
+We identify a class of such searches --- \emph{graded ambient searches} --- for
+which that stored set stabilises: for every level $\ell$ and every ambient
+$n$ above a cutoff $\nmin(\ell)$, the census at $n$ is determined by one
+computation at $\nmin(\ell)$ together with an explicit \emph{affine} growth
+term of slope exactly one. The theorem, its level-agreement clause, and a
+conditional polynomial refinement are machine-checked in Isabelle/HOL with two
+non-vacuous interpretations. The closest prior art is dynamic cutoff detection
+for parameterized concurrent programs; we state what survives the comparison.
+We instantiate the class in three domains, use it to re-certify $S(11)=35$
+against an unmodified verified checker, and report the two measured walls at
+which the method's practical reach ends.
+\end{abstract}
+
+%======================================================================
+\section{Introduction}
+%======================================================================
+
+An exhaustive search for a combinatorial optimum spends its budget on
+\emph{storage}. Branch-and-bound with memoisation, dynamic programming over
+canonical states, and the depth- or size-optimality searches for sorting
+networks~\cite{Knuth73,BZ14,CCFS16,Harder20} all share the same shape: a root
+state, a transition relation, a
+bound oracle, and a memo table whose size is the binding constraint. The memo
+table is a function of the instance parameter $n$, and the conventional
+assumption is that each $n$ demands its own computation. When the search is
+already at the edge of a machine at $n$, the computation at $n+1$ is simply
+out of reach.
+
+This paper identifies a structural condition under which that assumption is
+false. Let a search carry, besides its instance parameter $n$ --- which we call
+the \emph{ambient} --- an intrinsic \emph{width} $\wid(s) \le n$ on states,
+and let its cost budget be reparameterised as a \emph{level} $\ell$ above a
+forced prefix of the search whose cost $C(n)$ is known in closed form. Write
+$\Reach(n,\ell)$ for the census: the set of states the search stores at ambient
+$n$ and level $\ell$. Under five hypotheses on naming, transitions, grading and
+geodesics, the census satisfies an exact identity
+\[
+\Reach(n,\ell)\;=\;\Reach(\nmin(\ell),\ell)\;\uplus\;
+\{\,\mathrm{root}_w : \nmin(\ell) < w \le n\,\},
+\]
+so that its cardinality grows by exactly one per unit of ambient above the
+cutoff. One computation determines the census at every larger instance size,
+forever. We prove this in two logically independent halves --- an
+\emph{ambient collapse} that needs no cutoff at all, and a \emph{chain
+collapse} that supplies one --- and we machine-check both.
+
+\paragraph{Prior art, conceded first.}
+This is a \emph{cutoff theorem}, and cutoffs are a mature named concept in
+parameterized verification~\cite{EN95,EK00,Nam07,AJK16,Jaber20,HS20,BN23,BloemEtAl15}.
+The closest prior art is not a distant analogy but a direct one.
+Kaiser, Kroening and Wahl~\cite{KKW10}, Definition~4, define a cutoff as
+``a number $c \in \mathbb{N}$ such that, for all $n \ge c$, $R_n = R_c$'',
+where $R_n$ is a \emph{set of reachable states} of an $n$-thread program ---
+not the truth value of a property. An earlier version of the present work
+claimed to be the first cutoff theorem about a set rather than a property.
+That claim is false and we retract it here. Three distinctions survive, and we
+claim only these. (i)~$R_n$ in~\cite{KKW10} is a set of \emph{abstract} thread
+states under a fixed finite abstraction; our census is the concrete set of
+states an exhaustive optimality search actually stores, at full fidelity.
+(ii)~\cite{KKW10} concludes exact equality with no growth term; we give an
+affine growth law with slope exactly one, and, conditionally, a polynomial
+one. (iii)~Their cutoff is \emph{dynamically detected} by a sufficient runtime
+test during the analysis; ours is an \emph{a-priori} consequence of the
+hypotheses, computable before the search is launched. Two adjacent bodies of
+work are not prior art: symmetry and partial-order reduction shrink an explored
+state space by a quotient or a representative
+selection~\cite{CEFJ96,ID96,Valmari91}, and work on models of dynamic
+programming and dominance caching in branch-and-bound~\cite{BODI11,CGS24}
+concerns expressiveness and pruning --- neither asserts that the object
+explored at one parameter equals the object explored at another. We use
+``cutoff'' in the
+tight-cutoff sense of Emerson--Namjoshi~\cite{EN95,EN03} and
+Au{\ss}erlechner--Jacobs--Khalimov~\cite{AJK16}, with the census of the explored
+state set in place of the truth of a temporal property; not in the
+Emerson--Kahlon sense~\cite{EK00}. Namjoshi's completeness result for
+invariance~\cite{Nam07} is the other landmark of the a-priori side: there the
+cutoff exists but finding it is undecidable, whereas ours is read off the
+hypotheses.
+
+\paragraph{Scope, conceded second.}
+The class defines the census as a ball in a level-independent weighted
+distance. The engine we instantiate it on stores a \emph{bound-gated subset} of
+that ball, because its recursion reaches successor expansion only when a
+Huffman-style bound test passes. The two disagree already at level~1. The
+consequence is stated once and enforced throughout: the sorting-network
+identity is proved directly from the gate, not as a corollary of the abstract
+theorem, and the claim that the sorting-network search satisfies the five
+hypotheses is \emph{not} machine-checked. It rests on an exhaustive audit of
+the implementation, reported as such.
+
+\paragraph{Origin.}
+The class was extracted from a concrete question. A 1972 lower-bound argument
+for sorting networks is the sole published support for a value of $S(13)$ that
+circulates in the two most-consulted public tables, and a companion
+paper~\cite{Paper1} shows that the argument does not establish it. Auditing the
+computational route to a replacement meant asking what a size-optimality search
+at $13$ channels would have to store, which meant relating it to the same
+search at $11$ channels; that is where the collapse identity came from. The
+audit does not recur here beyond Section~\ref{sec:instance}, where the
+sorting-network search is one of three instances.
+
+\paragraph{Road map.}
+Section~\ref{sec:class} defines the class and states the five hypotheses,
+including the one --- width convexity --- that was invisible in the concrete
+statement because it happens to be free there.
+Section~\ref{sec:theorem} states both halves of the theorem, the
+level-agreement clause and the growth law, separating the affine law we prove
+from the polynomial law we do not. Section~\ref{sec:mech} reports the Isabelle
+development, the two interpretations that make it non-vacuous, three
+corrections the mechanization forced on our own hypotheses, and what is not
+mechanized. Sections~\ref{sec:instance} and~\ref{sec:domains} give three
+instances; Section~\ref{sec:s11} the certified computation;
+Section~\ref{sec:boundary} the measured boundary; Section~\ref{sec:trust} the
+trusted base. Everything a reader must audit is in the paper; the theory file,
+the engine, the certificate and the verifiers are in the
+deposit~\cite{Artifact}.
+
+%======================================================================
+\section{Graded ambient searches}\label{sec:class}
+%======================================================================
+
+\begin{definition}[graded ambient search]\label{def:gas}
+A \emph{graded ambient search} is a tuple $(S, \wid, \to, \gamma,
+\{\mathrm{root}_n\})$ in which $S$ is a set of canonical states,
+$\wid : S \to \mathbb{N}$ assigns each state an intrinsic \emph{width},
+$\to_n\, \subseteq S \times S$ is a transition relation for each ambient $n$,
+$\gamma$ assigns each edge a non-negative integer \emph{grade}, and
+$\mathrm{root}_n \in S$ is the ambient-$n$ root. Crucially $S$ itself does not
+depend on $n$. Writing $d_n$ for the $\gamma$-weighted distance in $\to_n$ and
+$C(n)$ for the free-chain offset of~H3 below, the object of study is the
+\emph{census}
+\[
+\Reach(n,\ell) \;=\; \{\, s \in S : d_n(\mathrm{root}_n, s) \le C(n) + \ell \,\},
+\]
+where $\ell$ is the \emph{level} and, for a width value $v$,
+$W(v,\ell) = \{s \in \Reach(v,\ell) : \wid(s) = v\}$ is the width-$v$
+\emph{stratum}.
+\end{definition}
+
+Three features are deliberate. The census is the set of states an exhaustive
+search \emph{stores}, not the abstract solution set: it is what costs money.
+The width is intrinsic to the state, not to the run that found it, so
+canonicalisation must quotient away unused dimensions. And the budget is
+reparameterised: a search whose first $C(n)$ units of progress are forced is
+studied at \emph{level} $\ell = L - C(n)$, not at total cost $L$. Without that
+shift the ambient dependence sits entirely in the offset and no identity is
+visible.
+
+\subsection{The hypotheses}
+
+\begin{description}\itemsep2pt
+\item[H0 (ambient-free naming).] The canonical name of a state is a function of
+  the state alone; canonicalisation quotients away unused dimensions, so a
+  state has one and the same name at every ambient $n \ge \wid(s)$.
+\item[H1 (ambient freedom, stratified).] For every $s$ and all
+  $\wid(s) \le m \le n$,
+  $\{\,t : s \to_n t,\ \wid(t) \le m\,\} = \{\,t : s \to_m t\,\}$.
+  Raising the ambient may only add transitions to \emph{wider} states.
+\item[H2 (ambient-free grading).] $\gamma(s \to t)$ is a function of $(s,t)$
+  alone.
+\item[H3 (root tower).] $\mathrm{root}_n \to_n \mathrm{root}_{n-1}$ with grade
+  $\delta(n)$, and $C(n) = \sum_{k \le n} \delta(k)$ is the \emph{free chain}.
+  The \emph{degenerate} case $\mathrm{root}_n = \mathrm{root}_0$, $C \equiv 0$,
+  is explicitly allowed.
+\item[H4 (width convexity).] For all $m \le n$ and every $s$ with
+  $\wid(s) \le m$, every ambient-$n$ walk $\mathrm{root}_n \rightsquigarrow s$
+  of grade $g$ can be replaced, at grade no greater than $g$, by the root tower
+  $\mathrm{root}_n \rightsquigarrow \mathrm{root}_m$ of grade $C(n)-C(m)$
+  followed by a walk confined to states of width $\le m$.
+\item[H5 (gated tail).] There is a computable $\nmin(\ell)$ such that for every
+  $v > \nmin(\ell)$ the stratum $W(v,\ell)$ is the single chain state
+  $\mathrm{root}_v$.
+\end{description}
+
+H0 and H2 are signature constraints rather than hypotheses, and in the
+mechanization they become exactly that (Section~\ref{sec:mech}). H1 says the
+ambient is a ceiling and nothing else: it may open routes into wider states,
+but it may not alter the width-$\le m$ part of the transition structure. H3
+names the forced prefix and may be trivial.
+
+H4 is where the mathematics is. It says that no detour through high-width
+states is ever a shortcut. Where width can only decrease along an edge, H4 is
+free and therefore invisible: our own first statement of the theorem, phrased
+for sorting networks, did not contain it, because there $\Succ$ preserves width
+and $\Prune$ lowers it by one, so every geodesic descends monotonically. The
+moment an edge can \emph{raise} the width, a large-ambient search acquires
+routes unavailable at a smaller ambient that nevertheless end inside the
+width-$\le m$ stratum, and H4 becomes the genuine claim that those routes never
+help. That is why the second domain of Section~\ref{sec:domains} was chosen to
+be one in which width is neither monotone up nor down: H4 is the hypothesis
+that can fail, and it deserved an adversarial test.
+
+The form of H4 printed above is a \emph{decomposition}: tower, then confinement.
+It is not the form we first published, and the difference is not cosmetic; see
+Section~\ref{sec:corrections}.
+
+H5 is strong and rare, and is stated above at the small ambient $v$ itself
+rather than as a property of the large search: weaker as a hypothesis, stronger
+as a theorem. It forces $\wid(\mathrm{root}_v) = v$ above the threshold, so it
+cannot hold with a degenerate root tower unless the strata are empty.
+
+\subsection{Which half needs what}
+
+The hypotheses split the theorem in two, and the split is the main structural
+finding of the abstraction.
+
+\begin{center}
+\begin{tabular}{lcccccc}
+\toprule
+proof step & H0 & H1 & H2 & H3 & H4 & H5 \\
+\midrule
+geodesic confinable to width $\le m$          &     &     &     &     & yes &     \\
+initial segment is the root tower, grade $C(n)-C(m)$ &     &     &     & yes &     &     \\
+remaining edges exist at ambient $m$          &     & yes &     &     &     &     \\
+grades agree                                  &     &     & yes &     &     &     \\
+states carry the same names at both ambients  & yes &     &     &     &     &     \\
+converse direction                            &     & yes & yes & yes &     &     \\
+the tail above $\nmin(\ell)$ is a chain       &     &     &     & yes &     & yes \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Part~I (ambient collapse) needs H0--H4; Part~II (chain collapse) additionally
+needs H5 \emph{and} needs H3 to be non-degenerate. The useful statement is not
+that Part~I is independent of H3 --- it is not --- but that Part~I holds with a
+\emph{degenerate} root tower, in which case H3 is vacuous. The split is
+therefore between the hypotheses that make the tail trivial
+(H3-non-degenerate together with H5) and everything else.
+
+%======================================================================
+\section{The theorem and the growth law}\label{sec:theorem}
+%======================================================================
+
+\begin{theorem}[Ambient Collapse]\label{thm:partI}
+Assume H0--H4. Then for all $m \le n$ and every level $\ell$,
+\[
+\Reach(n,\ell) \cap \{\, s : \wid(s) \le m \,\} \;=\; \Reach(m,\ell),
+\]
+and $\mathrm{level}_n(s) = \mathrm{level}_m(s)$ for every $s$ of width
+$\le m$, where $\mathrm{level}_n(s)$ is the least $\ell$ with
+$s \in \Reach(n,\ell)$.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Fix $s$ with $\wid(s) \le m \le n$ and an ambient-$n$ walk from
+$\mathrm{root}_n$ to $s$ of grade $g \le C(n) + \ell$. By H4 replace it, at no
+greater grade, by the root tower down to $\mathrm{root}_m$ --- of grade exactly
+$C(n) - C(m)$ by H3 --- followed by a walk confined to width $\le m$ of grade
+$g'$ with $(C(n)-C(m)) + g' \le g$. Every edge of the confined part joins states
+of width $\le m$, so by H1 it is an edge of $\to_m$, by H2 carries the same
+grade, and by H0 its endpoints have the same names at both ambients; hence
+$g' \le C(m) + \ell$. Conversely, every edge of a walk at ambient $m$ joins
+states of width $\le m$, so by H1 read in the other direction it is an edge of
+$\to_n$, and prepending the root tower gives an ambient-$n$ walk of grade
+$C(n)-C(m)+g'$. Equality of levels follows, hence of the width-$\le m$ parts.
+\end{proof}
+
+\begin{corollary}[stratification]\label{cor:strat}
+Under H0--H4, $\Reach(n,\ell) = \biguplus_{v \le n} W(v,\ell)$, where each
+stratum is a function of $(v,\ell)$ alone and carries no dependence on $n$.
+\end{corollary}
+
+This is the form a referee should be shown. Theorem~\ref{thm:partI} is an
+identity between two sets that both mention $n$; Corollary~\ref{cor:strat} says
+the ambient has been eliminated --- the census is a running sum of $n$-free
+pieces --- and it follows in one line by applying Theorem~\ref{thm:partI} at
+$m := \wid(s)$.
+
+\begin{theorem}[Chain Collapse]\label{thm:partII}
+Assume H0--H5, with H3 non-degenerate. Then for all $n \ge \nmin(\ell)$,
+\[
+\Reach(n,\ell) \;=\; \Reach(\nmin(\ell),\ell) \;\uplus\;
+\{\, \mathrm{root}_v : \nmin(\ell) < v \le n \,\},
+\]
+and if $\Reach(\nmin(\ell),\ell)$ is finite then
+$|\Reach(n,\ell)| = |\Reach(\nmin(\ell),\ell)| + (n - \nmin(\ell))$.
+\end{theorem}
+
+Theorem~\ref{thm:partII} is the cutoff proper: the census at every ambient
+follows from one computation at $\nmin(\ell)$, and the correction term is an
+explicit closed form rather than an error bound.
+
+\subsection{Three tail regimes}
+
+H5 is the strongest hypothesis in the list, and the interesting question is
+what happens without it. Part~I alone forces the census to be a running sum of
+$n$-free strata, so $|\Reach(n,\ell)|$ for large $n$ is determined entirely by
+the shape of $W(\cdot,\ell)$ above the population front. Across the three
+domains below, exactly three regimes occur.
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+regime & strata above the front & $|\Reach(n,\ell)|$, large $n$ & instance \\
+\midrule
+T-empty   & nothing                 & constant             & Boolean chains \\
+T-trivial (= H5) & one state per width & $\mathrm{const} + n$ & sorting networks \\
+T-poly    & a polynomial in $w$     & polynomial in $n$    & prefix reversal \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{corollary}[census growth law]\label{cor:growth}
+Assume H0--H4, that every stratum is finite, and that $W(\cdot,\ell)$ agrees
+with a polynomial of degree $\le d$ for all $v \ge v_0$. Then
+$|\Reach(n,\ell)|$ agrees, for $n \ge v_0$, with a polynomial in $n$ of degree
+$\le d+1$; consequently one run at ambient $v_0 + d + 1$ determines the census
+at every larger ambient exactly.
+\end{corollary}
+
+Corollary~\ref{cor:growth} is what makes the method survive the loss of H5, and
+in practice T-poly is the regime it most often lands in.
+
+\subsection{Affine, not polynomial: a distinction we must not blur}
+
+Three different statements travel under the phrase ``polynomial growth law''
+and they have three different statuses. We separate them once and keep them
+separate.
+
+\emph{Growth in the ambient, gated case (PROVEN).} Under H0--H5 the census is
+eventually affine in $n$ with slope exactly $1$: Theorem~\ref{thm:partII},
+machine-checked. Degree one is a polynomial, so ``polynomial growth law'' is not
+false, but it oversells and obscures the sharp part; what distinguishes this
+from~\cite{KKW10} --- exact equality with no growth term at all --- is fully
+carried by ``affine with slope exactly one''. For the sorting-network search we
+have checked it against every census figure in the artifact: at levels
+$1,2,3,4$ the census over ambients $6$--$13$, $7$--$13$, $9$--$13$ and
+$9$--$13$ is an arithmetic progression of common difference exactly $1$, and at
+levels $1$--$5$ the width census at ambient $13$ holds exactly one state at
+every width strictly above $\nmin(\ell)$.
+
+\emph{Growth in the ambient, polynomial case (CONDITIONAL; machine-checked as
+an implication).} Corollary~\ref{cor:growth} is a mechanized theorem, but its
+hypothesis --- that the strata are eventually polynomial --- is a measured fact
+in the one domain where it applies, not a derived one, and there we prove only
+the matching upper bound (Section~\ref{sec:domains}). ``A polynomial growth law
+for the census'' is defensible only as this conditional, and only for that
+domain.
+
+\emph{Growth in the level (NOT A LAW).} For the sorting-network search
+$|\Reach(\nmin(\ell),\ell)|$ at $\ell = 1,\dots,6$ is
+\[
+33,\quad 445,\quad 24{,}199,\quad 207{,}995,\quad 50{,}602{,}869,\quad
+95{,}221{,}143,
+\]
+with successive ratios $13.48,\ 54.38,\ 8.60,\ 243.29,\ 1.88$ --- a spread of
+$241\times$. No forward difference of orders one through five vanishes anywhere
+in the measured range. The alternation is structural: the ratio is large
+exactly when $\nmin$ jumps and small when it does not. Nothing in this paper
+bounds growth in the level, and any sentence about polynomial growth of the
+census must say \emph{in the ambient}.
+
+%======================================================================
+\section{The mechanization}\label{sec:mech}
+%======================================================================
+
+The abstract theorem is machine-checked in Isabelle/HOL~\cite{Isabelle}. The
+development is one file, \texttt{Ambient\_Collapse.thy}, $1{,}095$ lines, built
+under Isabelle2020 in its own session in about two seconds on top of a prebuilt
+HOL heap. It contains no \texttt{sorry}, no \texttt{oops}, no
+\texttt{axiomatization} and no \texttt{quick\_and\_dirty}; the build script
+greps for all four and refuses to invoke Isabelle if any is present. The file
+\texttt{imports Main} and nothing else --- in particular it never touches the
+verified checker theories of Section~\ref{sec:s11}, so the two formal artifacts
+are independent.
+
+\subsection{The locale}
+
+Walks are formalised by an inductive predicate \texttt{pathg E G s t g} --- a
+walk from $s$ to $t$ of grade exactly $g$ --- and a variant \texttt{pathgB}
+carrying a predicate every intermediate state must satisfy, used for width
+confinement. The census is defined by an \emph{inequality} on the grade,
+\begin{lstlisting}
+Reach n l = {s. EX g. pathg (edge n) grade (root n) s g & g <= C n + l}
+\end{lstlisting}
+which is definitionally the ball $\{s : d_n(\mathrm{root}_n,s) \le C(n)+\ell\}$
+whenever the distance exists and is total when it does not, so the weighted
+distance never has to be constructed and no partiality enters.
+
+H0 and H2 are discharged \emph{structurally} and cannot be violated by any
+interpretation: H0 is the fact that states inhabit a single type \texttt{'s}
+not mentioning $n$, so a state has one name at every ambient by construction,
+and H2 is the fact that \texttt{grade} has type
+\texttt{'s $\Rightarrow$ 's $\Rightarrow$ nat}. These are signature constraints
+rather than hypotheses, and they are the honest formal content of
+``canonicalisation quotients away the unused dimensions''. The rest are locale
+assumptions:
+
+\begin{lstlisting}
+locale graded_ambient_search =
+  fixes width :: "'s => nat"  and edge :: "nat => 's => 's => bool"
+    and grade :: "'s => 's => nat"  and root :: "nat => 's"
+    and C :: "nat => nat"
+  assumes H1: "[| width s <= m; m <= n |] ==>
+                 {t. edge n s t & width t <= m} = {t. edge m s t}"
+    and H3_width: "width (root m) <= m"
+    and H3_mono:  "m <= n ==> C m <= C n"
+    and H3_tower: "m <= n ==> pathg (edge n) grade (root n) (root m) (C n - C m)"
+    and H4: "[| m <= n; width s <= m; pathg (edge n) grade (root n) s g |] ==>
+               EX g'. pathgB (edge n) grade (%t. width t <= m) (root m) s g'
+                      & (C n - C m) + g' <= g"
+
+locale gated_ambient_search = graded_ambient_search +
+  fixes nmin :: "nat => nat"
+  assumes H5: "nmin l < v ==> stratum v l = {root v}"
+\end{lstlisting}
+
+H1 is transcribed verbatim as a set equality; the mechanization extracts its
+three consequences separately, one of which --- that an ambient-$m$ edge out of
+a width-$\le m$ state lands in width $\le m$ --- is implied by the equality but
+was never stated in our prose, and is used twice.
+
+\subsection{What is proved}
+
+The following are theorems of the locale, stated here exactly as they appear in
+the file.
+
+\begin{lstlisting}
+theorem ambient_collapse:    "m <= n ==> Reach n l Int {s. width s <= m} = Reach m l"
+corollary level_agree:       "[| m <= n; width s <= m |] ==> level n s = level m s"
+theorem census_stratified:   "Reach n l = (UN v<=n. stratum v l)"
+theorem chain_collapse:      "nmin l <= n ==>
+                                Reach n l = Reach (nmin l) l
+                                            Un root ` {v. nmin l < v & v <= n}"
+theorem chain_collapse_card: "[| nmin l <= n; finite (Reach (nmin l) l) |] ==>
+                                card (Reach n l)
+                                  = card (Reach (nmin l) l) + (n - nmin l)"
+theorem census_affine:       "[| !!v. finite (stratum v l); nmin l <= n |] ==>
+                                fdiff (%n. census n l) n = 1"
+(* stratum v l = {s : Reach v l. width s = v};  fdiff f n = f (Suc n) - f n *)
+\end{lstlisting}
+
+Corollary~\ref{cor:growth} is mechanized as \texttt{census\_growth\_law} in
+vanishing-forward-difference form, then converted by a supporting lemma
+\texttt{newton\_expansion} --- vanishing $(d{+}1)$-st differences imply
+agreement with $\sum_{j \le d+1} c_j \binom{t}{j}$ --- proved constructively by
+telescoping and the hockey-stick identity. Two reasons for the difference form.
+First, vanishing forward differences are what the diagnostic tooling measures,
+so the mechanized statement and the measured statement coincide. Second, it
+makes \texttt{census\_affine} literally the $d=0$ case: T-trivial and T-poly
+are one theorem at two degrees.
+
+\subsection{Non-vacuity: two interpretations}
+
+Locale theorems are worthless if the assumptions are contradictory, so both
+locales are interpreted. Neither interpretation formalizes a real domain; both
+are the smallest honest models that exercise the hypotheses, and both discharge
+every obligation.
+
+\emph{\texttt{Words}} --- states are \texttt{nat list}, the ambient is the
+alphabet size, the width of a word is the least alphabet containing it, and the
+two moves, each of grade one, are appending a letter $a < n$ and dropping the
+last letter. The tower is degenerate. The mechanization checks that
+$\texttt{Reach } 2\ 1 \subsetneq \texttt{Reach } 3\ 1$ --- so the ambient
+really matters --- and that there are edges which \emph{raise} the width and
+edges which \emph{lower} it. H4 therefore has genuine content here and is
+proved, not assumed away: because every move changes the length by exactly one
+and costs exactly one, a word of length $k$ cannot be reached in fewer than $k$
+moves however far the walk climbs in between. That is the ``no high-width
+detour is a shortcut'' statement, discharged.
+
+\emph{\texttt{Tower}/\texttt{Gated}} --- a two-constructor datatype whose chain
+$\mathrm{Tow}(n) \to \mathrm{Tow}(n-1) \to \cdots$ has grades $\delta(k)$,
+giving a non-degenerate free chain, and in which each $\mathrm{Tow}(k)$ has
+exactly one off-chain successor of the \emph{same} width, reachable only at
+grade $C(k) + D(k) + 1$. With $D$ monotone and unbounded, H5 holds; the
+cardinality identity and $\texttt{fdiff}(\lambda n.\ \texttt{census } n\ l) = 1$
+above the cutoff are both checked. This is the abstract skeleton of the
+sorting-network instance and the honest bridge for the scope gap of
+Section~\ref{sec:instance}: it reproduces the bound gate by \emph{pricing} the
+off-chain edge, turning a level-dependent control-flow test into a
+level-independent grade. It is not a formalization of that search: here the
+gate is postulated, and in the real engine it is derived.
+
+The \texttt{Words} interpretation also earns its keep numerically. Its
+width-$v$ stratum at level $\ell$ is $\sum_{k \le \ell}(v^k - (v-1)^k)$, of
+degree $\ell-1$ with leading coefficient exactly $\ell$, and its sphere at
+distance $\ell$ has size $n^\ell$. Those are precisely the degree and leading
+coefficient the prefix-reversal domain exhibits
+(Section~\ref{sec:domains}) --- produced by a model with no prefix-reversal
+content whatsoever. We draw the deflationary conclusion in place rather than
+leave it to a referee.
+
+\subsection{Three corrections the mechanization forced}\label{sec:corrections}
+
+Mechanizing a theorem one believes is a way of finding out what one actually
+believes. Three of our own published hypotheses did not survive.
+
+\emph{(1) Part~I needs H3.} We had asserted that Part~I uses neither H3 nor H5.
+That is false, and it contradicted our own step table. Part~I relates the
+ambient-$n$ distance from $\mathrm{root}_n$ to the ambient-$m$ distance from
+$\mathrm{root}_m$; without a hypothesis relating the two roots and pricing the
+passage between them, the distances are incomparable. In the mechanization H3
+appears twice: as \texttt{H3\_tower} in the converse direction, and inside the
+statement of H4 in the forward direction, where the $C(n)-C(m)$ term is what
+accounts for the tower prefix. What survives is the statement at the end of
+Section~\ref{sec:class}: Part~I is independent of H5 and holds with a
+\emph{degenerate} root tower.
+
+\emph{(2) H4 as originally printed is ill-formed.} Our published H4 read: for
+every $s$ with $\wid(s) \le m$ and every $n \ge m$, some $\gamma$-geodesic
+$\mathrm{root}_n \rightsquigarrow s$ passes only through states of width
+$\le \max(m, \wid(\mathrm{root}_m))$. When the tower is non-degenerate,
+$\wid(\mathrm{root}_n) = n > m$ and $\mathrm{root}_n$ lies on every geodesic
+out of itself, so the condition is unsatisfiable in exactly the case in which
+it is interesting --- which is the sorting-network case. It is satisfiable in
+the two degenerate-tower domains, which is why our Python hypothesis-checkers
+never caught it. The repair is the decomposition form of
+Section~\ref{sec:class}, fusing the first two steps of the informal proof into
+one hypothesis; the $\max$ form is not repairable by adjusting the bound.
+
+Being candid about what this costs: H4-as-decomposition now carries the
+mathematical weight of Part~I. The mechanization proves the \emph{transport}
+(a width-confined ambient-$n$ walk is an ambient-$m$ walk of the same grade,
+and conversely) and the \emph{bookkeeping} (the levels line up under
+$C(n)-C(m)$). It does not prove H4 for any real domain. In the two
+interpretations H4 is discharged, non-trivially in \texttt{Words}; in sorting
+networks it is asserted to follow from width closure, and in prefix reversal it
+is verified over a finite range, not proved.
+
+\emph{(3) H5 belongs at the small ambient.} We had stated H5 as a property of
+the stratum inside the large search. Stating it at ambient $v$ itself and
+letting Part~I lift it is weaker as a hypothesis and stronger as a theorem, and
+it makes the mechanized Part~II a derivation rather than a restatement. It also
+lets us \emph{derive} what we had only observed: the only domain with a
+non-degenerate root tower is the only domain with a trivial tail.
+
+\subsection{What is not mechanized}\label{sec:notmech}
+
+Stated flatly, because the distinction is the entire value of the section.
+
+\begin{enumerate}\itemsep2pt
+\item \textbf{That the sorting-network search is an instance is not
+  mechanized.} It rests on an exhaustive reading of the engine's recursion,
+  plus a second reviewer's audit (Section~\ref{sec:instance}). What changed
+  with the mechanization is the \emph{shape} of the residual risk: before, an
+  abstract theorem proved on paper resting on an unverified implementation
+  property; now, a machine-checked theorem plus an unverified claim that one
+  concrete search satisfies five stated properties. The second obligation is
+  smaller and far better localised. We do not say the collapse theorem ``is
+  verified for sorting networks''.
+\item \textbf{The class definition does not literally model that engine.} The
+  census of Definition~\ref{def:gas} is a ball; the engine stores a bound-gated
+  subset of one. Section~\ref{sec:instance} gives the level-1 disagreement
+  explicitly.
+\item \textbf{The two further domains are not formalized.} They are checked by
+  a Python harness, with a brute-force validator for one of them; formalizing
+  the prefix-reversal domain would require \emph{proving} H4 for it, which is
+  open.
+\item \textbf{Finiteness is an explicit hypothesis, not a consequence.} The
+  three cardinality theorems all assume the strata finite; nothing in H0--H5
+  implies it, and it is discharged in both interpretations.
+\end{enumerate}
+
+%======================================================================
+\section{The sorting-network instance}\label{sec:instance}
+%======================================================================
+
+The concrete search is Harder's size-optimality dynamic program for sorting
+networks~\cite{Harder20}, the engine that settled $S(11)=35$ and $S(12)=39$;
+it is the size-optimality counterpart of the SAT- and
+symmetry-break-driven searches that settled the smaller
+cases~\cite{CCFS16,CCS15,BZ14,EM14}. A
+state is a canonical output set of width $k$; the two moves are applying a
+comparator ($\Succ$, width-preserving) and conditioning on an extremal channel
+and deleting it ($\Prune$, width-lowering by one); the bound oracle combines a
+Huffman-style rule~\cite{Huffman52} over the pruned children with successor
+expansion. The ambient is the channel count.
+
+The semantic half of the instantiation is \emph{not} a mathematical novelty,
+and we say so first. Harder defines the objective for a sequence set with no
+reference to any ambient, so ``a bound on $X$ is valid at every ambient
+$n \ge \wid(X)$'' is immediate from his definition. What is ours is an
+\emph{implementation audit}: the claim that the engine actually respects that,
+established by reading every loop bound, table index and ordering key inside
+the recursion and confirming each is the current state's own channel count or a
+stored bound; a second reviewer given the same code as a refutation target; and
+the identification of the single place where it fails.
+
+That place is the on-line subsumption index, whose default width policy is
+keyed to the \emph{root} width, at widths $\{n-3, n-2\}$ --- different absolute
+widths at every ambient --- and which is read inside the recursion. With it
+enabled under that policy, H1 is false. The repair is one line of
+configuration, not of code: pin the policy to absolute widths. The collapse
+check is what found it, and an identical synthetic leak in a control domain
+(Section~\ref{sec:domains}) breaks the collapse immediately and visibly.
+
+Given the audit, the instance rests on three facts about the root, each
+machine-checked against dumps of the engine's stored states. Every channel of
+the full cube is extremal for both polarities, so $\Prune(\cube_k)$ is the
+single state $\cube_{k-1}$ and the Huffman rule at $\cube_k$ combines $k$
+identical children: the free chain is the chain of full cubes and
+$C(k) = C(k-1) + \lceil \log_2 k\rceil$. The symmetric group acts transitively
+on unordered pairs and fixes $\cube_k$ setwise, so $\Succ(\cube_k)$ is a single
+state. The Huffman ceiling at $\cube_k$ is $S(k-1) + \lceil \log_2 k \rceil =
+C(k) + D(k-1)$ where $D(n) = S(n) - C(n)$, and successor expansion at the root
+is not reached below that value; hence H5 holds with
+$\nmin(\ell) = \min\{\, n : D(n) \ge \ell \,\}$ and the tail is one state per
+width. Note that $C(n) = \sum_{k\le n}\lceil\log_2 k\rceil$ is Knuth's
+binary-insertion number~\cite{Knuth73}: classical, and what is ours is only its
+identification as the cost of a forced prefix and the reparameterisation
+$\ell = L - C(n)$.
+
+\paragraph{The scope gap, stated plainly.}
+The engine's census is not the ball of Definition~\ref{def:gas}. Grade is one
+per comparator, so the unique width-13 successor of $\cube_{13}$ lies at
+distance $1$ and belongs to the ball at level~$1$; but the measured level-1
+census at ambient $13$ contains exactly one state of width $13$, namely
+$\cube_{13}$ itself. Ball and census disagree at level~1. The reason is the
+gate: the recursion reaches successor expansion only when the Huffman test
+passes, and that test depends on the level, which
+Definition~\ref{def:gas} forbids. Consequently \emph{the abstract theorem is a
+guide here, not a proof}. The sorting-network identity is proved directly from
+the gate, and must not be presented as a corollary of
+Theorem~\ref{thm:partII}.
+
+\paragraph{The prediction, and the folklore objection.}
+From the machine-checked table $D(3\ldots12) = 0,0,1,1,2,2,4,4,6,6$ we get
+$\nmin(\ell) = 5,7,9,9,11,11,13$ for $\ell = 1,\dots,7$. This was derived
+before the censuses were computed and then checked against them: the population
+front of the ambient-13 level-$\ell$ census sits at width $5$, $7$, $9$ for
+$\ell = 1,2,3$, and every width above the front holds exactly one state, at
+lower bound $C(w)+\ell$. At level 5 --- $50{,}602{,}871$ states --- the front is
+at width $11$, and widths $12$ and $13$ hold one state each.
+
+The bounds these censuses bear on are also the ones circulating in the public
+tables of sorting-network sizes~\cite{Dobbelaere25}, and lower bounds for
+restricted classes remain an active target~\cite{Tozawa26,VV72,FK73}. The
+deflationary explanation for any census stabilising in $n$ is the folklore
+support bound: an object built from $L$ operations touches at most $2L$
+coordinates, so the census cannot change once $n \ge 2L$. Here $L = C(n)+\ell$
+with $C(n) = \Theta(n \log n)$, so the support bound demands $n \ge 2(C(n)+\ell)$,
+which is false for every $n \ge 3$ and becomes more false as $n$ grows.
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+level $\ell$ & $\nmin(\ell)$ & comparators $L = C(\nmin)+\ell$ & support bound $2L$ & $2L \le \nmin$? \\
+\midrule
+1 & 5  & 9  & 18 & no ($3.6\times$ over) \\
+2 & 7  & 16 & 32 & no ($4.6\times$ over) \\
+3 & 9  & 24 & 48 & no ($5.3\times$ over) \\
+4 & 9  & 25 & 50 & no ($5.6\times$ over) \\
+5 & 11 & 34 & 68 & no ($6.2\times$ over) \\
+6 & 11 & 35 & 70 & no ($6.4\times$ over) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The support bound never certifies stabilisation at any ambient the search can
+reach, at any level, and the gap widens with $n$. The cutoff here comes from
+the gated root tower, which is a different mechanism.
+
+%======================================================================
+\section{Two further domains}\label{sec:domains}
+%======================================================================
+
+A method claim needs instances that were not the source of the abstraction. We
+ran two under a pre-registration protocol: compute the small instance, derive
+the prediction \emph{from that file alone}, hash it, record the hash, and only
+then compute the larger ambients. The check is on the SHA-256 of the sorted key
+list, not on counts, so a collapse holding numerically but not state by state
+would fail.
+
+\paragraph{Boolean chains --- a positive control.}
+A straight-line program over $\{\wedge,\vee,\oplus\}$ starts from $n$
+projections and adds gates; the state is the multiset of gate outputs, the
+level is the gate count, canonicalisation drops variables outside the essential
+support of every computed function, and the width is the number of essential
+variables. Width is \emph{non-decreasing} along an edge --- the opposite of the
+sorting-network case, so Part~I's proof runs in the other direction --- and the
+root has width $0$, so H3 is degenerate. Each gate introduces at most two fresh
+variables, giving $\nmin(\ell) = 2\ell$ with an \emph{empty} tail. Every
+pre-registered prediction held key for key: at level~3, ambients $2$--$10$, all
+$36$ pairs $m<n$ pass with symmetric difference zero and no level
+disagreements, the census being a step function saturating at $541$ from
+ambient $6$; at level~4 the same at $11{,}263$ states from ambient $8$. A raw
+enumeration with no canonicalisation and no modelling shortcut reproduces the
+search exactly and shows the canonical form to be a \emph{complete} invariant,
+so the collapse is not an artefact of a too-coarse quotient.
+
+We grade this domain honestly: $\nmin(\ell) = 2\ell$ \emph{is} the folklore
+support bound. It demonstrates that the framework is correct and that Part~I
+holds with a degenerate tower and an upward-monotone width --- a positive
+control, not independent evidence that census cutoffs ever beat folklore.
+
+\paragraph{Prefix reversal --- the real test.}
+A pancake flip $f_k$ reverses the first $k$ entries of a permutation of
+$[n]$~\cite{Gates95,Bulteau15};
+the level is the flip count, canonicalisation strips the maximal sorted suffix,
+and the width is what remains. Two properties make this the adversarial case.
+No support bound exists at all: a single flip $f_n$ produces a state of width
+exactly $n$. And width is neither monotone up nor monotone down --- a flip past
+the current width drags a sorted element to the front, and a later flip can
+bring it back --- so a search at ambient $n$ genuinely has routes unavailable
+at ambient $m < n$ that end inside the width-$\le m$ stratum. Part~I is
+precisely the claim that no such detour is ever a shortcut, and that was the
+pre-registered falsification target.
+
+It was not falsified. At level~5, for all $45$ ambient pairs $m<n$ in
+$3\ldots12$, the width-restricted censuses agree with symmetric difference zero
+and no level disagreements on any shared key; a separate state-by-state check
+of H1 against ambient $11$ found $0$ mismatches over $120$, $2{,}086$ and
+$13{,}400$ states. At level~6, ambients $8,10,12,14$ --- up to $2{,}087{,}574$
+states --- all $6$ pairs pass. With the two Boolean levels that is $93$ ambient
+pairs $(m,n)$ with $m<n$ in total and no discrepancy anywhere. \textbf{H4 is verified, not
+proved}: whether a high-width detour can be a shortcut at some larger level is
+an open proof obligation, and the plausible argument (a flip past the width
+displaces sorted elements that must all be restored) is not a proof.
+
+Here H5 fails: the tail is $1, 4, 18, 96, 465, 1501, 3687, \dots$, and it is
+exactly polynomial. The pre-registered fit --- degree $\ell-1$, leading
+coefficient exactly $\ell$, valid for $w \ge \ell+1$, taken from widths
+$\le 12$ only --- reproduced widths $13,14,15$ exactly at levels $3,4,5$, and
+extrapolated to a level~6 that had not been computed when the prediction was
+frozen: predicted $W(13,6) = 497{,}108$ from a degree-5 fit at $w=7\ldots12$,
+observed $497{,}108$; sixth forward difference zero; leading coefficient $6$.
+Summing the strata gives a statement about a classical object with no reference
+to our machinery: \emph{the number of permutations of $[n]$ at prefix-reversal
+distance exactly $\ell$ from the identity is a polynomial in $n$ of degree
+exactly $\ell$ with leading coefficient exactly $1$}. We prove the upper bound
+$(n-1)^\ell$; the matching lower bound is open. Eventual polynomiality of
+pancake sphere sizes is in any case already known in the permutation-patterns
+literature, which is the best outcome available for a method claim: the
+abstract theorem predicted, from hypotheses checked mechanically in seconds, a
+result proved independently elsewhere. It is a prediction of a known result,
+not a new one --- and the deflationary reading of Section~\ref{sec:mech}
+applies, since counting $\ell$-letter words over an $n$-letter alphabet already
+gives that degree and that leading coefficient.
+
+Two things did fail, and both are recorded. Our threshold formula
+$\nstab(\ell) = \ell+1$, sharp for $\ell \le 6$, does not extend to $\ell = 7$,
+where the onset is $\ell+2$; what survives unqualified is that the strata are
+eventually polynomial of degree $\ell-1$ and that \emph{some} computable
+$\nstab$ exists, which is all Corollary~\ref{cor:growth} needs. And a control
+domain carrying a synthetic pruning heuristic keyed to the root width --- the
+same shape as the sorting-network leak --- breaks the collapse at once, with
+$285$ keys present at one ambient and absent at the next. The mathematics of
+Part~I can be true while an implementation detail destroys its applicability;
+any deployment of the method must run the check rather than assume it.
+
+Read across the two domains: Part~I generalizes and Part~II does not.
+\emph{``Chain collapse generalizes'' is false. ``Ambient collapse generalizes,
+and chain collapse is the special case in which a gated root tower makes the
+tail trivial'' is true}, and it is the stronger statement, because it says
+\emph{why} the sorting-network search gets the clean identity. Neither new
+domain has a non-degenerate root tower, and neither has a gate.
+
+%======================================================================
+\section{A certified census: \texorpdfstring{$S(11)=35$}{S(11)=35}}\label{sec:s11}
+%======================================================================
+
+The theorem's payoff is that a census computed once at $\nmin(\ell)$ stands for
+every larger ambient. To exercise that we rebuilt the search from the published
+description, re-derived $S(11) \ge 35$ from scratch, and had the certificate
+checked by an unmodified extraction of the verified checker accompanying the
+original work~\cite{Harder20}, in the lineage of the extracted certified
+checkers of Cruz-Filipe and co-authors~\cite{CS15,CLS17} and resting on
+Isabelle's code generator~\cite{HN10}. The point is not the value, which is
+known: it is that an independently produced certificate is accepted by a
+checker nobody here wrote, and that the census the run produces is the one the
+theorem says determines every larger channel count.
+
+The run was in four stages. Search, at ambient $11$ with the subsumption index
+pinned to absolute widths $\{8,9\}$, took $71$~h $06$~m at a peak of
+$13.08$~GB on a six-core Ryzen~3600 with 47~GB of memory, and returned the
+bound $35$ with $95{,}221{,}143$ stored states --- reconstructed from the run
+log as $103{,}343{,}397$ insertions less $8{,}122{,}254$ evictions. Prune-all
+took $9$~h $45$~m at about $8.4$~GB. Certificate assembly took about $9$~h and
+was killed twice by the out-of-memory killer, at an anonymous resident set of
+$37.9$~GB on a machine with no swap; it completed on the third attempt only
+after a 96~GB swap file was armed underneath the live process, so its true peak
+is unknown and is by construction above $37.9$~GB. It emitted a certificate of
+$2{,}442{,}317{,}348$ bytes ($2{,}329$~MiB), SHA-256
+\texttt{672c433f}\ldots, containing $10{,}275{,}769$ steps. Verification, on an
+Apple~M4, took $89$~m $24$~s at a peak of $4.35$~GB and returned
+\texttt{Just (11,35)} with exit status~$0$. From the machine-checked
+correctness proof of the certificate-checking routine we therefore get
+$S(11) \ge 35$, matching the known upper bound.
+
+\begin{center}
+\small
+\begin{tabular}{lllcc}
+\toprule
+stage & original~\cite{Harder20} & this work & memory & wall \\
+\midrule
+search      & 178~GiB (191~GB), 4~h 51~m & 13.08~GB, 71~h 06~m & $14.6\times$ less & $14.7\times$ more \\
+prune-all   & 16~GiB, $\approx$2~d 5~h   & ${\sim}8.4$~GB, 9~h 45~m & $2.1\times$ less & $5.4\times$ less \\
+gen-proof   & 54~GiB (58.0~GB), 19~h 02~m & $>37.9$~GB, ${\sim}9$~h & $1.5\times$ less & $2.1\times$ less \\
+verify      & 6~GiB, 34~m                & 4.35~GB, 89~m       & $1.5\times$ less & $2.6\times$ more \\
+certificate & 2{,}926~MiB                & 2{,}329~MiB         & $1.26\times$ smaller & --- \\
+\midrule
+total wall  & 77.5~h                     & 91.3~h              & ---               & $1.18\times$ more \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Three things about that table have to be said rather than inferred. First, the
+$14.6\times$ is a \emph{search-stage} figure and nothing more; an earlier
+version circulated as $13.6\times$, obtained by dividing $178$~GiB by
+$13.08$~GB as though the units matched, and the corrected ratio is
+$191.13/13.08 = 14.61$. Second, the memory was bought with time on weaker
+hardware: the same stage is $14.7\times$ slower and end to end the pipeline is
+$1.18\times$ slower --- a memory-for-time trade, not an improvement. Third, the
+binding memory peak \emph{moved stages}: in the original it was search, here it
+is certificate assembly, and the end-to-end improvement is only about
+$1.5\times$ --- optimistic even so, since its denominator is a lower bound from
+a failed attempt. Certificate generation, not search, is the hidden peak of
+this pipeline and should be budgeted separately.
+
+We also record what the run does \emph{not} establish, since the census is the
+object the rest of the paper depends on. Only verification left a surviving
+machine-readable artifact; the other three stages are recorded in prose and a
+run log, and no timing output survives that would settle whether $13.08$ is
+gigabytes or gibibytes. The wall-time column compares three machines and two
+configurations and is not a controlled measurement. And the census figure that
+Theorem~\ref{thm:partII} exports --- $|\Reach(13,6)| = 95{,}221{,}145$ --- is a
+\emph{prediction} from the single ambient-11 measurement, not a measurement.
+
+%======================================================================
+\section{Where the method stops}\label{sec:boundary}
+%======================================================================
+
+A cutoff theorem tells you which computation to run. It does not tell you that
+you can afford it, and in this programme the two answers diverge at the next
+level. We report the divergence because it delimits the method.
+
+Theorem~\ref{thm:partII} makes the level-6 census at ambient $13$ a corollary
+of the ambient-11 run of Section~\ref{sec:s11}: $\nmin(6) = 11$, so no
+computation at $13$ is needed. At level~7 the leverage vanishes, because
+$\nmin(7) = 13$. There is no smaller ambient to collapse to; the theorem is
+silent, and the cost is whatever the search costs. That is the method's
+boundary in the sharpest form available. A cutoff at $\nmin(\ell)$ removes the
+ambient as a cost driver and leaves the level as the only one --- and
+Section~\ref{sec:theorem} showed that census growth in the level is governed by
+no law we have.
+
+\paragraph{What the cost actually tracks.}
+The measurement that matters here is a diagnosis, not a projection, and it
+corrects an assumption we had been making: extrapolating from state counts
+assumes cost is proportional to stored states, and it is not. Between levels~5
+and~6 of the certified run, stored entries grew $21.8\times$ and the
+subsumption index population $20.4\times$, but index candidates examined grew
+$297\times$ and the iteration wall $418\times$; index lookup accounted for
+$79.4\%$ of user time. Two independent measurements --- the level-to-level
+ladder, and a $25{,}613$-sample trace of the instantaneous state rate inside
+level~6, which fell $6.32\times$ while the live set grew $10.3\times$ and was
+still falling in the final hour --- agree that wall grows as $N^{1.79}$ to
+$N^{1.94}$. So: \textbf{memory scales with the census; wall clock scales with
+the index.} The census is the quantity our theorem controls; the wall is not,
+and it is the faster-growing one. A
+four-arm sweep of index configurations found a strict Pareto improvement over
+both previously used settings --- $1.49\times$ faster and $4.2\times$ less
+memory than an unindexed run, $2.02\times$ faster than the certified setting at
+$1.86\times$ its memory --- which moves the operating point \emph{along} that
+frontier rather than off it. Projecting each arm on its own measured ladder
+puts a level-7 search at roughly $45$--$190$ days and $1.5$~TB resident against
+a months-scale horizon and $143$~GB of memory plus swap: about $17\times$
+short, combined, down from a standing bracket of $2.4$--$195$~TB of storage.
+The gap has narrowed by roughly three orders of magnitude; it has not closed.
+Every level-7 figure here is an extrapolation --- the run was not performed ---
+and the level-6-to-7 state multiplier is the one input for which no cheaper
+rehearsal exists, precisely because $\nmin(7) = 13$.
+
+\paragraph{Why splitting the problem does not help.}
+The obvious response is to decompose: partition the search by comparator
+prefix, run $k$ independent jobs, and pay $k \cdot (N/k)^{e}$ instead of
+$N^{e}$. Across $146$ runs --- $144$ prefix jobs at six prefix depths and two
+levels, plus two monolithic controls --- the lowest peak per-job memory ever
+observed was $0.990\times$ the monolithic run's, and that was at depth~1, where
+$k=1$ and the split is a no-op. The best non-trivial point is $0.998\times$; by
+depth~4 the peak per-job memory is $23.6\times$ the monolith's. Level~7 would
+need $0.095\times$.
+
+The failure is at the first premise, not in the arithmetic: $k \cdot (N/k)^e$
+assumes the split partitions the state space, and prefix cones \emph{cover} it.
+At level~5, depth~2, one job's memo held $11{,}849{,}694$ entries against the
+entire monolithic run's $11{,}629{,}126$ --- $1.9\%$ \emph{larger} than the run
+it was supposed to be one third of. A memo diff between two sibling cones puts
+the job-private fraction at $36.2\%$ of entries, so $63.8\%$ of the work is
+shared and is paid $k$ times over. The mechanism is general: an
+iterative-deepening branch-and-bound never solves an interior subproblem to
+completion --- it raises the root's bound incrementally, improving each
+successor only far enough to move the current minimum --- whereas each
+decomposed job must certify its own root to its full value. The parts are
+strictly harder than the roles those same parts play inside the whole. Granting
+the pro-decomposition argument in full --- every wide state perfectly private,
+the low-width remainder free --- the census supplies a floor: widths $\ge 10$
+are $56.7\%$ of packed bytes, so even a perfect decomposition with
+$k \to \infty$ and zero CPU cost leaves the memo at $0.43$ times its monolithic
+size, still several times over the available memory. This is a clean negative
+and it ends that line of work.
+
+%======================================================================
+\section{Trusted base}\label{sec:trust}
+%======================================================================
+
+Following Harder~\cite{Harder20}, we do not claim the components below are free
+of bugs and do not expect them to be. The goal is narrower: to say which could,
+if wrong, move a stated claim. The scope is the specific runs reported here, so
+only bugs triggered during those runs are relevant, and we adopt the de Bruijn
+criterion~\cite{BW05} as the standard the certified computation is meant to
+meet rather than claiming correctness directly.
+
+\begin{center}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.28\textwidth}c>{\raggedright\arraybackslash}p{0.52\textwidth}}
+\toprule
+component & trusted? & note \\
+\midrule
+Isabelle/HOL kernel (Isabelle2020) & Yes &
+  Shared with the checker development, so the two formal artifacts are not
+  independent of each other at this level. \\
+Statements in \texttt{Ambient\_Collapse.thy} & Yes &
+  The proofs are machine-checked; a mis-\emph{stated} theorem is not. Two of
+  our hypotheses were mis-stated and the mechanization caught them
+  (Section~\ref{sec:corrections}); a third would not be. \\
+Proofs in \texttt{Ambient\_Collapse.thy} & No &
+  Machine-checked, no \texttt{sorry}/\texttt{oops}/\texttt{axiomatization}. \\
+That the sorting-network search satisfies H0--H5 & Yes &
+  \textbf{Not machine-checked.} Rests on an exhaustive reading of the
+  recursion plus a second reviewer given the code as a refutation target; the
+  one leak found is Section~\ref{sec:instance}. This is the largest single
+  trusted item in the paper. \\
+Our rebuilt search engine & No &
+  Its output is a certificate, checked independently. \\
+Prune-all and certificate assembly & No &
+  Same; an error here yields a rejected certificate. \\
+Extracted verified checker core & Yes &
+  An \emph{unchanged} extraction of the frozen \texttt{Checker.thy}; the
+  extraction pipeline was reproduced from source under Isabelle2020. \\
+Checker wrapper and decoder & Yes &
+  \textbf{Patched}, and not verified: a large-read fix in the Haskell wrapper
+  was required on the verification host. ``Unmodified'' scopes to the extracted
+  core, never to the binary. \\
+Census figures at levels 5 and 6 & Yes &
+  One measured ambient each, so the affine law there rests on width-stratum
+  evidence rather than an observed common difference; $|\Reach(13,6)|$ is a
+  prediction of Theorem~\ref{thm:partII}. \\
+Certificate step and memory figures & No &
+  No claim depends on them; the step count is a recount over the certificate,
+  superseding an earlier figure derived from a different quantity. \\
+Hypothesis checks in the two further domains & Yes &
+  Python, not formalized. In the Boolean domain a raw enumeration independently
+  checks the canonical form; in prefix reversal there is no such check, and H4
+  is verified over a finite range, not proved. \\
+GHC, operating system, hardware & Yes & Standard, and unavoidable. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two dependencies deserve naming before a referee names them. The mechanized
+theorem and the certified computation are naturally described as two
+independent formal artifacts; they share the Isabelle kernel and the same
+released version of it, so they are independent in content but not in
+toolchain. And that toolchain is the programme's most fragile asset: the
+Isabelle2020 installation lives outside the repository, has had to be
+re-downloaded once already, and the theory sources are committed while the
+prover that checks them is not pinned. Of the four stages of
+Section~\ref{sec:s11}, only verification left a machine-readable artifact.
+
+Finally, a deliberate exclusion. Our own abstract theory sits \emph{outside}
+the trusted base for the certified bound: every line of
+Sections~\ref{sec:class}--\ref{sec:mech} could be wrong and $S(11) \ge 35$
+would not move, because that bound is established by a certificate and a
+checker that know nothing about ambients, levels or censuses. Conversely, the
+collapse theorem is what licenses the claim that one ambient-11 census
+determines the ambient-13 one, and \emph{that} rests on the audit in the fourth
+row above --- the first place a reader who wants to disbelieve us should look.
+
+%======================================================================
+\section{Conclusion}
+%======================================================================
+
+An exhaustive combinatorial-optimality search can have a cutoff in the sense
+that parameterized verification has understood the word for thirty years: above
+a computable threshold, the object being computed at parameter $n$ is
+determined by the object at the threshold, plus a closed-form correction. We
+have given hypotheses under which this holds for the census --- the set of
+states such a search stores --- proved both halves and the growth law in
+Isabelle/HOL with two interpretations that make them non-vacuous, and
+instantiated the class in three domains, one of which is a positive control and
+one of which was chosen because it could have falsified the theorem and did
+not. The growth law we prove is affine with slope exactly one; the polynomial
+version is a machine-checked implication whose hypothesis is measured rather
+than derived. What we have not shown is that any particular engine is an
+instance: that remains an audit, and it is the obligation a reader should press
+on. The method's practical reach ends where the theorem stops supplying a
+smaller ambient to collapse to --- and there, as we measured, the cost is
+governed by a quantity the theorem does not control.
+
+\footnotesize
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}

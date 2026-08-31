@@ -1,0 +1,213 @@
+\begin{thebibliography}{10}
+
+\bibitem{AJK16}
+Simon Au{\ss}erlechner, Swen Jacobs, and Ayrat Khalimov.
+\newblock Tight cutoffs for guarded protocols with fairness.
+\newblock In {\em Verification, Model Checking, and Abstract Interpretation
+  (VMCAI 2016)}, volume 9583 of {\em LNCS}, pages 476--494. Springer, 2016.
+
+\bibitem{Paper1}
+The authors.
+\newblock A 1972 lower-bound argument for sorting networks, and what rests on
+  it.
+\newblock Companion paper, 2026.
+
+\bibitem{Artifact}
+The authors.
+\newblock Artifact: {\tt Ambient\_Collapse.thy}, the rebuilt search engine, the
+  certificate, and the verifiers.
+\newblock Deposit; to appear, 2026.
+
+\bibitem{BW05}
+Henk Barendregt and Freek Wiedijk.
+\newblock The challenge of computer mathematics.
+\newblock {\em Philosophical Transactions of the Royal Society A},
+  363(1835):2351--2375, 2005.
+
+\bibitem{BN23}
+Shreesha Bhat and Kartik Nagar.
+\newblock Automating cutoff-based verification of distributed protocols.
+\newblock In {\em Formal Methods in Computer-Aided Design (FMCAD 2023)}, pages
+  75--85, 2023.
+
+\bibitem{BloemEtAl15}
+Roderick Bloem, Swen Jacobs, Ayrat Khalimov, Igor Konnov, Sasha Rubin, Helmut
+  Veith, and Josef Widder.
+\newblock {\em Decidability of Parameterized Verification}.
+\newblock Morgan \& Claypool, 2015.
+
+\bibitem{Bulteau15}
+Laurent Bulteau, Guillaume Fertin, and Irena Rusu.
+\newblock Pancake flipping is hard.
+\newblock {\em Journal of Computer and System Sciences}, 81(8):1556--1574,
+  2015.
+
+\bibitem{BZ14}
+Daniel Bundala and Jakub Z{\'a}vodn{\'y}.
+\newblock Optimal sorting networks.
+\newblock In {\em Language and Automata Theory and Applications (LATA 2014)},
+  volume 8370 of {\em LNCS}, pages 236--247. Springer, 2014.
+
+\bibitem{BODI11}
+Joshua Buresh-Oppenheim, Sashka Davis, and Russell Impagliazzo.
+\newblock A stronger model of dynamic programming algorithms.
+\newblock {\em Algorithmica}, 60(4):938--968, 2011.
+
+\bibitem{CEFJ96}
+Edmund~M. Clarke, Reinhard Enders, Thomas Filkorn, and Somesh Jha.
+\newblock Exploiting symmetry in temporal logic model checking.
+\newblock {\em Formal Methods in System Design}, 9(1--2):77--104, 1996.
+
+\bibitem{CCFS16}
+Michael Codish, Lu{\'\i}s Cruz-Filipe, Michael Frank, and Peter Schneider-Kamp.
+\newblock Sorting nine inputs requires twenty-five comparisons.
+\newblock {\em Journal of Computer and System Sciences}, 82(3):551--563, 2016.
+\newblock Conference version: ICTAI 2014, 186--193; arXiv:1405.5754.
+
+\bibitem{CCS15}
+Michael Codish, Lu{\'\i}s Cruz-Filipe, and Peter Schneider-Kamp.
+\newblock Sorting networks: The end game.
+\newblock In {\em Language and Automata Theory and Applications (LATA 2015)},
+  volume 8977 of {\em LNCS}, pages 664--675. Springer, 2015.
+
+\bibitem{CGS24}
+Vianney Copp{\'e}, Xavier Gillard, and Pierre Schaus.
+\newblock Branch-and-bound with barrier: Dominance and suboptimality detection
+  for dd-based branch-and-bound.
+\newblock {\em INFORMS Journal on Computing}, 36(6), 2024.
+
+\bibitem{CLS17}
+Lu{\'\i}s Cruz-Filipe, Kim~S. Larsen, and Peter Schneider-Kamp.
+\newblock Formally proving size optimality of sorting networks.
+\newblock {\em Journal of Automated Reasoning}, 59:425--454, 2017.
+
+\bibitem{CS15}
+Lu{\'\i}s Cruz-Filipe and Peter Schneider-Kamp.
+\newblock Formalizing size-optimal sorting networks: Extracting a certified
+  proof checker.
+\newblock In {\em Interactive Theorem Proving (ITP 2015)}, volume 9236 of {\em
+  LNCS}, pages 154--169. Springer, 2015.
+
+\bibitem{Dobbelaere25}
+Bert Dobbelaere.
+\newblock Smallest and fastest sorting networks for a given number of inputs.
+\newblock \url{https://bertdobbelaere.github.io/sorting_networks.html}, 2025.
+\newblock Changelog entry of 2025-04-21; consulted 2026-08-22.
+
+\bibitem{EM14}
+Thorsten Ehlers and Mike M{\"u}ller.
+\newblock Faster sorting networks for 17, 19 and 20 inputs.
+\newblock In {\em arXiv:1410.2736}, 2014.
+
+\bibitem{EK00}
+E.~Allen Emerson and Vineet Kahlon.
+\newblock Reducing model checking of the many to the few.
+\newblock In {\em Automated Deduction (CADE-17)}, volume 1831 of {\em LNAI},
+  pages 236--254. Springer, 2000.
+
+\bibitem{EN95}
+E.~Allen Emerson and Kedar~S. Namjoshi.
+\newblock Reasoning about rings.
+\newblock In {\em Principles of Programming Languages (POPL 1995)}, pages
+  85--94. ACM, 1995.
+
+\bibitem{EN03}
+E.~Allen Emerson and Kedar~S. Namjoshi.
+\newblock On reasoning about rings.
+\newblock {\em International Journal of Foundations of Computer Science},
+  14(4):527--550, 2003.
+
+\bibitem{FK73}
+Robert~W. Floyd and Donald~E. Knuth.
+\newblock The {Bose--Nelson} sorting problem.
+\newblock In {\em A Survey of Combinatorial Theory}, pages 163--172.
+  North-Holland, 1973.
+
+\bibitem{Gates95}
+William~H. Gates and Christos~H. Papadimitriou.
+\newblock Bounds for sorting by prefix reversal.
+\newblock {\em Discrete Mathematics}, 27(1):47--57, 1979.
+
+\bibitem{HN10}
+Florian Haftmann and Tobias Nipkow.
+\newblock Code generation via higher-order rewrite systems.
+\newblock In {\em Functional and Logic Programming (FLOPS 2010)}, volume 6009
+  of {\em LNCS}, pages 103--117. Springer, 2010.
+
+\bibitem{Harder20}
+Jannis Harder.
+\newblock An answer to the {Bose--Nelson} sorting problem for eleven and twelve
+  channels.
+\newblock arXiv:2012.04400v3, 2022.
+\newblock Artifacts: \texttt{jix/sortnetopt}, doi:10.5281/zenodo.4139152;
+  certificate, doi:10.5281/zenodo.4108365.
+
+\bibitem{HS20}
+Florian Horn and Arnaud Sangnier.
+\newblock Deciding the existence of cut-off in parameterized rendez-vous
+  networks.
+\newblock In {\em Concurrency Theory (CONCUR 2020)}, volume 171 of {\em
+  LIPIcs}, pages 46:1--46:16, 2020.
+
+\bibitem{Huffman52}
+David~A. Huffman.
+\newblock A method for the construction of minimum-redundancy codes.
+\newblock {\em Proceedings of the IRE}, 40(9):1098--1101, 1952.
+
+\bibitem{ID96}
+C.~Norris Ip and David~L. Dill.
+\newblock Better verification through symmetry.
+\newblock {\em Formal Methods in System Design}, 9(1--2):41--75, 1996.
+
+\bibitem{Jaber20}
+Nouraldin Jaber, Swen Jacobs, Christopher Wagner, Milind Kulkarni, and Roopsha
+  Samanta.
+\newblock Parameterized verification of systems with global synchronization and
+  guards.
+\newblock In {\em Computer Aided Verification (CAV 2020)}, volume 12224 of {\em
+  LNCS}, pages 299--323. Springer, 2020.
+
+\bibitem{KKW10}
+Alexander Kaiser, Daniel Kroening, and Thomas Wahl.
+\newblock Dynamic cutoff detection in parameterized concurrent programs.
+\newblock In {\em Computer Aided Verification (CAV 2010)}, volume 6174 of {\em
+  LNCS}, pages 645--659. Springer, 2010.
+
+\bibitem{Knuth73}
+Donald~E. Knuth.
+\newblock {\em The Art of Computer Programming, Volume 3: Sorting and
+  Searching}.
+\newblock Addison-Wesley, 1973.
+\newblock \S5.3.4.
+
+\bibitem{Nam07}
+Kedar~S. Namjoshi.
+\newblock Symmetry and completeness in the analysis of parameterized systems.
+\newblock In {\em Verification, Model Checking, and Abstract Interpretation
+  (VMCAI 2007)}, volume 4349 of {\em LNCS}, pages 299--313. Springer, 2007.
+
+\bibitem{Isabelle}
+Tobias Nipkow, Lawrence~C. Paulson, and Markus Wenzel.
+\newblock {\em Isabelle/HOL: A Proof Assistant for Higher-Order Logic}, volume
+  2283 of {\em LNCS}.
+\newblock Springer, 2002.
+
+\bibitem{Tozawa26}
+Akihiko Tozawa and Kunihiko Sadakane.
+\newblock Odd-even transposition sort is an optimal stable standard sorting
+  network.
+\newblock {\em Information Processing Letters}, 195:106659, 2026.
+
+\bibitem{Valmari91}
+Antti Valmari.
+\newblock Stubborn sets for reduced state space generation.
+\newblock In {\em Advances in Petri Nets 1990}, volume 483 of {\em LNCS}, pages
+  491--515. Springer, 1991.
+
+\bibitem{VV72}
+David C.~Van Voorhis.
+\newblock Toward a lower bound for sorting networks.
+\newblock In Raymond~E. Miller and James~W. Thatcher, editors, {\em Complexity
+  of Computer Computations}, pages 119--129. Plenum, 1972.
+
+\end{thebibliography}
